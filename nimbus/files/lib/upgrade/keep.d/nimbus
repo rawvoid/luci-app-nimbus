@@ -1,0 +1,4 @@
+/etc/config/nimbus
+/etc/nimbus/profiles/
+/etc/nimbus/lists/
+/etc/nimbus/dns_backup.json

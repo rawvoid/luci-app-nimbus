@@ -1,0 +1,13 @@
+#!/bin/sh
+
+mkdir -p \
+	/etc/nimbus/profiles \
+	/etc/nimbus/lists/local \
+	/etc/nimbus/lists/cache \
+	/etc/nimbus/bin
+
+if [ ! -f /etc/nimbus/lists/local/custom_direct.txt ]; then
+	printf '# Custom direct IPv4/IPv6 CIDR entries (one per line)\n' > /etc/nimbus/lists/local/custom_direct.txt
+fi
+
+exit 0

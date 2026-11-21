@@ -49,17 +49,15 @@ jobs:
 
           ./scripts/feeds update luci nimbus
 
-          sed -i '/^CONFIG_ALL/d; /^CONFIG_PACKAGE_kmod-/d; /^CONFIG_SIGNED_PACKAGES/d' .config
-          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' >> .config
-
           ./scripts/feeds install -d n -p luci luci-base
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' > .config
           make defconfig
           make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
 
           ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
           rm -rf package/feeds/luci tmp
 
-          printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' > .config
           make defconfig
 
           make package/nimbus/compile -j"$(nproc)" V=s
@@ -154,17 +152,15 @@ jobs:
 
           ./scripts/feeds update luci nimbus
 
-          sed -i '/^CONFIG_ALL/d; /^CONFIG_PACKAGE_kmod-/d; /^CONFIG_SIGNED_PACKAGES/d' .config
-          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' >> .config
-
           ./scripts/feeds install -d n -p luci luci-base
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' > .config
           make defconfig
           make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
 
           ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
           rm -rf package/feeds/luci tmp
 
-          printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' > .config
           make defconfig
 
           make package/nimbus/compile -j"$(nproc)" V=s

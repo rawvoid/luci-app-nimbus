@@ -55,13 +55,13 @@ jobs:
           make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
 
           ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
-          rm -rf package/feeds/luci tmp
+          rm -rf package/feeds/luci package/kernel/linux tmp
 
-          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' > .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\n' > .config
           make defconfig
 
           make package/nimbus/compile -j"$(nproc)" V=s
-          make package/luci-app-nimbus/compile -j"$(nproc)" V=s
+          make package/luci-app-nimbus/compile CONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m -j"$(nproc)" V=s
 
           for pat in 'nimbus_*.ipk' 'luci-app-nimbus_*.ipk' 'luci-i18n-nimbus-zh-cn_*.ipk'; do
             found=$(find bin/packages -type f -name "$pat" | head -n 1)
@@ -158,13 +158,13 @@ jobs:
           make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
 
           ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
-          rm -rf package/feeds/luci tmp
+          rm -rf package/feeds/luci package/kernel/linux tmp
 
-          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' > .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\nCONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\n' > .config
           make defconfig
 
           make package/nimbus/compile -j"$(nproc)" V=s
-          make package/luci-app-nimbus/compile -j"$(nproc)" V=s
+          make package/luci-app-nimbus/compile CONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m -j"$(nproc)" V=s
 
           for pat in 'nimbus-[0-9]*.apk' 'luci-app-nimbus-*.apk' 'luci-i18n-nimbus-zh-cn-*.apk'; do
             found=$(find bin/packages -type f -name "$pat" | head -n 1)

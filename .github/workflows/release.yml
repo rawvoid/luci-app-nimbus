@@ -1,0 +1,327 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build and upload nimbus-repo artifact only, skip Release and Pages deploy)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-opkg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and sign opkg (.ipk) packages with OpenWrt 24.10 SDK
+        env:
+          USIGN_PRIVATE_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -eu
+          mkdir -p "${{ github.workspace }}/out-opkg/all"
+          chmod -R 0777 "${{ github.workspace }}/out-opkg"
+
+          docker run --rm -i \
+            -e FORCE_UNSAFE_CONFIGURE=1 \
+            -e USIGN_PRIVATE_KEY \
+            -e IS_TAG_PUSH \
+            -v "${{ github.workspace }}:/src:ro" \
+            -v "${{ github.workspace }}/out-opkg:/out" \
+            openwrt/sdk:x86-64-openwrt-24.10 \
+            sh -eu -s <<'SDK_EOF'
+          [ ! -d ./scripts ] && ./setup.sh
+          cp feeds.conf.default feeds.conf
+          printf '\nsrc-link nimbus /src\n' >> feeds.conf
+
+          ./scripts/feeds update packages luci nimbus
+          ./scripts/feeds install -a -p nimbus
+          ./scripts/feeds install -p luci luci-base
+
+          printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
+          make defconfig
+
+          make package/nimbus/compile -j"$(nproc)" V=s
+          make package/luci-app-nimbus/compile -j"$(nproc)" V=s
+
+          for pat in 'nimbus_*.ipk' 'luci-app-nimbus_*.ipk' 'luci-i18n-nimbus-zh-cn_*.ipk'; do
+            found=$(find bin/packages -type f -name "$pat" | head -n 1)
+            [ -n "$found" ] || { echo "Error: missing expected ipk matching $pat" >&2; exit 1; }
+            cp -f "$found" /out/all/
+          done
+
+          ls -la /out/all/
+
+          cd /out/all
+          /builder/scripts/ipkg-make-index.sh . > Packages
+          gzip -9c Packages > Packages.gz
+
+          if [ -n "${USIGN_PRIVATE_KEY:-}" ]; then
+            printf '%s\n' "$USIGN_PRIVATE_KEY" > /tmp/nimbus-usign.key
+            chmod 0600 /tmp/nimbus-usign.key
+            /builder/staging_dir/host/bin/usign -S -m Packages -s /tmp/nimbus-usign.key -x Packages.sig
+            rm -f /tmp/nimbus-usign.key
+            /builder/staging_dir/host/bin/usign -V -m Packages -p /src/keys/nimbus-usign.pub -x Packages.sig
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ]; then
+            echo "Error: USIGN_PRIVATE_KEY secret is required for tag releases" >&2
+            exit 1
+          else
+            echo "::warning::USIGN_PRIVATE_KEY secret not set; skipping Packages.sig in dry_run"
+          fi
+          SDK_EOF
+
+      - name: Verify produced .ipk contents and metadata
+        run: |
+          set -eu
+          tmp_inspect=$(mktemp -d)
+          trap 'rm -rf "$tmp_inspect"' EXIT
+
+          for ipk in "${{ github.workspace }}/out-opkg/all"/*.ipk; do
+            echo "=== Inspecting $(basename "$ipk") ==="
+            mkdir -p "$tmp_inspect/pkg"
+            tar -xzf "$ipk" -C "$tmp_inspect/pkg" 2>/dev/null || (cd "$tmp_inspect/pkg" && ar x "$ipk")
+            tar -xzOf "$tmp_inspect/pkg/control.tar.gz" ./control
+            tar -tzf "$tmp_inspect/pkg/data.tar.gz"
+            if [ -f "$tmp_inspect/pkg/control.tar.gz" ] && tar -tzf "$tmp_inspect/pkg/control.tar.gz" | grep -q 'prerm'; then
+              echo "--- prerm ---"
+              tar -xzOf "$tmp_inspect/pkg/control.tar.gz" ./prerm
+            fi
+            rm -rf "$tmp_inspect/pkg"
+          done
+
+      - name: Upload opkg artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opkg-artifacts
+          path: out-opkg/
+          retention-days: 7
+
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and sign apk (.apk) packages with OpenWrt 25.12 SDK
+        env:
+          APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -eu
+          mkdir -p "${{ github.workspace }}/out-apk/all"
+          chmod -R 0777 "${{ github.workspace }}/out-apk"
+
+          docker run --rm -i \
+            -e FORCE_UNSAFE_CONFIGURE=1 \
+            -e APK_PRIVATE_KEY \
+            -e IS_TAG_PUSH \
+            -v "${{ github.workspace }}:/src:ro" \
+            -v "${{ github.workspace }}/out-apk:/out" \
+            openwrt/sdk:x86-64-openwrt-25.12 \
+            sh -eu -s <<'SDK_EOF'
+          [ ! -d ./scripts ] && ./setup.sh
+          cp feeds.conf.default feeds.conf
+          printf '\nsrc-link nimbus /src\n' >> feeds.conf
+
+          ./scripts/feeds update packages luci nimbus
+          ./scripts/feeds install -a -p nimbus
+          ./scripts/feeds install -p luci luci-base
+
+          printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
+          make defconfig
+
+          make package/nimbus/compile -j"$(nproc)" V=s
+          make package/luci-app-nimbus/compile -j"$(nproc)" V=s
+
+          for pat in 'nimbus-[0-9]*.apk' 'luci-app-nimbus-[0-9]*.apk' 'luci-i18n-nimbus-zh-cn-[0-9]*.apk'; do
+            found=$(find bin/packages -type f -name "$pat" | head -n 1)
+            [ -n "$found" ] || { echo "Error: missing expected apk matching $pat" >&2; exit 1; }
+            cp -f "$found" /out/all/
+          done
+
+          ls -la /out/all/
+
+          APK_BIN="/builder/staging_dir/host/bin/apk"
+          SDK_ROOT="$PWD"
+          cd /out/all
+
+          if [ -n "${APK_PRIVATE_KEY:-}" ]; then
+            printf '%s\n' "$APK_PRIVATE_KEY" > /tmp/nimbus-apk.pem
+            chmod 0600 /tmp/nimbus-apk.pem
+            "$APK_BIN" mkndx \
+              --root "$SDK_ROOT" \
+              --keys-dir /src/keys \
+              --allow-untrusted \
+              --sign /tmp/nimbus-apk.pem \
+              --output packages.adb \
+              *.apk
+            rm -f /tmp/nimbus-apk.pem
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ]; then
+            echo "Error: APK_PRIVATE_KEY secret is required for tag releases" >&2
+            exit 1
+          else
+            echo "::warning::APK_PRIVATE_KEY secret not set; generating unsigned packages.adb in dry_run"
+            "$APK_BIN" mkndx \
+              --root "$SDK_ROOT" \
+              --keys-dir /src/keys \
+              --allow-untrusted \
+              --output packages.adb \
+              *.apk
+          fi
+
+          [ -s packages.adb ] || { echo "Error: packages.adb is missing or empty" >&2; exit 1; }
+          "$APK_BIN" adbdump packages.adb | head -n 60 || true
+          SDK_EOF
+
+      - name: Upload apk artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-artifacts
+          path: out-apk/
+          retention-days: 7
+
+  assemble-repo:
+    needs: [build-opkg, build-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download opkg artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: opkg-artifacts
+          path: repo/opkg
+
+      - name: Download apk artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-artifacts
+          path: repo/apk
+
+      - name: Assemble dual-format repo, checksums, and index.html
+        run: |
+          set -eu
+          mkdir -p repo/keys
+          cp -f keys/nimbus-usign.pub repo/keys/nimbus-usign.pub
+          cp -f keys/nimbus-apk.pem repo/keys/nimbus-apk.pem
+
+          USIGN_KEY_ID=$(python3 -c '
+          import base64
+          lines = open("keys/nimbus-usign.pub").read().strip().splitlines()
+          raw = base64.b64decode(lines[1])
+          print(raw[2:10].hex())
+          ')
+
+          REPO_OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          PAGES_URL="https://${REPO_OWNER}.github.io/${REPO_NAME}"
+
+          (
+            cd repo
+            find opkg apk keys -type f | sort | xargs sha256sum > SHA256SUMS
+          )
+
+          cat <<EOF > repo/index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>luci-app-nimbus OpenWrt Package Repository</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #1f2328; }
+              pre { background: #f6f8fa; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+              code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+              h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3rem; }
+            </style>
+          </head>
+          <body>
+            <h1>luci-app-nimbus OpenWrt Repository</h1>
+            <p>Architecture-independent (<code>all</code>) dual-format feed for OpenWrt 23.05+ (<code>opkg</code>) and OpenWrt 25.12+ (<code>apk</code>).</p>
+
+            <h2>OpenWrt 23.05 / 24.10 (<code>opkg</code>)</h2>
+            <pre><code>wget -O /etc/opkg/keys/${USIGN_KEY_ID} ${PAGES_URL}/keys/nimbus-usign.pub
+          grep -qxF 'src/gz nimbus ${PAGES_URL}/opkg/all' /etc/opkg/customfeeds.conf || echo 'src/gz nimbus ${PAGES_URL}/opkg/all' >> /etc/opkg/customfeeds.conf
+          opkg update
+          opkg install luci-app-nimbus luci-i18n-nimbus-zh-cn</code></pre>
+
+            <h2>OpenWrt 25.12+ (<code>apk</code>)</h2>
+            <p>Persist only the single public key file path <code>/etc/apk/keys/nimbus-apk.pem</code> in <code>/etc/sysupgrade.conf</code> (do not preserve the entire <code>/etc/apk/keys/</code> directory).</p>
+            <pre><code>mkdir -p /etc/apk/keys /etc/apk/repositories.d
+          wget -O /etc/apk/keys/nimbus-apk.pem ${PAGES_URL}/keys/nimbus-apk.pem
+          grep -qxF '/etc/apk/keys/nimbus-apk.pem' /etc/sysupgrade.conf || echo '/etc/apk/keys/nimbus-apk.pem' >> /etc/sysupgrade.conf
+          echo '${PAGES_URL}/apk/all/packages.adb' > /etc/apk/repositories.d/nimbus.list
+          apk update
+          apk add luci-app-nimbus luci-i18n-nimbus-zh-cn</code></pre>
+
+            <h2>Public Keys &amp; Checksums</h2>
+            <ul>
+              <li><a href="keys/nimbus-usign.pub">keys/nimbus-usign.pub</a> (Key ID: <code>${USIGN_KEY_ID}</code>)</li>
+              <li><a href="keys/nimbus-apk.pem">keys/nimbus-apk.pem</a></li>
+              <li><a href="SHA256SUMS">SHA256SUMS</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload assembled repository artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimbus-repo
+          path: repo/
+          retention-days: 14
+
+  publish-release:
+    needs: assemble-repo
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download assembled repository artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nimbus-repo
+          path: repo
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME}"
+          set -- repo/opkg/all/*.ipk repo/apk/all/*.apk repo/SHA256SUMS
+          gh release create "$tag" "$@" --title "$tag" --generate-notes
+
+  deploy-pages:
+    needs: assemble-repo
+    if: github.event_name == 'push' || inputs.dry_run != true
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download assembled repository artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nimbus-repo
+          path: repo
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

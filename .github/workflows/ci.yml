@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  host-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - name: Lint POSIX shell scripts
+        run: |
+          set -eu
+          tmp_dir=$(mktemp -d)
+          trap 'rm -rf "$tmp_dir"' EXIT
+
+          sh_list="${tmp_dir}/sh_files.txt"
+          init_list="${tmp_dir}/init_files.txt"
+          : > "$sh_list"
+          : > "$init_list"
+
+          find . \( -path './.git' -o -path './node_modules' \) -prune -o -type f -name '*.sh' -print >> "$sh_list"
+          [ -d ./nimbus/files/etc/hotplug.d ] && find ./nimbus/files/etc/hotplug.d -type f -print >> "$sh_list"
+          [ -d ./nimbus/files/etc/uci-defaults ] && find ./nimbus/files/etc/uci-defaults -type f -print >> "$sh_list"
+          [ -d ./nimbus/files/etc/init.d ] && find ./nimbus/files/etc/init.d -type f -print >> "$init_list"
+
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            shellcheck -s sh "$f"
+          done < "$sh_list"
+
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            shellcheck -s sh -e SC2034,SC1091 "$f"
+          done < "$init_list"
+
+      - name: Validate JSON files
+        run: |
+          set -eu
+          find . \( -path './.git' -o -path './node_modules' \) -prune -o -type f -name '*.json' -print | while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            jq empty "$f"
+          done
+
+      - name: Validate LuCI JS syntax
+        run: |
+          set -eu
+          if [ -d ./luci-app-nimbus ]; then
+            find ./luci-app-nimbus -path '*/node_modules' -prune -o -type f -name '*.js' -print | while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              node --check "$f"
+              if command -v eslint >/dev/null 2>&1; then
+                eslint "$f"
+              fi
+            done
+          fi
+
+      - name: Check for uc.out artifacts
+        run: |
+          set -eu
+          uc_out=$(find . -path './.git' -prune -o -name 'uc.out' -print)
+          if [ -n "$uc_out" ]; then
+            echo "Unexpected uc.out found: $uc_out" >&2
+            exit 1
+          fi
+
+  openwrt-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - name: Cache sing-box verification binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/luci-app-nimbus
+          key: ${{ runner.os }}-verify-singbox-1.14.4
+
+      - name: Run OpenWrt rootfs verification suite
+        run: ./scripts/verify-local.sh

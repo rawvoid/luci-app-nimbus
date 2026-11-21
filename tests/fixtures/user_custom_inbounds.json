@@ -1,0 +1,69 @@
+{
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "dns-remote",
+        "server": "8.8.4.4"
+      }
+    ],
+    "final": "dns-remote"
+  },
+  "inbounds": [
+    {
+      "type": "redirect",
+      "tag": "user-redir",
+      "listen": "::",
+      "listen_port": 17891
+    },
+    {
+      "type": "tproxy",
+      "tag": "user-tproxy",
+      "listen": "::",
+      "listen_port": 17892,
+      "network": [
+        "tcp",
+        "udp"
+      ]
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 1080
+    },
+    {
+      "type": "direct",
+      "tag": "user-dns-in",
+      "listen": "127.0.0.1",
+      "listen_port": 15353
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "direct",
+      "tag": "proxy"
+    }
+  ],
+  "route": {
+    "default_mark": 510,
+    "default_domain_resolver": "dns-remote",
+    "final": "proxy",
+    "rules": [
+      {
+        "inbound": [
+          "user-dns-in"
+        ],
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ]
+  }
+}

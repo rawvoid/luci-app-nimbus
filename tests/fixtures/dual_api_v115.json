@@ -1,0 +1,47 @@
+{
+  "services": [
+    {
+      "type": "api",
+      "tag": "sb-api",
+      "listen": "::",
+      "listen_port": 9091,
+      "secret": "sb-secret-115",
+      "dashboard": {
+        "enabled": true
+      }
+    }
+  ],
+  "experimental": {
+    "clash_api": {
+      "external_controller": "0.0.0.0:9090",
+      "secret": "clash-secret-115",
+      "external_ui": "dashboard"
+    }
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "dns-remote",
+        "server": "1.1.1.1"
+      },
+      {
+        "type": "fakeip",
+        "tag": "dns-fakeip",
+        "inet4_range": "198.18.0.0/15"
+      }
+    ],
+    "final": "dns-remote"
+  },
+  "inbounds": [],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-remote",
+    "rules": []
+  }
+}

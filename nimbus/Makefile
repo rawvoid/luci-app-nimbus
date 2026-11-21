@@ -92,6 +92,7 @@ define Package/nimbus/install
 
 	$(INSTALL_DIR) $(1)/usr/share/nimbus
 	$(INSTALL_DATA) ./files/usr/share/nimbus/common.uc $(1)/usr/share/nimbus/common.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/config_builder.uc $(1)/usr/share/nimbus/config_builder.uc
 endef
 
 $(eval $(call BuildPackage,nimbus))

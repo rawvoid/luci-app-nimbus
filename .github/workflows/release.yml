@@ -47,9 +47,17 @@ jobs:
           cp feeds.conf.default feeds.conf
           printf '\nsrc-link nimbus /src\n' >> feeds.conf
 
-          ./scripts/feeds update packages luci nimbus
-          ./scripts/feeds install -a -p nimbus
-          ./scripts/feeds install -p luci luci-base
+          ./scripts/feeds update luci nimbus
+
+          sed -i '/^CONFIG_ALL/d; /^CONFIG_PACKAGE_kmod-/d; /^CONFIG_SIGNED_PACKAGES/d' .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' >> .config
+
+          ./scripts/feeds install -d n -p luci luci-base
+          make defconfig
+          make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
+
+          ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
+          rm -rf package/feeds/luci tmp
 
           printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
           make defconfig
@@ -144,9 +152,17 @@ jobs:
           cp feeds.conf.default feeds.conf
           printf '\nsrc-link nimbus /src\n' >> feeds.conf
 
-          ./scripts/feeds update packages luci nimbus
-          ./scripts/feeds install -a -p nimbus
-          ./scripts/feeds install -p luci luci-base
+          ./scripts/feeds update luci nimbus
+
+          sed -i '/^CONFIG_ALL/d; /^CONFIG_PACKAGE_kmod-/d; /^CONFIG_SIGNED_PACKAGES/d' .config
+          printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_SIGNED_PACKAGES is not set\n' >> .config
+
+          ./scripts/feeds install -d n -p luci luci-base
+          make defconfig
+          make package/feeds/luci/luci-base/host/compile -j"$(nproc)" V=s
+
+          ./scripts/feeds install -d n -p nimbus nimbus luci-app-nimbus
+          rm -rf package/feeds/luci tmp
 
           printf 'CONFIG_PACKAGE_nimbus=m\nCONFIG_PACKAGE_luci-app-nimbus=m\nCONFIG_PACKAGE_luci-i18n-nimbus-zh-cn=m\n' >> .config
           make defconfig
@@ -154,7 +170,7 @@ jobs:
           make package/nimbus/compile -j"$(nproc)" V=s
           make package/luci-app-nimbus/compile -j"$(nproc)" V=s
 
-          for pat in 'nimbus-[0-9]*.apk' 'luci-app-nimbus-[0-9]*.apk' 'luci-i18n-nimbus-zh-cn-[0-9]*.apk'; do
+          for pat in 'nimbus-[0-9]*.apk' 'luci-app-nimbus-*.apk' 'luci-i18n-nimbus-zh-cn-*.apk'; do
             found=$(find bin/packages -type f -name "$pat" | head -n 1)
             [ -n "$found" ] || { echo "Error: missing expected apk matching $pat" >&2; exit 1; }
             cp -f "$found" /out/all/

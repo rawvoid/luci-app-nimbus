@@ -67,7 +67,15 @@ check(common.read_json(work_dir + '/bad.json') == null, 'read_json invalid retur
 let state_path = work_dir + '/state.json';
 let state_in = {
 	state: 'running',
-	effective: { outbound_mark: '0xff' },
+	secret: 'top-secret',
+	singbox_api_secret: 'top-sb-secret',
+	effective: {
+		outbound_mark: '0xff',
+		clash_api_secret: 'nested-clash-secret'
+	},
+	extra: [
+		{ label: 'keep', secret: 'array-secret' }
+	],
 	apis: {
 		singbox_api: {
 			detected: true,
@@ -88,13 +96,20 @@ check(common.write_state(state_in, state_path), 'write_state succeeds');
 let st_state = fs.stat(state_path);
 check(st_state != null && (st_state.mode & 0777) == 0600, 'state.json has 0600 permissions');
 let state_disk_raw = fs.readfile(state_path);
+check(index(state_disk_raw, 'top-secret') < 0, 'state.json strips top-level secret on disk');
+check(index(state_disk_raw, 'top-sb-secret') < 0, 'state.json strips top-level singbox_api_secret on disk');
+check(index(state_disk_raw, 'nested-clash-secret') < 0, 'state.json strips nested clash_api_secret outside apis');
+check(index(state_disk_raw, 'array-secret') < 0, 'state.json strips secret inside array elements');
 check(index(state_disk_raw, 'super-secret-sb') < 0, 'state.json strips singbox_api secret on disk');
 check(index(state_disk_raw, 'super-secret-clash') < 0, 'state.json strips clash_api secret on disk');
 let state_out = common.read_state(state_path);
+check(!exists(state_out, 'secret') && !exists(state_out, 'singbox_api_secret'), 'read_state has no top-level secrets');
+check(!exists(state_out?.effective, 'clash_api_secret'), 'read_state has no secret in effective');
+check(state_out?.extra?.[0]?.label == 'keep' && !exists(state_out?.extra?.[0], 'secret'), 'read_state strips secret in array while keeping non-secret fields');
 check(state_out?.apis?.singbox_api?.has_secret === true, 'state.json preserves has_secret');
 check(!exists(state_out?.apis?.singbox_api, 'secret'), 'read_state has no secret key in singbox_api');
 check(!exists(state_out?.apis?.clash_api, 'secret'), 'read_state has no secret key in clash_api');
-check(state_in.apis.singbox_api.secret == 'super-secret-sb', 'write_state does not mutate caller object');
+check(state_in.secret == 'top-secret' && state_in.apis.singbox_api.secret == 'super-secret-sb', 'write_state does not mutate caller object');
 
 // 6. Non-blocking acquire_lock(0) + bounded timeout
 let lock_path = work_dir + '/test.lock';
@@ -171,6 +186,13 @@ check(common.sha256_str('abc') == 'ba7816bf8f01cfea414140de5dae2223b00361a396177
 let special_file = work_dir + "/my file 'quoted' $(id).txt";
 check(common.atomic_write(special_file, 'abc', 0644), 'write special filename');
 check(common.sha256_file(special_file) == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'sha256_file handles special chars safely');
+let orig_cwd = fs.getcwd();
+check(fs.chdir(work_dir), 'chdir to work_dir for leading-dash filename test');
+let dash_wrote = common.atomic_write('-dash-file.txt', 'abc', 0644);
+let dash_digest = dash_wrote ? common.sha256_file('-dash-file.txt') : null;
+if (orig_cwd)
+	fs.chdir(orig_cwd);
+check(dash_wrote && dash_digest == 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'sha256_file handles leading-dash filename safely');
 check(common.sha256_file(work_dir + '/nonexistent') == null, 'sha256_file missing returns null');
 
 // 11. cron_sync_tag
@@ -232,6 +254,24 @@ check(index(log_content, last_expected) >= 0, 'truncated log kept newest lines a
 
 let trunc_noop = common.truncate_log_hysteresis(log_path);
 check(trunc_noop.ok === true && trunc_noop.truncated === false, 'truncate_log_hysteresis skips below high watermark');
+
+let hugeline_path = work_dir + '/hugeline.log';
+let huge_line = '';
+for (let i = 0; i < 149; i++)
+	huge_line += 'x';
+huge_line += '\n';
+check(common.atomic_write(hugeline_path, huge_line, 0644), 'create huge single-line log');
+let huge_res = common.truncate_log_hysteresis(hugeline_path, 100, 50);
+check(huge_res.ok === true && huge_res.truncated === true && huge_res.new_size == 50, 'truncate_log_hysteresis preserves trailing huge line instead of truncating to 0');
+check(fs.readfile(hugeline_path) == substr(huge_line, 100), 'truncate_log_hysteresis keeps exact 50-byte tail on single huge line');
+
+let sym_target = work_dir + '/symlink_target.txt';
+let sym_log = work_dir + '/symlink.log';
+check(common.atomic_write(sym_target, huge_line, 0644), 'create symlink target log');
+check(fs.symlink(sym_target, sym_log), 'create log symlink');
+let sym_res = common.truncate_log_hysteresis(sym_log, 100, 50);
+check(sym_res.ok === false && sym_res.truncated === false, 'truncate_log_hysteresis rejects symlink path');
+check(length(fs.readfile(sym_target)) == 150, 'truncate_log_hysteresis leaves symlink target untouched');
 
 // 13. log_msg helper
 check(common.log_msg('warn', 'test warning message', log_path), 'log_msg appends cleanly');

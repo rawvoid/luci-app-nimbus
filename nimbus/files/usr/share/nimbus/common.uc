@@ -270,17 +270,7 @@ function write_state(state_obj, state_path) {
 	if (type(state_obj) != 'object')
 		return false;
 
-	let sanitized = {};
-	for (let k, v in state_obj) {
-		if (k == 'secret' || k == 'singbox_api_secret' || k == 'clash_api_secret')
-			continue;
-		if (k == 'apis')
-			sanitized[k] = strip_secrets_recursive(v);
-		else
-			sanitized[k] = v;
-	}
-
-	return write_json_atomic(state_path || STATE_FILE, sanitized, 0600);
+	return write_json_atomic(state_path || STATE_FILE, strip_secrets_recursive(state_obj), 0600);
 }
 
 function uci_get_all(package_name, confdir, savedir) {
@@ -329,7 +319,7 @@ function sha256_file(path) {
 		return null;
 	tmp_out.fh.close();
 
-	let rc = system(['/bin/sh', '-c', 'exec "$1" "$2" > "$3"', 'sh', sha_bin, path, tmp_out.path]);
+	let rc = system(['/bin/sh', '-c', 'exec "$1" -- "$2" > "$3"', 'sh', sha_bin, path, tmp_out.path]);
 	let out = fs.readfile(tmp_out.path);
 	fs.unlink(tmp_out.path);
 
@@ -418,7 +408,7 @@ function truncate_log_hysteresis(log_path, high_bytes, keep_bytes) {
 	if (keep <= 0 || high < keep)
 		return { ok: false, truncated: false, error: 'invalid hysteresis thresholds' };
 
-	let st = fs.stat(path);
+	let st = fs.lstat(path);
 	if (!st)
 		return { ok: true, truncated: false, size: 0 };
 
@@ -459,7 +449,7 @@ function truncate_log_hysteresis(log_path, high_bytes, keep_bytes) {
 	}
 
 	let nl = index(tail, '\n');
-	if (nl >= 0)
+	if (nl >= 0 && nl + 1 < length(tail))
 		tail = substr(tail, nl + 1);
 
 	if (!fh.seek(0, 0)) {

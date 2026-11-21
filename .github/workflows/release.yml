@@ -72,6 +72,8 @@ jobs:
           ls -la /out/all/
 
           cd /out/all
+          export PATH="/builder/staging_dir/host/bin:$PATH"
+          export MKHASH="/builder/staging_dir/host/bin/mkhash"
           /builder/scripts/ipkg-make-index.sh . > Packages
           gzip -9c Packages > Packages.gz
 

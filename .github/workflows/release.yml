@@ -28,6 +28,7 @@ jobs:
         env:
           USIGN_PRIVATE_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
           IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
         run: |
           set -eu
           mkdir -p "${{ github.workspace }}/out-opkg/all"
@@ -37,6 +38,7 @@ jobs:
             -e FORCE_UNSAFE_CONFIGURE=1 \
             -e USIGN_PRIVATE_KEY \
             -e IS_TAG_PUSH \
+            -e DRY_RUN \
             -v "${{ github.workspace }}:/src:ro" \
             -v "${{ github.workspace }}/out-opkg:/out" \
             openwrt/sdk:x86-64-openwrt-24.10 \
@@ -73,8 +75,8 @@ jobs:
             /builder/staging_dir/host/bin/usign -S -m Packages -s /tmp/nimbus-usign.key -x Packages.sig
             rm -f /tmp/nimbus-usign.key
             /builder/staging_dir/host/bin/usign -V -m Packages -p /src/keys/nimbus-usign.pub -x Packages.sig
-          elif [ "${IS_TAG_PUSH:-false}" = "true" ]; then
-            echo "Error: USIGN_PRIVATE_KEY secret is required for tag releases" >&2
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
+            echo "Error: USIGN_PRIVATE_KEY secret is required for tag releases and live Pages deploys" >&2
             exit 1
           else
             echo "::warning::USIGN_PRIVATE_KEY secret not set; skipping Packages.sig in dry_run"
@@ -93,9 +95,15 @@ jobs:
             tar -xzf "$ipk" -C "$tmp_inspect/pkg" 2>/dev/null || (cd "$tmp_inspect/pkg" && ar x "$ipk")
             tar -xzOf "$tmp_inspect/pkg/control.tar.gz" ./control
             tar -tzf "$tmp_inspect/pkg/data.tar.gz"
-            if [ -f "$tmp_inspect/pkg/control.tar.gz" ] && tar -tzf "$tmp_inspect/pkg/control.tar.gz" | grep -q 'prerm'; then
-              echo "--- prerm ---"
-              tar -xzOf "$tmp_inspect/pkg/control.tar.gz" ./prerm
+            if [ -f "$tmp_inspect/pkg/control.tar.gz" ]; then
+              ctrl_list=$(tar -tzf "$tmp_inspect/pkg/control.tar.gz")
+              for name in prerm prerm-pkg; do
+                entry=$(printf '%s\n' "$ctrl_list" | grep -E "^(\./)?${name}$" | head -n 1 || true)
+                if [ -n "$entry" ]; then
+                  echo "--- ${name} ---"
+                  tar -xzOf "$tmp_inspect/pkg/control.tar.gz" "$entry"
+                fi
+              done
             fi
             rm -rf "$tmp_inspect/pkg"
           done
@@ -117,6 +125,7 @@ jobs:
         env:
           APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
           IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
         run: |
           set -eu
           mkdir -p "${{ github.workspace }}/out-apk/all"
@@ -126,6 +135,7 @@ jobs:
             -e FORCE_UNSAFE_CONFIGURE=1 \
             -e APK_PRIVATE_KEY \
             -e IS_TAG_PUSH \
+            -e DRY_RUN \
             -v "${{ github.workspace }}:/src:ro" \
             -v "${{ github.workspace }}/out-apk:/out" \
             openwrt/sdk:x86-64-openwrt-25.12 \
@@ -167,8 +177,8 @@ jobs:
               --output packages.adb \
               *.apk
             rm -f /tmp/nimbus-apk.pem
-          elif [ "${IS_TAG_PUSH:-false}" = "true" ]; then
-            echo "Error: APK_PRIVATE_KEY secret is required for tag releases" >&2
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
+            echo "Error: APK_PRIVATE_KEY secret is required for tag releases and live Pages deploys" >&2
             exit 1
           else
             echo "::warning::APK_PRIVATE_KEY secret not set; generating unsigned packages.adb in dry_run"

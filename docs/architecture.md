@@ -211,31 +211,29 @@
        │
        ▼
 Stage 1: Lint & Unit Tests (每次提交运行: .github/workflows/ci.yml，M1 交付)
-  ├── Job A [openwrt/rootfs:x86-64-24.10 容器]:
-  │     ├── ucode -c -o /dev/null / ucode -c module -o /dev/null (全量语法校验)
+  ├── Job A [openwrt/rootfs:x86-64-openwrt-24.10 容器]:
+  │     ├── ucode -S -c -o /dev/null（独立脚本）与 ucode -S -L ... -e "import ..."（ES 模块全量语法校验）
   │     └── tests/run_tests.sh (config_builder / nft_manager / list_updater / profile_updater / core_manager / dns_manager / supervisor / rpc 单测)
-  ├── Job B [Ubuntu Runner 宿主机]:
-  │     ├── shellcheck -s sh (init.d / hotplug.d / uci-defaults)
-  │     ├── JSON 合法性校验 (menu.d / acl.d / fixtures)
-  │     ├── 下载真实 sing-box (linux-amd64) 对合成配置执行 `sing-box check -c <out> -D /tmp/nimbus-check-dir`
-  │     ├── 执行 `sudo nft -c -f` 校验双态 nftables 规则语法
-  │     └── ESLint / Node 校验 LuCI JS 代码规范
-  └── Job C [基础 SDK 编译冒烟校验]:
-        └── 验证 `src-link nimbus` feed 挂载与包构建无报错
+  └── Job B [Ubuntu Runner 宿主机]:
+        ├── shellcheck -s sh (init.d / hotplug.d / uci-defaults / scripts / tests)
+        ├── JSON 合法性校验 (menu.d / acl.d / fixtures)
+        ├── 下载真实 sing-box (linux-amd64-musl) 对合成配置执行 `sing-box check -c <out> -D /tmp/nimbus-check-dir`
+        ├── 执行 `sudo nft -c -f` 校验双态 nftables 规则语法
+        └── ESLint / Node (`node --check`) 校验 LuCI JS 代码规范
        │
        ▼
-Stage 2: Dual-Format SDK Build Matrix (打 Tag 或手动触发: .github/workflows/release.yml，M6 交付)
-  ├── Job A [opkg]: ghcr.io/openwrt/sdk:x86-64-24.10
+Stage 2: Dual-Format SDK Build Matrix (打 Tag 或 workflow_dispatch dry_run 触发: .github/workflows/release.yml，M1 交付骨架并于 M6 终验)
+  ├── Job A [opkg]: openwrt/sdk:x86-64-openwrt-24.10
   │     ├── 若为按需初始化镜像先执行 `[ ! -d ./scripts ] && ./setup.sh`
   │     ├── 挂载仓库为本地 feed: `src-link nimbus $GITHUB_WORKSPACE`，执行 `feeds update luci nimbus && feeds install -a -p luci -p nimbus`（`luci-app-nimbus` 通过 `include $(TOPDIR)/feeds/luci/luci.mk` 构建）
   │     ├── 编译 nimbus + luci-app-nimbus + luci-i18n-nimbus-zh-cn -> *_all.ipk
-  │     └── 使用仓库 Secrets 中的 usign 私钥生成签名索引 Packages / Packages.gz / Packages.sig
-  └── Job B [apk]:  ghcr.io/openwrt/sdk:x86-64-25.12
+  │     └── 使用仓库 Secrets 中的 `USIGN_PRIVATE_KEY` 生成签名索引 Packages / Packages.gz / Packages.sig
+  └── Job B [apk]:  openwrt/sdk:x86-64-openwrt-25.12
         ├── 同方式初始化并挂载本地 feed 编译产出 *.apk
-        └── 使用仓库 Secrets 中的 EC P-256 私钥通过 `apk mkndx` 生成内嵌签名索引 packages.adb
+        └── 使用仓库 Secrets 中的 `APK_PRIVATE_KEY`（EC P-256）通过 `apk mkndx` 生成内嵌签名索引 packages.adb
        │
        ▼
-Stage 3: Release & GitHub Pages Deploy (打 Tag 时触发)
+Stage 3: Release & GitHub Pages Deploy (仅非 dry_run 的正式 Tag 触发)
   ├── 发布 GitHub Release（附带全部 .ipk / .apk 与 SHA256SUMS）
   └── 合并 opkg/ 与 apk/ 产物目录并部署至 GitHub Pages（`index.html` 中 `apk` 安装指引须提示将 `/etc/apk/keys/nimbus-apk.pem` 单文件路径追加至 `/etc/sysupgrade.conf`，切勿保留整个 `/etc/apk/keys/` 目录）
 ```

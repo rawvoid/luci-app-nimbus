@@ -13,14 +13,16 @@
 
 ---
 
-## M1：工程骨架、OpenWrt Feed 打包与基础 CI 流水线
+## M1：工程骨架、OpenWrt Feed 打包与 CI/双轨 SDK 流水线
 
-**目标**：建立合规的单仓库多包 OpenWrt Feed 结构，打通自动化静态检查与基础 SDK 编译冒烟校验（双格式签名与 GitHub Pages 发布流水线于 M6 交付）。
+**目标**：建立合规的单仓库多包 OpenWrt Feed 结构，打通自动化静态检查与 `.ipk` + `.apk` 双轨 SDK 编译签名流水线（通过 `dry_run` 验证构建与索引，正式发布留待 M6 完成全部功能后触发）。
 
 ### 交付物
 - 顶层及双包目录与构建文件：
   - `nimbus/Makefile`（`PKGARCH:=all`，声明完整运行时含 `+ucode-mod-uloop`、`+ip-full`、`+nftables-json` 与内核模块 `+kmod-nft-core`、`+kmod-nft-fib`、`+kmod-nft-nat`、`+kmod-nft-tproxy` 依赖，提供 `Package/nimbus/prerm` 卸载还原钩子）
   - `luci-app-nimbus/Makefile`（`PKGARCH:=all`，通过 `include $(TOPDIR)/feeds/luci/luci.mk` 构建，依赖 `+nimbus +luci-base`，自动生成 `luci-i18n-nimbus-zh-cn`）
+- 软件源公钥（严禁提交私钥进仓库）：
+  - `keys/nimbus-usign.pub` 与 `keys/nimbus-apk.pem`
 - 基础系统文件：
   - `nimbus/files/etc/config/nimbus`（与 `docs/uci-schema.md` 第 3 节完全一致）
   - `nimbus/files/etc/uci-defaults/99-nimbus`（初始化 `/etc/nimbus/{profiles,lists/local,lists/cache,bin}` 目录与默认 `custom_direct.txt`）
@@ -29,13 +31,14 @@
 - 测试基础设施：
   - `tests/run_tests.sh`（统一测试入口）
 - GitHub Actions 工作流：
-  - `.github/workflows/ci.yml`（Push/PR 触发：拆分 `openwrt/rootfs:x86-64-24.10` 容器运行 `ucode -c -o /dev/null` / `ucode -c module -o /dev/null` 与单元测试，Ubuntu 宿主机运行 `shellcheck -s sh`、JSON 校验、`sing-box check -D /tmp/nimbus-check-dir`、`sudo nft -c -f` 与 ESLint/Node 检查，以及基础 SDK 编译冒烟校验）
+  - `.github/workflows/ci.yml`（Push/PR 触发：拆分 `openwrt/rootfs:x86-64-openwrt-24.10` 容器运行 `ucode -S -c -o /dev/null` / 模块 `import` 语法校验与单元测试，以及 Ubuntu 宿主机运行 `shellcheck -s sh`、JSON 校验、`sing-box check -D /tmp/nimbus-check-dir`、`sudo nft -c -f` 与 ESLint/Node 检查）
+  - `.github/workflows/release.yml`（`v*` Tag 或 `workflow_dispatch` 触发，支持 `dry_run` 输入：`openwrt/sdk:x86-64-openwrt-24.10` 编译 `.ipk` + `USIGN_PRIVATE_KEY` 签名索引，`openwrt/sdk:x86-64-openwrt-25.12` 编译 `.apk` + `APK_PRIVATE_KEY` EC P-256 签名 `packages.adb`，兼容 `[ ! -d ./scripts ] && ./setup.sh` 初始化与 `feeds update/install luci nimbus`；`dry_run=true` 时仅产出并上传 `nimbus-repo` Artifact，跳过正式 Release 与 Pages 部署）
 
 ### 验收标准
-- [ ] `ucode -c module -o /dev/null nimbus/files/usr/share/nimbus/common.uc` 通过，且工作目录不残留 `./uc.out`
+- [ ] `ucode -S -L nimbus/files/usr/share/nimbus -e "import * as _m from 'common';"` 通过，且工作目录不残留 `./uc.out`
 - [ ] `shellcheck -s sh` 校验所有 Shell 脚本无错误
-- [ ] 基础 SDK 编译能成功将本仓库挂载为 `src-link nimbus` feed 并产出 `nimbus`、`luci-app-nimbus`、`luci-i18n-nimbus-zh-cn`
-- [ ] 解包检查产物内容路径、文件权限（可执行位）、`prerm` 钩子与 `Depends` 字段完全符合预期
+- [ ] `release.yml`（`dry_run=true`）双轨 SDK 均能成功将本仓库挂载为 `src-link nimbus` feed 并产出 `nimbus`、`luci-app-nimbus`、`luci-i18n-nimbus-zh-cn` 的 `.ipk` 与 `.apk` 及签名索引
+- [ ] 解包检查产物内容路径、文件权限（可执行位）、`prerm` 钩子、`Depends` 字段及签名索引完全符合预期
 
 ---
 
@@ -142,7 +145,7 @@
   - `core.js`：本机架构/磁盘空间/已安装版本卡片、GitHub 仓库/通道/镜像设置、检查更新、GitHub 一键下载安装与本地上传安装、轮询进度条
   - `logs.js`：内存日志查看器（支持行数选择、自动刷新、清空日志）
 - 国际化文件：`luci-app-nimbus/po/templates/nimbus.pot` 与 `luci-app-nimbus/po/zh_Hans/nimbus.po`
-- 发布流水线：`.github/workflows/release.yml`（Tag 或手动触发：`ghcr.io/openwrt/sdk:x86-64-24.10` 编译 `.ipk` + `usign` 索引，`ghcr.io/openwrt/sdk:x86-64-25.12` 编译 `.apk` + EC P-256 签名 `packages.adb`，兼容 `[ ! -d ./scripts ] && ./setup.sh` 初始化与 `feeds update/install luci nimbus`，发布 GitHub Release 并部署 GitHub Pages 双格式源及带 `apk` 单文件密钥持久化至 `/etc/sysupgrade.conf` 指引的 `index.html`）
+- 发布流水线校验：`.github/workflows/release.yml`（`dry_run=true` 验证完整终产 `.ipk` + `.apk` 双轨产物、签名索引与带 `apk` 单文件密钥持久化至 `/etc/sysupgrade.conf` 指引的 `index.html`）
 
 ### 验收标准
 - [ ] 全部 JS 文件通过 ESLint 语法与规范检查；所有用户可见字符串均使用 `_('...')` 包裹，中英文翻译无遗漏

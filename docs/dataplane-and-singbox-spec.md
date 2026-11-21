@@ -53,7 +53,7 @@
 3. **Hook 优先级与 Netfilter 执行序**：
    - `mangle`（`-150`）早于 `dstnat`（`-100`）执行。当启用 `dns.hijack_lan_dns='1'` 时，`prerouting_udp` 必须显式跳过发往外部的 `UDP 53`，让数据包继续流向 `prerouting_dns`（`dstnat + 1`）重定向至本机 `53`。
    - `prerouting_dns` 位于 `dstnat + 1`（`-99`），`prerouting_tcp` 位于 `dstnat + 2`（`-98`），且均在链首执行 `ct status dnat return`，确保 `fw4` 中用户自定义的端口转发（`-100`）始终优先。
-4. **`inet` 表中的 `tproxy` 语法**：在 `table inet` 内必须显式区分协议族写成 `meta nfproto ipv4 ... tproxy ip to :$TPROXY_PORT accept` 与 `meta nfproto ipv6 ... tproxy ip6 to :$TPROXY_PORT accept`。
+4. **`inet` 表中的 `redirect` / `tproxy` 单条规则语法**：`nftables` 要求每条含 `redirect to :<port>` 或 `tproxy ... to :<port>` 的规则**自身必须显式携带传输层协议匹配**（链首的 `meta l4proto != tcp/udp return` 不能替代）；在 `table inet` 内必须写为 `meta l4proto tcp ... redirect to :$REDIRECT_PORT`，以及区分协议族写成 `meta nfproto ipv4 meta l4proto udp ... tproxy ip to :$TPROXY_PORT accept` 与 `meta nfproto ipv6 meta l4proto udp ... tproxy ip6 to :$TPROXY_PORT accept`。
 5. **本机目的地保护**：所有 `prerouting` 代理链均需包含 `fib daddr type local return`，确保访问路由器任意本地地址（含动态 IPv6 GUA/ULA/Link-Local）的流量绝不被劫持。
 6. **单栈裁剪**：当 `ipv4_enable='0'` 时不生成 IPv4 匹配与导流规则；当 `ipv6_enable='0'` 时不生成 IPv6 匹配与导流规则。
 
@@ -125,8 +125,8 @@ table inet nimbus {
         # exclude: tcp dport @filter_tcp_ports return
 
         # Fake-IP 优先通道（跳过 reserved / lan / wan / bypass）
-        ip daddr @fakeip_v4 counter redirect to :$REDIRECT_PORT
-        ip6 daddr @fakeip_v6 counter redirect to :$REDIRECT_PORT
+        ip daddr @fakeip_v4 meta l4proto tcp counter redirect to :$REDIRECT_PORT
+        ip6 daddr @fakeip_v6 meta l4proto tcp counter redirect to :$REDIRECT_PORT
 
         # 白名单与保留段放行（命中后留在 forward 链吃满 Flow Offloading）
         ip daddr @reserved_v4 return
@@ -138,8 +138,8 @@ table inet nimbus {
         ip daddr @bypass_v4 return
         ip6 daddr @bypass_v6 return
 
-        meta nfproto ipv4 counter redirect to :$REDIRECT_PORT
-        meta nfproto ipv6 counter redirect to :$REDIRECT_PORT
+        meta nfproto ipv4 meta l4proto tcp counter redirect to :$REDIRECT_PORT
+        meta nfproto ipv6 meta l4proto tcp counter redirect to :$REDIRECT_PORT
     }
 
     # LAN（及可选本机回流）UDP 透明代理（TPROXY）
@@ -160,15 +160,15 @@ table inet nimbus {
 
         # Conntrack 首包决策快速路径（避免逐包查大体积白名单 Set）
         ct mark & 0x30 == 0x10 return
-        ct mark & 0x30 == 0x20 meta nfproto ipv4 meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
-        ct mark & 0x30 == 0x20 meta nfproto ipv6 meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
+        ct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
+        ct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
 
         # [设备分流过滤：命中直连时写 ct mark set ct mark | 0x10 return，见注1/注2]
         # [端口过滤：命中直连时写 ct mark set ct mark | 0x10 return，见注3]
 
         # Fake-IP 优先通道
-        ip daddr @fakeip_v4 ct mark set ct mark | 0x20 meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
-        ip6 daddr @fakeip_v6 ct mark set ct mark | 0x20 meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
+        ip daddr @fakeip_v4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
+        ip6 daddr @fakeip_v6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
 
         # 白名单与保留段放行并缓存直连标记
         ip daddr @reserved_v4 ct mark set ct mark | 0x10 return
@@ -181,8 +181,8 @@ table inet nimbus {
         ip6 daddr @bypass_v6 ct mark set ct mark | 0x10 return
 
         # 首包命中代理并缓存代理标记
-        meta nfproto ipv4 ct mark set ct mark | 0x20 meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
-        meta nfproto ipv6 ct mark set ct mark | 0x20 meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
+        meta nfproto ipv4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
+        meta nfproto ipv6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
     }
 
     # 可选链：仅当 global.proxy_local == '1' 时生成（不应用 port_filter_mode，见注3）
@@ -192,8 +192,8 @@ table inet nimbus {
         meta l4proto != tcp return
         meta mark $OUTBOUND_MARK return
         fib daddr type local return
-        ip daddr @fakeip_v4 counter redirect to :$REDIRECT_PORT
-        ip6 daddr @fakeip_v6 counter redirect to :$REDIRECT_PORT
+        ip daddr @fakeip_v4 meta l4proto tcp counter redirect to :$REDIRECT_PORT
+        ip6 daddr @fakeip_v6 meta l4proto tcp counter redirect to :$REDIRECT_PORT
         ip daddr @reserved_v4 return
         ip6 daddr @reserved_v6 return
         ip daddr @lan_v4 return
@@ -202,8 +202,8 @@ table inet nimbus {
         ip6 daddr @wan_v6 return
         ip daddr @bypass_v4 return
         ip6 daddr @bypass_v6 return
-        meta nfproto ipv4 counter redirect to :$REDIRECT_PORT
-        meta nfproto ipv6 counter redirect to :$REDIRECT_PORT
+        meta nfproto ipv4 meta l4proto tcp counter redirect to :$REDIRECT_PORT
+        meta nfproto ipv6 meta l4proto tcp counter redirect to :$REDIRECT_PORT
     }
 
     chain output_udp {

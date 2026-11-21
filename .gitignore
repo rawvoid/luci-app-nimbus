@@ -3,5 +3,8 @@ uc.out
 *.ipk
 *.apk
 *.tmp
+*.key
+*.sec
+*.pem.priv
 node_modules/
 .vscode/

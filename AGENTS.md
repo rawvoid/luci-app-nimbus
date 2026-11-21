@@ -132,7 +132,7 @@ luci-app-nimbus/                         # Git 仓库根目录（OpenWrt Feed �
 ## 6. 编码规范
 
 - **`ucode`**：
-  - 所有模块采用 `'use strict';`，显式 `import`/`export`，避免全局污染。
+  - 所有模块采用严格模式（`'use strict';` 并通过 `ucode -S` 校验），显式 `import`/`export`，避免全局污染；注意 OpenWrt `ucode` 模块导出语法为 `export { ... };` 或 `export default { ... };`（严禁写 `export function foo()`）。
   - 数值进制解析一律使用内置 `int(str, base)` 并校验 `!isnan(...)`，严禁误写 JavaScript 的 `parseInt()`。
   - 所有外部命令执行必须通过参数数组形式（如 `system(['nft', '-f', path])`），**严禁拼接 Shell 字符串防范命令注入**。
   - 在 `rpcd-mod-ucode`（`luci.nimbus.uc`）内禁止执行同步阻塞 `system()` 或阻塞抢锁：所有写接口须用非阻塞 `f.lock('xn')`（占锁立即返回 `E_LOCKED`），耗时操作一律通过 `uloop.process` + 延迟 `req.reply()` 异步派发或交由独立后台任务执行。
@@ -154,7 +154,7 @@ luci-app-nimbus/                         # Git 仓库根目录（OpenWrt Feed �
 
 每次完成代码修改后，必须按实际环境执行对应校验，全部通过方可结束任务：
 
-1. **ucode 语法校验**：对所有变更的 `.uc` 文件执行 `ucode -c -o /dev/null <file>`（纯模块文件使用 `ucode -c module -o /dev/null <file>`，严禁遗留 `./uc.out`）。
+1. **ucode 语法校验**：独立可执行脚本与 `rpcd` 插件（`supervisor.uc`、`luci.nimbus.uc`、`tests/unit/*.uc`）执行 `ucode -S -c -o /dev/null <file>`；带 `export` 的 ES 模块（`/usr/share/nimbus/*.uc`）通过 `ucode -S -L <dir> -e "import * as _m from '<module>';"` 编译校验，严禁遗留 `./uc.out`。
 2. **Shell 静态检查**：对所有变更的 Shell 脚本执行 `shellcheck -s sh <file>`（OpenWrt init 脚本可按需忽略标准 `rc.common` 预定义变量提示）。
 3. **JSON 语法检查**：校验所有 `menu.d`、`acl.d` 及测试 Fixture 的 JSON 合法性。
 4. **核心逻辑单测**：运行 `tests/run_tests.sh` 覆盖 `tests/unit/` 下的全部单元测试，确保：

@@ -4,7 +4,6 @@
 'require uci';
 'require dom';
 'require poll';
-'require ui';
 'require nimbus.api as nimbusApi';
 
 var ACTIVE_STATES = [

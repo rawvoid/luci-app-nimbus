@@ -294,8 +294,12 @@ function run_detached(cmd, argv, env, on_exit) {
 	active_jobs[jid] = job;
 	job.proc = uloop.process(cmd, argv, env, (rc) => {
 		delete active_jobs[jid];
-		if (type(on_exit) == 'function')
-			on_exit(rc);
+		if (type(on_exit) == 'function') {
+			try {
+				on_exit(rc);
+			} catch (e) {
+			}
+		}
 	});
 	if (!job.proc) {
 		delete active_jobs[jid];
@@ -311,7 +315,13 @@ function run_async(req, cfg, cmd, argv, on_done) {
 
 	job.proc = uloop.process(cmd, argv, build_child_env(cfg), (rc) => {
 		delete active_jobs[jid];
-		let reply_obj = on_done(rc);
+		let reply_obj = null;
+		try {
+			reply_obj = on_done(rc);
+		} catch (e) {
+			in_flight_write = false;
+			reply_obj = fail(common.ERR_INTERNAL, '' + e);
+		}
 		req.reply(reply_obj);
 	});
 
@@ -693,6 +703,16 @@ function reload_whitelist_async_or_sync(req, cfg, release_once, build_reply) {
 	return { __async_result: ar };
 }
 
+function first_result_error(results, fallback_code, fallback_msg) {
+	if (type(results) == 'array') {
+		for (let r in results) {
+			if (type(r) == 'object' && r.status == 'failed' && type(r.error) == 'string')
+				return { code: fallback_code, error: r.error };
+		}
+	}
+	return { code: fallback_code, error: fallback_msg };
+}
+
 function dispatch_updater_rpc(req, cfg, kind) {
 	let is_prof = (kind == 'profile');
 	let sec_type = is_prof ? 'profile' : 'list_source';
@@ -760,16 +780,6 @@ function find_list_by_filename(uci_cfg, filename, skip_id) {
 			return { id: id, section: sec };
 	}
 	return null;
-}
-
-function first_result_error(results, fallback_code, fallback_msg) {
-	if (type(results) == 'array') {
-		for (let r in results) {
-			if (type(r) == 'object' && r.status == 'failed' && type(r.error) == 'string')
-				return { code: fallback_code, error: r.error };
-		}
-	}
-	return { code: fallback_code, error: fallback_msg };
 }
 
 function is_core_task_active(cfg) {

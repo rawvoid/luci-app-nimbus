@@ -938,7 +938,7 @@ function build_config(opts) {
 
 	let payload = sprintf('%.2J\n', tr.config);
 	let written = fh.write(payload);
-	if (written == null || written != length(payload) || !fh.flush()) {
+	if (written == null || written != length(payload) || fh.flush() === false) {
 		fh.close();
 		fs.unlink(tmp_path);
 		return fail(common.ERR_INTERNAL, 'failed to write temp config file');

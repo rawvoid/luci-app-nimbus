@@ -152,7 +152,7 @@ function atomic_write(path, content, mode) {
 		return false;
 	}
 
-	if (!fh.flush()) {
+	if (fh.flush() === false) {
 		fh.close();
 		fs.unlink(tmp_path);
 		return false;
@@ -365,7 +365,7 @@ function sha256_str(str) {
 		return null;
 
 	let w = tmp_in.fh.write(str);
-	if (w == null || w != length(str) || !tmp_in.fh.flush() || !tmp_in.fh.close()) {
+	if (w == null || w != length(str) || tmp_in.fh.flush() === false || tmp_in.fh.close() === false) {
 		tmp_in.fh.close();
 		fs.unlink(tmp_in.path);
 		return null;

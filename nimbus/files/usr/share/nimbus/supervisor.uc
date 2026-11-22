@@ -8,6 +8,8 @@ import * as cb from 'config_builder';
 import * as nft from 'nft_manager';
 import * as route from 'route_manager';
 import * as dns from 'dns_manager';
+import * as lu from 'list_updater';
+import * as pu from 'profile_updater';
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_WINDOW_SEC = 60;
@@ -39,10 +41,14 @@ function get_runtime_paths() {
 		log_file: getenv('NIMBUS_LOG_FILE') || common.LOG_FILE,
 		check_dir: getenv('NIMBUS_CHECK_DIR') || common.CHECK_DIR,
 		dns_backup_file: getenv('NIMBUS_DNS_BACKUP_FILE') || common.DNS_BACKUP_FILE,
+		local_lists_dir: getenv('NIMBUS_LOCAL_LISTS_DIR') || null,
+		cache_lists_dir: getenv('NIMBUS_CACHE_LISTS_DIR') || null,
+		crontab_file: getenv('NIMBUS_CRONTAB_FILE') || null,
 		nft_dry_run: (getenv('NIMBUS_NFT_DRY_RUN') == '1'),
 		nft_check_only: (getenv('NIMBUS_NFT_CHECK_ONLY') == '1'),
 		skip_routes: (getenv('NIMBUS_SKIP_ROUTES') == '1'),
-		skip_dns_reload: (getenv('NIMBUS_SKIP_DNS_RELOAD') == '1' || getenv('NIMBUS_SKIP_ROUTES') == '1')
+		skip_dns_reload: (getenv('NIMBUS_SKIP_DNS_RELOAD') == '1' || getenv('NIMBUS_SKIP_ROUTES') == '1'),
+		skip_cron_sync: (getenv('NIMBUS_SKIP_CRON_SYNC') == '1' || (getenv('NIMBUS_SKIP_CRON_SYNC') != '0' && !getenv('NIMBUS_CRONTAB_FILE') && getenv('NIMBUS_SKIP_ROUTES') == '1'))
 	};
 }
 
@@ -95,18 +101,19 @@ function maybe_restore_dns(paths) {
 	});
 }
 
-function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, last_error) {
+function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, last_error, wl, old_state) {
 	let g = uci_cfg?.global || {};
 	let d = uci_cfg?.dns || {};
 	let c = uci_cfg?.core || {};
 	let w = uci_cfg?.whitelist || {};
 	let bctx = ctx || {};
+	let prev = (type(old_state) == 'object') ? old_state : {};
 
 	let out_mark = (type(bctx.effective_outbound_mark) == 'int')
 		? common.format_hex_u32(bctx.effective_outbound_mark)
 		: (uci_cfg?.proxy?.outbound_mark || '0xff');
 
-	return {
+	let payload = {
 		state: state_name,
 		enabled: (g.enabled == '1'),
 		topology: (g.topology == 'side') ? 'side' : 'main',
@@ -129,7 +136,9 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 			fakeip: bctx.fakeip || { ipv4: [], ipv6: [] }
 		},
 		whitelist: {
-			enabled: (w.enabled != '0')
+			enabled: (w.enabled != '0'),
+			v4_count: wl?.v4_count ?? prev?.whitelist?.v4_count ?? 0,
+			v6_count: wl?.v6_count ?? prev?.whitelist?.v6_count ?? 0
 		},
 		apis: bctx.apis || {
 			singbox_api: { detected: false },
@@ -139,6 +148,13 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 		last_error: last_error || null,
 		updated_at: time()
 	};
+
+	if (type(prev.list_meta) == 'object')
+		payload.list_meta = prev.list_meta;
+	if (type(prev.sub_meta) == 'object')
+		payload.sub_meta = prev.sub_meta;
+
+	return payload;
 }
 
 function execute_fail_handler(reason, paths, existing_lock) {
@@ -146,6 +162,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 	fs.unlink(paths.pid_file);
 
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
+	let w = uci_cfg?.whitelist || {};
 	let old_state = common.read_state(paths.state_file) || {};
 	let fail_open = (uci_cfg?.global?.fail_open == '1');
 	let warnings = (type(old_state.warnings) == 'array') ? [ ...old_state.warnings ] : [];
@@ -153,10 +170,19 @@ function execute_fail_handler(reason, paths, existing_lock) {
 	common.log_msg('error', sprintf('fail handler triggered (fail_open=%s): %s', fail_open ? '1' : '0', reason), paths.log_file);
 
 	if (!fail_open) {
+		let wl = lu.collect_active_lists(uci_cfg, {
+			uci_confdir: paths.uci_confdir,
+			uci_savedir: paths.uci_savedir,
+			local_dir: paths.local_lists_dir,
+			cache_dir: paths.cache_lists_dir
+		});
+
 		nft.apply_lockdown({
 			uci: uci_cfg,
 			uci_confdir: paths.uci_confdir,
 			uci_savedir: paths.uci_savedir,
+			bypass_v4: wl.v4,
+			bypass_v6: wl.v6,
 			output_path: paths.rules_file,
 			dry_run: paths.nft_dry_run,
 			check_only: paths.nft_check_only
@@ -180,6 +206,11 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			...old_state,
 			state: 'lockdown',
 			fail_open: false,
+			whitelist: {
+				enabled: (w.enabled != '0'),
+				v4_count: wl?.v4_count ?? old_state?.whitelist?.v4_count ?? 0,
+				v6_count: wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0
+			},
 			warnings: warnings,
 			last_error: reason,
 			updated_at: time()
@@ -204,6 +235,11 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			...old_state,
 			state: 'error',
 			fail_open: true,
+			whitelist: {
+				enabled: (w.enabled != '0'),
+				v4_count: old_state?.whitelist?.v4_count ?? 0,
+				v6_count: old_state?.whitelist?.v6_count ?? 0
+			},
 			warnings: warnings,
 			last_error: reason,
 			updated_at: time()
@@ -227,7 +263,7 @@ function cmd_prepare_start(paths, is_reload) {
 	let old_hash = old_state.config_hash || common.sha256_file(paths.config_file);
 
 	if (!is_reload) {
-		common.write_state(build_state_payload('preparing', uci_cfg, null, old_hash, [], null), paths.state_file);
+		common.write_state(build_state_payload('preparing', uci_cfg, null, old_hash, [], null, null, old_state), paths.state_file);
 	}
 
 	let bin_path = paths.bin_path || uci_cfg?.core?.bin_path || '/etc/nimbus/bin/sing-box';
@@ -254,11 +290,20 @@ function cmd_prepare_start(paths, is_reload) {
 			push(warnings, fw_w);
 	}
 
+	let wl = lu.collect_active_lists(uci_cfg, {
+		uci_confdir: paths.uci_confdir,
+		uci_savedir: paths.uci_savedir,
+		local_dir: paths.local_lists_dir,
+		cache_dir: paths.cache_lists_dir
+	});
+
 	let nft_res = nft.apply_rules({
 		uci: uci_cfg,
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
 		context: bres.context,
+		bypass_v4: wl.v4,
+		bypass_v6: wl.v6,
 		mode: 'tproxy_redirect',
 		output_path: paths.rules_file,
 		dry_run: paths.nft_dry_run,
@@ -286,7 +331,22 @@ function cmd_prepare_start(paths, is_reload) {
 
 	maybe_apply_dns(uci_cfg, bres.context?.effective_dns_port, paths);
 
-	let running_state = build_state_payload('running', uci_cfg, bres.context, new_hash, warnings, null);
+	if (!paths.skip_cron_sync) {
+		lu.sync_cron(uci_cfg, {
+			uci_confdir: paths.uci_confdir,
+			uci_savedir: paths.uci_savedir,
+			crontab_file: paths.crontab_file,
+			crontab_path: paths.crontab_file
+		});
+		pu.sync_cron(uci_cfg, {
+			uci_confdir: paths.uci_confdir,
+			uci_savedir: paths.uci_savedir,
+			crontab_file: paths.crontab_file,
+			crontab_path: paths.crontab_file
+		});
+	}
+
+	let running_state = build_state_payload('running', uci_cfg, bres.context, new_hash, warnings, null, wl, old_state);
 	common.write_state(running_state, paths.state_file);
 
 	let skip_restart = (is_reload &&
@@ -302,6 +362,7 @@ function cmd_prepare_start(paths, is_reload) {
 function cmd_stop(paths) {
 	let lock_fh = common.acquire_lock(LOCK_TIMEOUT_MS, paths.lock_file);
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
+	let w = uci_cfg?.whitelist || {};
 	let old_state = common.read_state(paths.state_file) || {};
 
 	fs.unlink(paths.pid_file);
@@ -321,6 +382,11 @@ function cmd_stop(paths) {
 		...old_state,
 		state: 'stopped',
 		enabled: (uci_cfg?.global?.enabled == '1'),
+		whitelist: {
+			enabled: (w.enabled != '0'),
+			v4_count: old_state?.whitelist?.v4_count ?? 0,
+			v6_count: old_state?.whitelist?.v6_count ?? 0
+		},
 		last_error: null,
 		updated_at: time()
 	}, paths.state_file);

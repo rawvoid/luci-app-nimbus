@@ -47,7 +47,30 @@ function write_uci_nimbus(fail_open, dns_mode) {
 		"\toption route_table '100'\n\n" +
 		"config dns 'dns'\n" +
 		"\toption mode '%s'\n" +
-		"\toption singbox_dns_port '5353'\n",
+		"\toption singbox_dns_port '5353'\n\n" +
+		"config whitelist 'whitelist'\n" +
+		"\toption enabled '1'\n" +
+		"\toption auto_update '1'\n" +
+		"\toption update_cron '30 4 * * *'\n\n" +
+		"config list_source 'cn_ipv4'\n" +
+		"\toption name 'China IPv4'\n" +
+		"\toption type 'url'\n" +
+		"\toption enabled '1'\n" +
+		"\toption family 'ipv4'\n" +
+		"\toption url 'https://example.com/cn_v4.txt'\n\n" +
+		"config list_source 'custom_direct'\n" +
+		"\toption name 'Custom Direct'\n" +
+		"\toption type 'local'\n" +
+		"\toption enabled '1'\n" +
+		"\toption family 'auto'\n" +
+		"\toption filename 'custom_direct.txt'\n\n" +
+		"config profile 'main_sub'\n" +
+		"\toption name 'Main Sub'\n" +
+		"\toption type 'subscription'\n" +
+		"\toption filename 'main_sub.json'\n" +
+		"\toption url 'https://example.com/sub.json'\n" +
+		"\toption auto_update '1'\n" +
+		"\toption update_interval_hours '24'\n",
 		fail_open,
 		dns_mode
 	);
@@ -60,6 +83,13 @@ let lock_file = run_dir + '/nimbus.lock';
 let rules_file = run_dir + '/rules.nft';
 let cfg_file = run_dir + '/config.json';
 let log_file = run_dir + '/nimbus.log';
+let local_lists_dir = work_dir + '/lists/local';
+let cache_lists_dir = work_dir + '/lists/cache';
+let crontab_file = work_dir + '/crontab_root';
+check(common.ensure_dir(local_lists_dir, 0755), 'create local_lists_dir');
+check(common.ensure_dir(cache_lists_dir, 0755), 'create cache_lists_dir');
+check(common.atomic_write(local_lists_dir + '/custom_direct.txt', '1.1.8.0/24\n2400:3200::/32\n', 0644), 'seed custom_direct.txt');
+check(common.atomic_write(cache_lists_dir + '/cn_ipv4.txt', '1.0.1.0/24\n1.0.2.0/23\n', 0644), 'seed cn_ipv4.txt');
 
 check(common.atomic_write(cfg_file, '{"outbounds":[{"type":"direct","tag":"direct"}]}\n', 0600), 'write dummy config.json');
 
@@ -98,6 +128,9 @@ let sup_env = {
 	NIMBUS_LOCK_FILE: lock_file,
 	NIMBUS_RULES_FILE: rules_file,
 	NIMBUS_LOG_FILE: log_file,
+	NIMBUS_LOCAL_LISTS_DIR: local_lists_dir,
+	NIMBUS_CACHE_LISTS_DIR: cache_lists_dir,
+	NIMBUS_CRONTAB_FILE: crontab_file,
 	NIMBUS_LOG_TIMER_MS: '40',
 	NIMBUS_KILL_GRACE_MS: '1000',
 	NIMBUS_SKIP_ROUTES: '1'
@@ -199,8 +232,12 @@ check(type(st_lockdown.warnings) == 'array' && length(st_lockdown.warnings) >= 1
 	'fail_open=0 in dns.mode=singbox records DNS lockdown recovery warning');
 let lockdown_nft = fs.readfile(rules_file) || '';
 check(index(lockdown_nft, 'chain forward_lockdown {') >= 0 &&
-	index(lockdown_nft, 'counter name "lockdown_dropped"') >= 0,
-	'fail_open=0 generated and validated lockdown rules.nft');
+	index(lockdown_nft, 'counter name "lockdown_dropped"') >= 0 &&
+	index(lockdown_nft, '1.0.1.0/24') >= 0 &&
+	index(lockdown_nft, '2400:3200::/32') >= 0,
+	'fail_open=0 generated and validated lockdown rules.nft with active whitelist bypass sets');
+check(st_lockdown.whitelist?.v4_count == 3 && st_lockdown.whitelist?.v6_count == 1,
+	'fail_open=0 records active whitelist counts in lockdown state.json');
 
 // 3. Test crash retry exhaustion with fail_open='1' -> state: "error" & delete table
 check(write_uci_nimbus('1', 'none'), 'write uci fail_open=1');
@@ -253,11 +290,36 @@ function run_sup_cmd(arg, extra_env) {
 	return code_out;
 }
 
+// Seed list_meta and sub_meta before --prepare-start to verify preservation across start/reload/stop
+check(common.write_state({
+	state: 'stopped',
+	list_meta: { cn_ipv4: { status: 'updated', v4_count: 2 } },
+	sub_meta: { main_sub: { status: 'updated', size_bytes: 512 } },
+	warnings: [],
+	last_error: null
+}, state_file), 'seed state.json with list_meta and sub_meta');
+
 check(run_sup_cmd('--prepare-start') == 0, '--prepare-start succeeds with real sing-box check and nft -c -f');
 let st_running = common.read_state(state_file);
 check(st_running.state == 'running' && type(st_running.config_hash) == 'string' &&
 	length(st_running.config_hash) == 64,
 	'--prepare-start writes state=running and 64-char SHA256 config_hash');
+check(st_running.whitelist?.enabled === true &&
+	st_running.whitelist?.v4_count == 3 &&
+	st_running.whitelist?.v6_count == 1,
+	'--prepare-start populates active whitelist counts in state.json');
+check(st_running.list_meta?.cn_ipv4?.v4_count == 2 &&
+	st_running.sub_meta?.main_sub?.size_bytes == 512,
+	'--prepare-start preserves existing list_meta and sub_meta in state.json');
+let running_nft = fs.readfile(rules_file) || '';
+check(index(running_nft, '1.0.1.0/24') >= 0 &&
+	index(running_nft, '1.1.8.0/24') >= 0 &&
+	index(running_nft, '2400:3200::/32') >= 0,
+	'--prepare-start passes active whitelist bypass_v4/bypass_v6 into nft.apply_rules');
+let cron_after_prep = fs.readfile(crontab_file) || '';
+check(index(cron_after_prep, '# nimbus-whitelist') >= 0 &&
+	index(cron_after_prep, '# nimbus-profile') >= 0,
+	'--prepare-start syncs whitelist and profile cron jobs');
 
 // Seed live PID (current test process PID is alive in /proc)
 let self_pid = fs.readlink('/proc/self') || '1';
@@ -276,8 +338,11 @@ check(run_sup_cmd('--hotplug') == 0, '--hotplug refreshes dynamic interface sets
 // Clean stop
 check(run_sup_cmd('--stop') == 0, '--stop tears down dataplane cleanly');
 let st_stopped = common.read_state(state_file);
-check(st_stopped.state == 'stopped' && st_stopped.last_error == null && fs.stat(pid_file) == null,
-	'--stop transitions state.json to stopped and cleans sing-box.pid');
+check(st_stopped.state == 'stopped' && st_stopped.last_error == null && fs.stat(pid_file) == null &&
+	st_stopped.list_meta?.cn_ipv4?.v4_count == 2 &&
+	st_stopped.sub_meta?.main_sub?.size_bytes == 512 &&
+	st_stopped.whitelist?.v4_count == 3,
+	'--stop transitions state.json to stopped, cleans sing-box.pid, and preserves list_meta/sub_meta/whitelist');
 
 // 5. Verify init.d/nimbus procd config.json tracking + NIMBUS_PREPARED guard and Makefile 0755 hotplug install
 let init_script = fs.readfile(repo_root + '/nimbus/files/etc/init.d/nimbus') || '';

@@ -182,6 +182,7 @@ let st_cache1 = fs.stat(cache_file);
 check(st_cache1 != null, 'cn_ipv4.txt written to cache_dir');
 
 // Re-run update_lists with identical payload -> SHA256 matches -> must NOT overwrite cache file or re-trigger nft reload
+let recorded_curl_argv2 = null;
 let upd2 = lu.update_lists('cn_ipv4', {
 	...list_opts,
 	nft_dry_run: false,
@@ -190,16 +191,40 @@ let upd2 = lu.update_lists('cn_ipv4', {
 		return { rc: 0, output: '' };
 	},
 	runner: (argv) => {
+		recorded_curl_argv2 = argv;
 		let out_idx = index(argv, '-o');
 		common.atomic_write(argv[out_idx + 1], remote_payload_v1, 0600);
 		return 0;
 	}
 });
 let st_cache2 = fs.stat(cache_file);
+check(type(recorded_curl_argv2) == 'array' &&
+	index(recorded_curl_argv2, '-z') >= 0 &&
+	index(recorded_curl_argv2, cache_file) >= 0,
+	'update_lists appends -z <cache_file> for conditional If-Modified-Since fetch when cache exists');
 check(upd2.ok === true && upd2.results[0].status == 'unchanged' &&
 	upd2.results[0].changed === false && upd2.hot_reloaded === false &&
 	nft_reload_count == 1 && st_cache2.inode == st_cache1.inode,
 	'identical SHA256 skips cache file write (inode preserved) and skips redundant nft reload');
+
+// Simulate HTTP 304 Not Modified where curl -z exits 0 without writing tmp_path
+let upd_304 = lu.update_lists('cn_ipv4', {
+	...list_opts,
+	nft_dry_run: false,
+	nft_runner: () => {
+		nft_reload_count++;
+		return { rc: 0, output: '' };
+	},
+	runner: () => 0
+});
+let st_cache3 = fs.stat(cache_file);
+check(upd_304.ok === true && upd_304.results[0].status == 'unchanged' &&
+	upd_304.results[0].changed === false &&
+	upd_304.results[0].v4_count == 3 &&
+	upd_304.results[0].sha256 == common.sha256_str(remote_payload_v1) &&
+	upd_304.hot_reloaded === false && nft_reload_count == 1 &&
+	st_cache3.inode == st_cache1.inode,
+	'HTTP 304 Not Modified (no tmp_path written by curl -z) preserves cache file and computes counts/sha256');
 
 // Verify runtime metadata is stored in state.json list_meta and NEVER in UCI
 let st_after = common.read_state(state_file);
@@ -241,16 +266,21 @@ let cron_custom_tag = lu.sync_cron(null, {
 	crontab_path: crontab_file,
 	cron_tag: 'nimbus-list-sync'
 });
-check(cron_custom_tag.ok === true && index(fs.readfile(crontab_file) || '', '# nimbus-list-sync') >= 0,
-	'sync_cron supports # nimbus-list-sync tag');
+let cron_custom_txt = fs.readfile(crontab_file) || '';
+check(cron_custom_tag.ok === true &&
+	index(cron_custom_txt, '# nimbus-list-sync') >= 0 &&
+	index(cron_custom_txt, '# nimbus-whitelist') < 0,
+	'sync_cron supports # nimbus-list-sync tag and cleans up alternate # nimbus-whitelist alias');
 
 let cron_off = lu.sync_cron(null, {
 	uci_confdir: conf_dir,
 	crontab_path: crontab_file,
 	auto_update: '0'
 });
+let cron_off_txt = fs.readfile(crontab_file) || '';
 check(cron_off.ok === true && cron_off.changed === true &&
-	index(fs.readfile(crontab_file) || '', '# nimbus-whitelist') < 0,
-	'sync_cron removes cron entry when auto_update=0');
+	index(cron_off_txt, '# nimbus-whitelist') < 0 &&
+	index(cron_off_txt, '# nimbus-list-sync') < 0,
+	'sync_cron removes both primary and alternate cron tags when auto_update=0');
 
 printf('test_list_updater.uc: %d assertions passed\n', passed);

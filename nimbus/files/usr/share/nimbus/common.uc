@@ -397,7 +397,11 @@ function cron_sync_tag(tag, line_or_null, crontab_path) {
 	if (!atomic_write(cpath, new_raw, 0600))
 		return { ok: false, changed: false, error: 'failed to write crontab' };
 
-	return { ok: true, changed: true };
+	let changed = true;
+	if (changed === true && cpath == CRONTABS_ROOT && fs.access('/etc/init.d/cron', 'x'))
+		system([ '/etc/init.d/cron', 'reload' ], 5000);
+
+	return { ok: true, changed: changed };
 }
 
 function truncate_log_hysteresis(log_path, high_bytes, keep_bytes) {

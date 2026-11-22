@@ -535,10 +535,10 @@ function detect_local_proxy_url(opts) {
 	return null;
 }
 
-function download_url_to_tmp(url, tmp_path, sec, opts) {
+function download_url_to_tmp(url, tmp_path, sec, opts, cache_path) {
 	let options = opts || {};
 	if (type(options.fetcher) == 'function')
-		return options.fetcher(url, tmp_path, sec);
+		return options.fetcher(url, tmp_path, sec, cache_path);
 
 	let argv = [
 		options.curl_bin || 'curl',
@@ -547,6 +547,11 @@ function download_url_to_tmp(url, tmp_path, sec, opts) {
 		'--max-time', '' + (options.max_time || CURL_MAX_TIME),
 		'-o', tmp_path
 	];
+
+	if (cache_path && fs.stat(cache_path) != null) {
+		push(argv, '-z');
+		push(argv, cache_path);
+	}
 
 	if ((sec?.via_proxy == '1' || sec?.via_proxy === true)) {
 		let proxy_url = detect_local_proxy_url(options);
@@ -732,10 +737,42 @@ function update_lists(section_id, opts) {
 			continue;
 		}
 
+		let target_path = resolve_source_path(id, sec, options);
 		let tmp_path = sprintf('%s/nimbus-list-%s.%d.tmp', tmp_dir, id, time());
 		fs.unlink(tmp_path);
 
-		let dl = download_url_to_tmp(url, tmp_path, sec, options);
+		let dl = download_url_to_tmp(url, tmp_path, sec, options, target_path);
+		if (dl.ok && fs.stat(tmp_path) == null && target_path && fs.stat(target_path) != null) {
+			let cached_raw = fs.readfile(target_path) || '';
+			let cached_parsed = parse_list_content(cached_raw, sec.family || 'auto', {
+				strict: false,
+				ignore_other_family: (options.ignore_other_family === true)
+			});
+			let cached_hash = common.sha256_file(target_path);
+			let st_cached = fs.stat(target_path);
+			st.list_meta[id] = {
+				sha256: cached_hash,
+				status: 'unchanged',
+				changed: false,
+				v4_count: cached_parsed.v4_count,
+				v6_count: cached_parsed.v6_count,
+				size_bytes: st_cached ? st_cached.size : length(cached_raw),
+				mtime: st_cached ? st_cached.mtime : time(),
+				updated_at: time(),
+				error: null
+			};
+			push(results, {
+				id: id,
+				status: 'unchanged',
+				changed: false,
+				sha256: cached_hash,
+				v4_count: cached_parsed.v4_count,
+				v6_count: cached_parsed.v6_count,
+				error: null
+			});
+			continue;
+		}
+
 		let raw = fs.readfile(tmp_path);
 
 		if (!dl.ok || type(raw) != 'string' || length(trim(raw)) == 0) {
@@ -792,7 +829,6 @@ function update_lists(section_id, opts) {
 			: common.sha256_file(tmp_path);
 		fs.unlink(tmp_path);
 
-		let target_path = resolve_source_path(id, sec, options);
 		let old_hash = common.sha256_file(target_path);
 		let changed = (old_hash == null || new_hash != old_hash);
 
@@ -918,11 +954,20 @@ function sync_cron(uci_cfg, opts) {
 	}
 
 	let tag = options.cron_tag || CRON_TAG;
-	let crontab_path = options.crontab_path || common.CRONTABS_ROOT;
+	let alt_tag = (tag == 'nimbus-list-sync') ? 'nimbus-whitelist' : 'nimbus-list-sync';
+	let crontab_path = options.crontab_path || options.crontab_file || common.CRONTABS_ROOT;
 	let cmd = options.cron_cmd || CRON_CMD;
 	let line = is_on ? sprintf('%s %s', cron_expr, cmd) : null;
 
-	return common.cron_sync_tag(tag, line, crontab_path);
+	let alt_res = (alt_tag != tag)
+		? common.cron_sync_tag(alt_tag, null, crontab_path)
+		: { ok: true, changed: false };
+	let main_res = common.cron_sync_tag(tag, line, crontab_path);
+	return {
+		ok: (alt_res.ok !== false && main_res.ok === true),
+		changed: (alt_res.changed === true || main_res.changed === true),
+		...(main_res.error ? { error: main_res.error } : {})
+	};
 }
 
 const update_list = update_lists;

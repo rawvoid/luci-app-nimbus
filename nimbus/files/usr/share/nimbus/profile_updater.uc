@@ -463,12 +463,21 @@ function sync_cron(uci_cfg, opts) {
 		: has_auto_update_subscriptions(uci_data);
 
 	let tag = options.cron_tag || CRON_TAG;
-	let crontab_path = options.crontab_path || common.CRONTABS_ROOT;
+	let alt_tag = (tag == 'nimbus-sub-sync') ? 'nimbus-profile' : 'nimbus-sub-sync';
+	let crontab_path = options.crontab_path || options.crontab_file || common.CRONTABS_ROOT;
 	let expr = options.cron_expr || CRON_EXPR;
 	let cmd = options.cron_cmd || CRON_CMD;
 	let line = want_cron ? sprintf('%s %s', expr, cmd) : null;
 
-	return common.cron_sync_tag(tag, line, crontab_path);
+	let alt_res = (alt_tag != tag)
+		? common.cron_sync_tag(alt_tag, null, crontab_path)
+		: { ok: true, changed: false };
+	let main_res = common.cron_sync_tag(tag, line, crontab_path);
+	return {
+		ok: (alt_res.ok !== false && main_res.ok === true),
+		changed: (alt_res.changed === true || main_res.changed === true),
+		...(main_res.error ? { error: main_res.error } : {})
+	};
 }
 
 const update_profile = update_profiles;

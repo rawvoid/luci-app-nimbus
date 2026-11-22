@@ -221,6 +221,9 @@ check(c4.ok === true && c4.changed === true, 'cron_sync_tag removes tagged line'
 let cron_txt3 = fs.readfile(crontab);
 check(index(cron_txt3, 'nimbus-whitelist') < 0 && index(cron_txt3, 'nimbus-profile') >= 0, 'cron_sync_tag removal keeps other lines');
 check((fs.stat(crontab).mode & 0777) == 0600, 'cron_sync_tag keeps 0600 mode');
+let common_src = fs.readfile((getenv('NIMBUS_REPO_ROOT') || '/work') + '/nimbus/files/usr/share/nimbus/common.uc') || '';
+check(index(common_src, "system([ '/etc/init.d/cron', 'reload' ], 5000)") >= 0,
+	'cron_sync_tag reloads /etc/init.d/cron when CRONTABS_ROOT changes');
 
 // 12. truncate_log_hysteresis (>512KB -> <=256KB newline-aligned, same inode)
 let log_path = work_dir + '/nimbus.log';

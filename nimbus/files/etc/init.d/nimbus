@@ -40,12 +40,15 @@ start_service() {
 	config_get raw_memlimit global gomemlimit "auto"
 	gomemlimit=$(compute_gomemlimit "$raw_memlimit")
 
-	if ! "$UCODE_BIN" -S -L "$NIMBUS_LIB" "$SUPERVISOR_UC" --prepare-start; then
-		return 1
+	if [ "${NIMBUS_PREPARED:-0}" != "1" ]; then
+		if ! "$UCODE_BIN" -S -L "$NIMBUS_LIB" "$SUPERVISOR_UC" --prepare-start; then
+			return 1
+		fi
 	fi
 
 	procd_open_instance "nimbus"
 	procd_set_param command "$UCODE_BIN" -S -L "$NIMBUS_LIB" "$SUPERVISOR_UC"
+	procd_set_param file /var/run/nimbus/config.json
 	procd_set_param env GOMEMLIMIT="$gomemlimit" GOGC="50"
 	procd_set_param limits nofile="65535 65535"
 	procd_set_param stdout 1
@@ -68,7 +71,9 @@ reload_service() {
 	if [ "$rc" -eq 10 ]; then
 		return 0
 	elif [ "$rc" -eq 0 ]; then
+		NIMBUS_PREPARED=1
 		start
+		NIMBUS_PREPARED=0
 		return 0
 	fi
 

@@ -88,7 +88,7 @@ define Package/nimbus/install
 	$(INSTALL_BIN) ./files/etc/init.d/nimbus $(1)/etc/init.d/nimbus
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
-	$(INSTALL_DATA) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus
+	$(INSTALL_BIN) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus
 
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/99-nimbus $(1)/etc/uci-defaults/99-nimbus

@@ -279,4 +279,15 @@ let st_stopped = common.read_state(state_file);
 check(st_stopped.state == 'stopped' && st_stopped.last_error == null && fs.stat(pid_file) == null,
 	'--stop transitions state.json to stopped and cleans sing-box.pid');
 
+// 5. Verify init.d/nimbus procd config.json tracking + NIMBUS_PREPARED guard and Makefile 0755 hotplug install
+let init_script = fs.readfile(repo_root + '/nimbus/files/etc/init.d/nimbus') || '';
+check(index(init_script, 'procd_set_param file /var/run/nimbus/config.json') >= 0,
+	'init.d/nimbus registers /var/run/nimbus/config.json with procd_set_param file');
+check(index(init_script, 'if [ "${NIMBUS_PREPARED:-0}" != "1" ]; then') >= 0 &&
+	index(init_script, 'NIMBUS_PREPARED=1') >= 0,
+	'init.d/nimbus guards --prepare-start with NIMBUS_PREPARED when triggered from reload_service');
+let makefile_text = fs.readfile(repo_root + '/nimbus/Makefile') || '';
+check(index(makefile_text, '$(INSTALL_BIN) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus') >= 0,
+	'nimbus/Makefile installs 90-nimbus with $(INSTALL_BIN) (0755)');
+
 printf('test_supervisor.uc: %d assertions passed\n', passed);

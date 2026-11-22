@@ -230,7 +230,7 @@ table inet nimbus {
 
 > **注 1（设备分流优先顺序与 `goto` 尾子链）**：`lan_device` 规则优先级严格高于全局 `lan_device_mode` 默认策略，并按 UCI 节序号（`.index` / 列表自上而下）顺序匹配、先命中者生效，从而支持如“大网段 `bypass` + 单设备 `proxy`”或“大网段 `proxy` + 单设备 `bypass`”等任意交错规则。当存在有效 `policy='proxy'` 规则时，生成常规尾部子链 `prerouting_tcp_proxy` / `prerouting_udp_proxy` / `forward_lockdown_enforce` 并通过 `goto` 跳转，使命中 `proxy` 的设备跳过后续 `bypass` 规则且不额外占用 `ct mark` 位；当不存在 `policy='proxy'` 规则时，后续过滤与代理规则可直接内联在主链中。
 >
-> **注 2（默认直连 `default_bypass` 下无 `proxy` 规则时的语义）**：当 `lan_device_mode` 归一化为 `'default_bypass'`（含旧值 `'proxy_listed'`）且无任何启用的有效 `policy='proxy'` 规则时，必须在链内设备过滤末尾直接输出短路放行（`prerouting_tcp` 与 `forward_lockdown` 中为 `return`，`prerouting_udp` 中为 `ct mark set ct mark | 0x10 return`），确保不会因列表为空而误代理所有设备。
+> **注 2（默认直连 `default_bypass` 下无 `proxy` 规则时的语义）**：当 `lan_device_mode` 归一化为 `'default_bypass'`（含旧值 `'proxy_listed'`）且无任何启用的有效 `policy='proxy'` 规则时，禁止跳过设备过滤而误放开代理！应在保留表级命名计数器声明的同时，于对应链内直接输出单条短路放行（`prerouting_tcp` 与 `forward_lockdown` 中为 `return`，`prerouting_udp` 中为 `ct mark set ct mark | 0x10 return`）并省略不可达的尾部规则，确保不代理任何设备且规则简洁。
 >
 > **注 3（端口过滤空集与作用范围）**：当 `port_filter_mode == 'include'` 且仅填写 `proxy_tcp_ports`、`proxy_udp_ports` 为空时，`prerouting_udp` 必须直接输出 `ct mark set ct mark | 0x10 return`（全部 UDP 不走代理），不可因 `@filter_udp_ports` 为空而省略过滤导致代理全端口 UDP；反之 `proxy_tcp_ports` 为空时 `prerouting_tcp` 直接 `return`。路由器本机出站链（`output_tcp`、`output_udp`）不应用 `port_filter_mode`。
 

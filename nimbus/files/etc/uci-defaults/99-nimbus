@@ -17,6 +17,14 @@ if command -v uci >/dev/null 2>&1; then
 			uci -q set nimbus.proxy.lan_device_mode='default_proxy' && uci -q commit nimbus
 			;;
 		proxy_listed)
+			idx=0
+			while uci -q get "nimbus.@lan_device[${idx}]" >/dev/null 2>&1; do
+				dev_policy=$(uci -q get "nimbus.@lan_device[${idx}].policy" || true)
+				if [ -z "$dev_policy" ]; then
+					uci -q set "nimbus.@lan_device[${idx}].policy=proxy" || true
+				fi
+				idx=$((idx + 1))
+			done
 			uci -q set nimbus.proxy.lan_device_mode='default_bypass' && uci -q commit nimbus
 			;;
 	esac

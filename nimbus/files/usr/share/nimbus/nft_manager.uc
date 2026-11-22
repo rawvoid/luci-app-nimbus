@@ -354,13 +354,15 @@ function resolve_network_context(uci_cfg, opts) {
 
 function collect_ordered_lan_devices(uci_cfg, opts) {
 	let options = opts || {};
-	let entries = [];
 
 	if (type(options.lan_devices) == 'array') {
+		let explicit = [];
 		for (let d in options.lan_devices)
-			push(entries, d);
+			push(explicit, d);
+		return explicit;
 	}
 
+	let entries = [];
 	if (type(uci_cfg) == 'object') {
 		if (type(uci_cfg.lan_devices) == 'array') {
 			for (let d in uci_cfg.lan_devices)
@@ -374,8 +376,12 @@ function collect_ordered_lan_devices(uci_cfg, opts) {
 		sort(sec_objs, (a, b) => {
 			let ai = (type(a.sec['.index']) == 'int') ? a.sec['.index'] : null;
 			let bi = (type(b.sec['.index']) == 'int') ? b.sec['.index'] : null;
-			if (ai != null && bi != null && ai != bi)
-				return ai - bi;
+			if (ai != null && bi != null)
+				return (ai != bi) ? (ai - bi) : (a.seq - b.seq);
+			if (ai != null)
+				return -1;
+			if (bi != null)
+				return 1;
 			return a.seq - b.seq;
 		});
 		for (let item in sec_objs)
@@ -416,7 +422,8 @@ function parse_device_rules(uci_cfg, opts) {
 		if (type(dev) != 'object' || dev.enabled == '0' || dev.enabled === false)
 			continue;
 
-		let pol = lc(trim('' + (dev.policy ?? 'bypass')));
+		let raw_pol = trim('' + (dev.policy ?? ''));
+		let pol = (length(raw_pol) > 0) ? lc(raw_pol) : 'bypass';
 		if (pol != 'bypass' && pol != 'proxy')
 			continue;
 
@@ -437,33 +444,6 @@ function parse_device_rules(uci_cfg, opts) {
 	return rules;
 }
 
-function parse_device_sets(uci_cfg, opts, lan_mode) {
-	let options = opts || {};
-	let sets = {
-		lan_dev_direct_v4: filter_ip_list(options.lan_dev_direct_v4, 4),
-		lan_dev_direct_v6: filter_ip_list(options.lan_dev_direct_v6, 6),
-		lan_dev_direct_mac: filter_mac_list(options.lan_dev_direct_mac),
-		lan_dev_proxy_v4: filter_ip_list(options.lan_dev_proxy_v4, 4),
-		lan_dev_proxy_v6: filter_ip_list(options.lan_dev_proxy_v6, 6),
-		lan_dev_proxy_mac: filter_mac_list(options.lan_dev_proxy_mac),
-		lan_dev_block_v4: filter_ip_list(options.lan_dev_block_v4, 4),
-		lan_dev_block_v6: filter_ip_list(options.lan_dev_block_v6, 6),
-		lan_dev_block_mac: filter_mac_list(options.lan_dev_block_mac)
-	};
-
-	for (let r in parse_device_rules(uci_cfg, options)) {
-		let prefix = (r.policy == 'proxy') ? 'lan_dev_proxy' : 'lan_dev_direct';
-		for (let m in r.macs)
-			push_unique(sets[prefix + '_mac'], m);
-		for (let ip4 in r.v4)
-			push_unique(sets[prefix + '_v4'], ip4);
-		for (let ip6 in r.v6)
-			push_unique(sets[prefix + '_v6'], ip6);
-	}
-
-	return sets;
-}
-
 function has_active_proxy_device_rules(dev_rules, ipv4_enable, ipv6_enable) {
 	for (let r in dev_rules) {
 		if (r.policy != 'proxy')
@@ -480,9 +460,12 @@ function has_active_proxy_device_rules(dev_rules, ipv4_enable, ipv6_enable) {
 
 function append_device_filter_rules(out, dev_rules, lan_mode, ipv4_enable, ipv6_enable, bypass_verdict, proxy_target_chain) {
 	for (let r in dev_rules) {
-		let action = (r.policy == 'proxy' && proxy_target_chain)
-			? ('goto ' + proxy_target_chain)
-			: bypass_verdict;
+		let action = bypass_verdict;
+		if (r.policy == 'proxy') {
+			if (!proxy_target_chain)
+				continue;
+			action = 'goto ' + proxy_target_chain;
+		}
 		for (let mac in r.macs)
 			push(out, sprintf('\t\tether saddr %s %s', mac, action));
 		if (ipv4_enable) {
@@ -692,11 +675,15 @@ function generate_rules(opts) {
 	push(out, '\tcounter lockdown_dropped {}');
 
 	let use_proxy_subchain = has_active_proxy_device_rules(dev_rules, ipv4_enable, ipv6_enable);
+	let short_circuit_bypass = (!use_proxy_subchain && lan_mode == 'default_bypass');
 
 	if (is_lockdown) {
-		let lockdown_tail = build_lockdown_tail_lines(ipv4_enable, ipv6_enable);
-		if (use_proxy_subchain)
-			append_subchain(out, 'forward_lockdown_enforce', lockdown_tail);
+		let lockdown_tail = null;
+		if (!short_circuit_bypass) {
+			lockdown_tail = build_lockdown_tail_lines(ipv4_enable, ipv6_enable);
+			if (use_proxy_subchain)
+				append_subchain(out, 'forward_lockdown_enforce', lockdown_tail);
+		}
 
 		push(out, '');
 		push(out, '\tchain forward_lockdown {');
@@ -704,14 +691,17 @@ function generate_rules(opts) {
 		push(out, '\t\tiifname != @lan_ifaces return');
 		push(out, '\t\tmeta l4proto icmpv6 return');
 
-		append_device_filter_rules(
-			out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
-			'return', use_proxy_subchain ? 'forward_lockdown_enforce' : null
-		);
-
-		if (!use_proxy_subchain) {
-			for (let line in lockdown_tail)
-				push(out, line);
+		if (short_circuit_bypass) {
+			push(out, '\t\treturn');
+		} else {
+			append_device_filter_rules(
+				out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+				'return', use_proxy_subchain ? 'forward_lockdown_enforce' : null
+			);
+			if (!use_proxy_subchain) {
+				for (let line in lockdown_tail)
+					push(out, line);
+			}
 		}
 		push(out, '\t}');
 		push(out, '}');
@@ -731,9 +721,12 @@ function generate_rules(opts) {
 	}
 
 	// prerouting_tcp
-	let tcp_tail = build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_ports, redirect_port);
-	if (use_proxy_subchain)
-		append_subchain(out, 'prerouting_tcp_proxy', tcp_tail);
+	let tcp_tail = null;
+	if (!short_circuit_bypass) {
+		tcp_tail = build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_ports, redirect_port);
+		if (use_proxy_subchain)
+			append_subchain(out, 'prerouting_tcp_proxy', tcp_tail);
+	}
 
 	push(out, '');
 	push(out, '\tchain prerouting_tcp {');
@@ -744,21 +737,27 @@ function generate_rules(opts) {
 	push(out, '\t\tct status dnat return');
 	push(out, '\t\tfib daddr type local return');
 
-	append_device_filter_rules(
-		out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
-		'return', use_proxy_subchain ? 'prerouting_tcp_proxy' : null
-	);
-
-	if (!use_proxy_subchain) {
-		for (let line in tcp_tail)
-			push(out, line);
+	if (short_circuit_bypass) {
+		push(out, '\t\treturn');
+	} else {
+		append_device_filter_rules(
+			out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+			'return', use_proxy_subchain ? 'prerouting_tcp_proxy' : null
+		);
+		if (!use_proxy_subchain) {
+			for (let line in tcp_tail)
+				push(out, line);
+		}
 	}
 	push(out, '\t}');
 
 	// prerouting_udp
-	let udp_tail = build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port);
-	if (use_proxy_subchain)
-		append_subchain(out, 'prerouting_udp_proxy', udp_tail);
+	let udp_tail = null;
+	if (!short_circuit_bypass) {
+		udp_tail = build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port);
+		if (use_proxy_subchain)
+			append_subchain(out, 'prerouting_udp_proxy', udp_tail);
+	}
 
 	push(out, '');
 	push(out, '\tchain prerouting_udp {');
@@ -785,14 +784,17 @@ function generate_rules(opts) {
 	if (ipv6_enable)
 		push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 
-	append_device_filter_rules(
-		out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
-		'ct mark set ct mark | 0x10 return', use_proxy_subchain ? 'prerouting_udp_proxy' : null
-	);
-
-	if (!use_proxy_subchain) {
-		for (let line in udp_tail)
-			push(out, line);
+	if (short_circuit_bypass) {
+		push(out, '\t\tct mark set ct mark | 0x10 return');
+	} else {
+		append_device_filter_rules(
+			out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+			'ct mark set ct mark | 0x10 return', use_proxy_subchain ? 'prerouting_udp_proxy' : null
+		);
+		if (!use_proxy_subchain) {
+			for (let line in udp_tail)
+				push(out, line);
+		}
 	}
 	push(out, '\t}');
 
@@ -1233,7 +1235,6 @@ const build_rules_nft = generate_rules;
 export {
 	resolve_network_context,
 	parse_device_rules,
-	parse_device_sets,
 	parse_port_elements,
 	generate_rules,
 	build_rules_nft,

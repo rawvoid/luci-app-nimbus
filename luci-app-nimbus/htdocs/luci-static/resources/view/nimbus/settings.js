@@ -144,14 +144,14 @@ return view.extend({
 		o.default = 'warn';
 
 		o = sGlobal.option(form.Value, 'gomemlimit', _('Go Memory Limit (GOMEMLIMIT)'),
-			_('Use "auto" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit value such as 128MiB.'));
+			_('Use "auto" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB).'));
 		o.default = 'auto';
 		o.rmempty = false;
 		o.validate = function(section_id, value) {
 			var v = String(value || '').trim();
-			if (v === 'auto' || /^[0-9]+(B|KiB|MiB|GiB|KB|MB|GB)$/.test(v))
+			if (v === 'auto' || /^[0-9]+(B|KiB|MiB|GiB|TiB)$/.test(v))
 				return true;
-			return _('Must be "auto" or a Go memory limit (e.g. 128MiB).');
+			return _('Must be "auto" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB).');
 		};
 
 		// 2. Data Plane & Traffic Filtering

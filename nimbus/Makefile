@@ -84,6 +84,12 @@ define Package/nimbus/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/nimbus $(1)/etc/config/nimbus
 
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/etc/init.d/nimbus $(1)/etc/init.d/nimbus
+
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
+	$(INSTALL_DATA) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus
+
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/99-nimbus $(1)/etc/uci-defaults/99-nimbus
 
@@ -93,6 +99,9 @@ define Package/nimbus/install
 	$(INSTALL_DIR) $(1)/usr/share/nimbus
 	$(INSTALL_DATA) ./files/usr/share/nimbus/common.uc $(1)/usr/share/nimbus/common.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/config_builder.uc $(1)/usr/share/nimbus/config_builder.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/nft_manager.uc $(1)/usr/share/nimbus/nft_manager.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/route_manager.uc $(1)/usr/share/nimbus/route_manager.uc
+	$(INSTALL_BIN) ./files/usr/share/nimbus/supervisor.uc $(1)/usr/share/nimbus/supervisor.uc
 endef
 
 $(eval $(call BuildPackage,nimbus))

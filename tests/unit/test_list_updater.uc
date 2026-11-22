@@ -283,4 +283,68 @@ check(cron_off.ok === true && cron_off.changed === true &&
 	index(cron_off_txt, '# nimbus-list-sync') < 0,
 	'sync_cron removes both primary and alternate cron tags when auto_update=0');
 
+// 8. Regression test: concurrent state transition during slow download & nimbus.lock serialization
+let remote_payload_v2 = '# BGP export v2\n1.0.1.0/24\n223.5.5.5/32\n';
+check(common.write_state({
+	state: 'running',
+	warnings: [ 'before' ],
+	core: { version: '1.14.4' },
+	last_error: null
+}, state_file), 'seed running state before concurrent stop test');
+
+let nft_called_after_stop = 0;
+let upd_conc = lu.update_lists('cn_ipv4', {
+	...list_opts,
+	nft_dry_run: false,
+	nft_runner: () => {
+		nft_called_after_stop++;
+		return { rc: 0, output: '' };
+	},
+	runner: (argv) => {
+		// Simulate service stopping concurrently while curl is downloading
+		common.write_state({
+			state: 'stopped',
+			warnings: [ 'stopped-during-curl' ],
+			core: { version: '1.14.4' },
+			last_error: null
+		}, state_file);
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], remote_payload_v2, 0600);
+		return 0;
+	}
+});
+let st_conc = common.read_state(state_file);
+check(upd_conc.ok === true && upd_conc.hot_reloaded === false && nft_called_after_stop == 0,
+	'update_lists skips nft reload when state transitioned to stopped during download');
+check(st_conc.state == 'stopped' &&
+	st_conc.warnings[0] == 'stopped-during-curl' &&
+	st_conc.list_meta?.cn_ipv4?.status == 'updated' &&
+	st_conc.whitelist?.v4_count == 3,
+	'update_lists preserves concurrent state=stopped while committing fresh list_meta and whitelist counts');
+
+// Test lock contention returns E_LOCKED cleanly
+let lock_path = work_dir + '/nimbus.lock';
+let held_fh = common.acquire_lock(0, lock_path);
+check(held_fh != null, 'acquire nimbus.lock for contention test');
+let upd_locked = lu.update_lists('cn_ipv4', {
+	...list_opts,
+	lock_file: lock_path,
+	lock_timeout_ms: 40,
+	runner: (argv) => {
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], remote_payload_v1, 0600);
+		return 0;
+	}
+});
+check(upd_locked.ok === false && upd_locked.code == common.ERR_LOCKED,
+	'update_lists returns E_LOCKED when nimbus.lock is held');
+let rel_locked = lu.reload_whitelist_sets(null, {
+	...list_opts,
+	lock_file: lock_path,
+	lock_timeout_ms: 40
+});
+check(rel_locked.ok === false && rel_locked.code == common.ERR_LOCKED,
+	'reload_whitelist_sets returns E_LOCKED when nimbus.lock is held');
+common.release_lock(held_fh);
+
 printf('test_list_updater.uc: %d assertions passed\n', passed);

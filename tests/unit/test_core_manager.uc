@@ -255,4 +255,119 @@ check(info.ok === true &&
 	info.disk.tmp_free_kb == 120000,
 	'get_core_info returns architecture, installed binary version, and disk free space');
 
+// 8. Regression test: post-reload state.json preservation (no stale clobber & no lock held across reload)
+let lock_file = work_dir + '/nimbus.lock';
+let reg_state_file = work_dir + '/reg_state.json';
+let reg_bin = work_dir + '/etc_nimbus_bin/sing-box-reg';
+
+// 8a. Failed reload transitions state.json to lockdown; install_core must preserve lockdown & reload fields
+check(common.write_state({
+	state: 'running',
+	config_hash: 'pre_hash',
+	warnings: [],
+	last_error: null,
+	core: { bin_path: reg_bin, version: '1.14.3', bin_sha256: 'old_sha' }
+}, reg_state_file), 'seed running state for failed-reload preservation test');
+
+let lock_free_during_reload_fail = false;
+let reg_fail_reload = cm.install_core({
+	source: 'github',
+	core_path: reg_bin,
+	work_dir: dl_work_dir,
+	task_file: task_file,
+	state_file: reg_state_file,
+	lock_file: lock_file,
+	download_url: 'https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-arm64-musl.tar.gz',
+	asset_name: 'sing-box-1.14.4-linux-arm64-musl.tar.gz',
+	digest: 'sha256:' + built_sha256,
+	tmp_free_bytes: 200 * 1024 * 1024,
+	target_free_bytes: 200 * 1024 * 1024,
+	fetcher: (url, out_path) => {
+		system([ '/bin/cp', '-f', built_tgz, out_path ]);
+		return { ok: true, rc: 0 };
+	},
+	on_reload: () => {
+		let lfh = common.acquire_lock(0, lock_file);
+		if (lfh) {
+			lock_free_during_reload_fail = true;
+			common.release_lock(lfh);
+		}
+		common.write_state({
+			state: 'lockdown',
+			last_error: 'sing-box check failed after core upgrade',
+			config_hash: 'pre_hash',
+			warnings: [ 'lockdown dns warning' ],
+			effective: { redirect_port: 7891, tproxy_port: 7892 },
+			apis: { clash_api: { detected: true } },
+			whitelist: { enabled: true, v4_count: 5, v6_count: 2 },
+			core: { bin_path: reg_bin, version: '1.14.3', bin_sha256: 'old_sha' }
+		}, reg_state_file);
+		return false;
+	}
+});
+check(reg_fail_reload.ok === true && reg_fail_reload.reloaded === false,
+	'install_core finishes cleanly even when reload returns false');
+check(lock_free_during_reload_fail === true,
+	'install_core does NOT hold nimbus.lock across on_reload');
+let st_after_fail_reload = common.read_state(reg_state_file);
+check(st_after_fail_reload.state == 'lockdown' &&
+	st_after_fail_reload.last_error == 'sing-box check failed after core upgrade' &&
+	st_after_fail_reload.config_hash == 'pre_hash' &&
+	st_after_fail_reload.warnings[0] == 'lockdown dns warning' &&
+	st_after_fail_reload.effective?.redirect_port == 7891 &&
+	st_after_fail_reload.apis?.clash_api?.detected === true &&
+	st_after_fail_reload.whitelist?.v4_count == 5 &&
+	st_after_fail_reload.core?.bin_path == reg_bin &&
+	st_after_fail_reload.core?.version == '1.14.4' &&
+	st_after_fail_reload.core?.bin_sha256 == 'old_sha',
+	'install_core preserves lockdown state, warnings, effective, apis, whitelist, and core.bin_sha256 after failed reload');
+
+// 8b. Successful reload updates config_hash, warnings, apis, core.bin_sha256; install_core preserves all of them
+check(common.write_state({
+	state: 'running',
+	config_hash: 'old_hash_1',
+	warnings: [],
+	last_error: null
+}, reg_state_file), 'seed running state for successful-reload preservation test');
+
+let reg_ok_reload = cm.install_core({
+	source: 'github',
+	core_path: reg_bin,
+	work_dir: dl_work_dir,
+	task_file: task_file,
+	state_file: reg_state_file,
+	lock_file: lock_file,
+	download_url: 'https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-arm64-musl.tar.gz',
+	asset_name: 'sing-box-1.14.4-linux-arm64-musl.tar.gz',
+	digest: 'sha256:' + built_sha256,
+	tmp_free_bytes: 200 * 1024 * 1024,
+	target_free_bytes: 200 * 1024 * 1024,
+	fetcher: (url, out_path) => {
+		system([ '/bin/cp', '-f', built_tgz, out_path ]);
+		return { ok: true, rc: 0 };
+	},
+	on_reload: () => {
+		common.write_state({
+			state: 'running',
+			config_hash: 'new_hash_2',
+			warnings: [ 'reload warning' ],
+			last_error: null,
+			apis: { singbox_api: { detected: true } },
+			core: { bin_path: reg_bin, version: '1.14.4', bin_sha256: 'new_bin_sha_from_reload' }
+		}, reg_state_file);
+		return true;
+	}
+});
+check(reg_ok_reload.ok === true && reg_ok_reload.reloaded === true,
+	'install_core reloads running service');
+let st_after_ok_reload = common.read_state(reg_state_file);
+check(st_after_ok_reload.state == 'running' &&
+	st_after_ok_reload.config_hash == 'new_hash_2' &&
+	st_after_ok_reload.warnings[0] == 'reload warning' &&
+	st_after_ok_reload.apis?.singbox_api?.detected === true &&
+	st_after_ok_reload.core?.bin_path == reg_bin &&
+	st_after_ok_reload.core?.version == '1.14.4' &&
+	st_after_ok_reload.core?.bin_sha256 == 'new_bin_sha_from_reload',
+	'install_core preserves config_hash, warnings, apis, and core.bin_sha256 written by successful reload');
+
 printf('test_core_manager.uc: %d assertions passed\n', passed);

@@ -344,10 +344,70 @@ check(st_stopped.state == 'stopped' && st_stopped.last_error == null && fs.stat(
 	st_stopped.whitelist?.v4_count == 3,
 	'--stop transitions state.json to stopped, cleans sing-box.pid, and preserves list_meta/sub_meta/whitelist');
 
-// 5. Verify init.d/nimbus procd config.json tracking + NIMBUS_PREPARED guard and Makefile 0755 hotplug install
+// 5. Regression test: core binary upgrade triggers restart (exit 0) even with identical config.json SHA256
+let core_stamp_file = run_dir + '/core.stamp';
+let test_core_bin = work_dir + '/sing-box-wrapper';
+let make_wrapper = (tag) => sprintf('#!/bin/sh\n# %s\nexec "%s" "$@"\n', tag, singbox_bin);
+check(common.atomic_write(test_core_bin, make_wrapper('v1'), 0755), 'write wrapper binary v1');
+
+check(run_sup_cmd('--prepare-start', {
+	NIMBUS_BIN_PATH: test_core_bin,
+	NIMBUS_CORE_STAMP_FILE: core_stamp_file
+}) == 0, '--prepare-start succeeds with wrapper binary v1');
+
+let st_core_v1 = common.read_state(state_file);
+let sha_v1 = common.sha256_file(test_core_bin);
+let stamp_st = fs.stat(core_stamp_file);
+let stamp_v1 = trim(fs.readfile(core_stamp_file) || '');
+check(st_core_v1.core?.bin_path == test_core_bin &&
+	st_core_v1.core?.bin_sha256 == sha_v1 &&
+	stamp_st != null && (stamp_st.mode & 0777) == 0600 &&
+	length(stamp_v1) > 0,
+	'--prepare-start stores core.bin_sha256 in state.json and writes core.stamp with mode 0600');
+
+check(common.atomic_write(pid_file, self_pid + '\n', 0644), 'seed alive PID for core unchanged check');
+check(run_sup_cmd('--prepare-reload', {
+	NIMBUS_BIN_PATH: test_core_bin,
+	NIMBUS_CORE_STAMP_FILE: core_stamp_file
+}) == 10, '--prepare-reload returns 10 when both config.json and core binary are unchanged');
+
+// Replace binary in-place (different SHA256, identical config.json) -> MUST exit 0 (NOT 10)
+check(common.atomic_write(test_core_bin, make_wrapper('v2-upgraded'), 0755), 'replace wrapper binary with v2');
+let sha_v2 = common.sha256_file(test_core_bin);
+check(sha_v2 != sha_v1, 'wrapper v2 has different SHA256');
+check(run_sup_cmd('--prepare-reload', {
+	NIMBUS_BIN_PATH: test_core_bin,
+	NIMBUS_CORE_STAMP_FILE: core_stamp_file
+}) == 0, '--prepare-reload returns exit 0 (restart required) when sing-box binary changes even with identical config.json');
+
+let st_core_v2 = common.read_state(state_file);
+let stamp_v2 = trim(fs.readfile(core_stamp_file) || '');
+check(st_core_v2.core?.bin_sha256 == sha_v2 && stamp_v2 != stamp_v1,
+	'--prepare-reload updates state.core.bin_sha256 and core.stamp after binary replacement');
+
+// Legacy state.json missing bin_sha256 must be handled cleanly without crashing
+let legacy_st = {
+	...st_core_v2,
+	core: {
+		bin_path: test_core_bin,
+		version: st_core_v2.core?.version
+	}
+};
+check(common.write_state(legacy_st, state_file), 'seed legacy state missing core.bin_sha256');
+check(run_sup_cmd('--prepare-reload', {
+	NIMBUS_BIN_PATH: test_core_bin,
+	NIMBUS_CORE_STAMP_FILE: core_stamp_file
+}) == 10, '--prepare-reload handles missing core.bin_sha256 cleanly and skips restart when path/version match');
+check(common.read_state(state_file)?.core?.bin_sha256 == sha_v2,
+	'--prepare-reload backfills core.bin_sha256 on legacy state');
+
+// 6. Verify init.d/nimbus procd config.json tracking, NIMBUS_CORE_STAMP env, + NIMBUS_PREPARED guard and Makefile 0755 hotplug install
 let init_script = fs.readfile(repo_root + '/nimbus/files/etc/init.d/nimbus') || '';
 check(index(init_script, 'procd_set_param file /var/run/nimbus/config.json') >= 0,
 	'init.d/nimbus registers /var/run/nimbus/config.json with procd_set_param file');
+check(index(init_script, 'core_stamp=$(cat /var/run/nimbus/core.stamp 2>/dev/null || true)') >= 0 &&
+	index(init_script, 'NIMBUS_CORE_STAMP="$core_stamp"') >= 0,
+	'init.d/nimbus reads /var/run/nimbus/core.stamp and exports NIMBUS_CORE_STAMP in procd_set_param env');
 check(index(init_script, 'if [ "${NIMBUS_PREPARED:-0}" != "1" ]; then') >= 0 &&
 	index(init_script, 'NIMBUS_PREPARED=1') >= 0,
 	'init.d/nimbus guards --prepare-start with NIMBUS_PREPARED when triggered from reload_service');

@@ -203,4 +203,84 @@ let cron_del = pu.sync_cron(null, {
 check(cron_del.ok === true && index(fs.readfile(crontab_file) || '', '# nimbus-profile') < 0,
 	'sync_cron removes cron job when no auto_update subscription is enabled');
 
+// 5. Regression test: concurrent state transition during download, lock release before reload, and E_LOCKED
+let lock_file = work_dir + '/nimbus.lock';
+
+// 5a. Concurrent transition running -> stopped during download preserves stopped and skips reload
+check(common.write_state({
+	state: 'running',
+	warnings: [ 'before' ],
+	core: { version: '1.14.4' },
+	last_error: null
+}, state_file), 'seed running state for concurrent stop test');
+
+let reload_during_stopped = 0;
+let res_conc_stop = pu.update_profiles('main_sub', {
+	...base_opts,
+	lock_file: lock_file,
+	on_reload: () => {
+		reload_during_stopped++;
+		return true;
+	},
+	runner: (argv) => {
+		common.write_state({
+			state: 'stopped',
+			warnings: [ 'stopped-during-sub-dl' ],
+			core: { version: '1.14.4' },
+			last_error: null
+		}, state_file);
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], modern_fixture, 0600);
+		return 0;
+	}
+});
+let st_after_conc = common.read_state(state_file);
+check(res_conc_stop.ok === true && res_conc_stop.reloaded === false && reload_during_stopped == 0,
+	'update_profiles skips service reload when state transitioned to stopped during download');
+check(st_after_conc.state == 'stopped' &&
+	st_after_conc.warnings[0] == 'stopped-during-sub-dl' &&
+	st_after_conc.sub_meta?.main_sub?.status == 'updated',
+	'update_profiles preserves concurrent state=stopped while committing fresh sub_meta');
+
+// 5b. Lock is released BEFORE on_reload executes (prevents deadlock with supervisor --prepare-reload)
+check(common.write_state({ state: 'running', warnings: [], last_error: null }, state_file),
+	'seed running state for lock-release-before-reload test');
+let lock_free_in_reload = false;
+let res_lock_rel = pu.update_profiles('main_sub', {
+	...base_opts,
+	lock_file: lock_file,
+	on_reload: () => {
+		let lfh = common.acquire_lock(0, lock_file);
+		if (lfh) {
+			lock_free_in_reload = true;
+			common.release_lock(lfh);
+		}
+		return true;
+	},
+	runner: (argv) => {
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], legacy_fixture, 0600);
+		return 0;
+	}
+});
+check(res_lock_rel.ok === true && res_lock_rel.reloaded === true && lock_free_in_reload === true,
+	'update_profiles releases nimbus.lock before calling trigger_service_reload');
+
+// 5c. Lock contention returns E_LOCKED cleanly
+let held_fh = common.acquire_lock(0, lock_file);
+check(held_fh != null, 'acquire nimbus.lock for profile contention test');
+let res_locked = pu.update_profiles('main_sub', {
+	...base_opts,
+	lock_file: lock_file,
+	lock_timeout_ms: 40,
+	runner: (argv) => {
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], modern_fixture, 0600);
+		return 0;
+	}
+});
+check(res_locked.ok === false && res_locked.code == common.ERR_LOCKED && res_locked.reloaded === false,
+	'update_profiles returns E_LOCKED when nimbus.lock is held');
+common.release_lock(held_fh);
+
 printf('test_profile_updater.uc: %d assertions passed\n', passed);

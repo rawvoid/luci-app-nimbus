@@ -7,6 +7,7 @@ import * as common from 'common';
 import * as cb from 'config_builder';
 import * as nft from 'nft_manager';
 import * as route from 'route_manager';
+import * as dns from 'dns_manager';
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_WINDOW_SEC = 60;
@@ -37,9 +38,11 @@ function get_runtime_paths() {
 		rules_file: getenv('NIMBUS_RULES_FILE') || common.RULES_NFT_FILE,
 		log_file: getenv('NIMBUS_LOG_FILE') || common.LOG_FILE,
 		check_dir: getenv('NIMBUS_CHECK_DIR') || common.CHECK_DIR,
+		dns_backup_file: getenv('NIMBUS_DNS_BACKUP_FILE') || common.DNS_BACKUP_FILE,
 		nft_dry_run: (getenv('NIMBUS_NFT_DRY_RUN') == '1'),
 		nft_check_only: (getenv('NIMBUS_NFT_CHECK_ONLY') == '1'),
-		skip_routes: (getenv('NIMBUS_SKIP_ROUTES') == '1')
+		skip_routes: (getenv('NIMBUS_SKIP_ROUTES') == '1'),
+		skip_dns_reload: (getenv('NIMBUS_SKIP_DNS_RELOAD') == '1' || getenv('NIMBUS_SKIP_ROUTES') == '1')
 	};
 }
 
@@ -73,23 +76,23 @@ function is_pid_alive(pid_path) {
 	return (fs.stat('/proc/' + pid) != null);
 }
 
-function maybe_apply_dns(uci_cfg, effective_dns_port) {
-	if (fs.stat('/usr/share/nimbus/dns_manager.uc') == null)
-		return;
-	let port_arg = (effective_dns_port != null) ? ('' + effective_dns_port) : 'null';
-	system([
-		'/usr/bin/ucode', '-S', '-L', '/usr/share/nimbus',
-		'-e', sprintf('import * as d from "dns_manager"; if (type(d.apply_dns) == "function") d.apply_dns(null, { effective_dns_port: %s });', port_arg)
-	], 5000);
+function maybe_apply_dns(uci_cfg, effective_dns_port, paths) {
+	dns.apply_dns(uci_cfg, {
+		effective_dns_port: effective_dns_port,
+		uci_confdir: paths.uci_confdir,
+		uci_savedir: paths.uci_savedir,
+		backup_path: paths.dns_backup_file,
+		skip_reload: paths.skip_dns_reload
+	});
 }
 
-function maybe_restore_dns() {
-	if (fs.stat(common.DNS_BACKUP_FILE) == null || fs.stat('/usr/share/nimbus/dns_manager.uc') == null)
-		return;
-	system([
-		'/usr/bin/ucode', '-S', '-L', '/usr/share/nimbus',
-		'-e', 'import * as d from "dns_manager"; if (type(d.restore_dns) == "function") d.restore_dns();'
-	], 5000);
+function maybe_restore_dns(paths) {
+	dns.restore_dns({
+		uci_confdir: paths.uci_confdir,
+		uci_savedir: paths.uci_savedir,
+		backup_path: paths.dns_backup_file,
+		skip_reload: paths.skip_dns_reload
+	});
 }
 
 function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, last_error) {
@@ -195,7 +198,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			});
 		}
 
-		maybe_restore_dns();
+		maybe_restore_dns(paths);
 
 		let next_state = {
 			...old_state,
@@ -281,7 +284,7 @@ function cmd_prepare_start(paths, is_reload) {
 		}
 	}
 
-	maybe_apply_dns(uci_cfg, bres.context?.effective_dns_port);
+	maybe_apply_dns(uci_cfg, bres.context?.effective_dns_port, paths);
 
 	let running_state = build_state_payload('running', uci_cfg, bres.context, new_hash, warnings, null);
 	common.write_state(running_state, paths.state_file);
@@ -312,7 +315,7 @@ function cmd_stop(paths) {
 		});
 	}
 
-	maybe_restore_dns();
+	maybe_restore_dns(paths);
 
 	common.write_state({
 		...old_state,

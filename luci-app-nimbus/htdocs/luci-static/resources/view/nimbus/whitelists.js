@@ -186,12 +186,9 @@ return view.extend({
 						nimbusApi.notifyError(res);
 					return;
 				}
-				nimbusApi.notifySuccess(_('Saved "%s" (%d IPv4, %d IPv6)%s.').format(
-					src.filename,
-					res.v4_count || 0,
-					res.v6_count || 0,
-					res.hot_reloaded ? _(' and atomically hot-reloaded nftables') : ''
-				));
+				nimbusApi.notifySuccess(res.hot_reloaded
+					? _('Saved "%s" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables.').format(src.filename, res.v4_count || 0, res.v6_count || 0)
+					: _('Saved "%s" (%d IPv4, %d IPv6).').format(src.filename, res.v4_count || 0, res.v6_count || 0));
 				return refreshStatus().then(function() {
 					if (onDone)
 						onDone(res);
@@ -259,12 +256,9 @@ return view.extend({
 							return;
 						}
 						ui.hideModal();
-						nimbusApi.notifySuccess(_('Saved "%s" (%d IPv4, %d IPv6)%s.').format(
-							src.filename,
-							sres.v4_count || 0,
-							sres.v6_count || 0,
-							sres.hot_reloaded ? _(' and atomically hot-reloaded nftables') : ''
-						));
+						nimbusApi.notifySuccess(sres.hot_reloaded
+							? _('Saved "%s" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables.').format(src.filename, sres.v4_count || 0, sres.v6_count || 0)
+							: _('Saved "%s" (%d IPv4, %d IPv6).').format(src.filename, sres.v4_count || 0, sres.v6_count || 0));
 						return refreshStatus();
 					}).catch(function(err) {
 						saveBtn.disabled = false;
@@ -463,9 +457,9 @@ return view.extend({
 						return;
 					}
 					ui.hideModal();
-					nimbusApi.notifySuccess(_('Whitelist source saved%s.').format(
-						res.hot_reloaded ? _(' and atomically hot-reloaded') : ''
-					));
+					nimbusApi.notifySuccess(res.hot_reloaded
+						? _('Whitelist source saved and atomically hot-reloaded nftables.')
+						: _('Whitelist source saved.'));
 					return refreshStatus();
 				}).catch(function(err) {
 					saveBtn.disabled = false;
@@ -519,11 +513,9 @@ return view.extend({
 				if (!res || res.ok === false) {
 					nimbusApi.notifyError(errs.length ? errs.join('; ') : res);
 				} else {
-					nimbusApi.notifySuccess(_('Remote lists updated: %d updated, %d unchanged%s.').format(
-						updated,
-						unchanged,
-						res.hot_reloaded ? _(', nftables atomically hot-reloaded') : ''
-					));
+					nimbusApi.notifySuccess(res.hot_reloaded
+						? _('Remote lists updated: %d updated, %d unchanged, nftables atomically hot-reloaded.').format(updated, unchanged)
+						: _('Remote lists updated: %d updated, %d unchanged.').format(updated, unchanged));
 				}
 				return refreshStatus();
 			}).catch(function(err) {
@@ -544,9 +536,9 @@ return view.extend({
 					if (!res || res.ok === false)
 						nimbusApi.notifyError(res);
 					else
-						nimbusApi.notifySuccess(_('Whitelist source deleted%s.').format(
-							res.hot_reloaded ? _(' and nftables hot-reloaded') : ''
-						));
+						nimbusApi.notifySuccess(res.hot_reloaded
+							? _('Whitelist source deleted and nftables hot-reloaded.')
+							: _('Whitelist source deleted.'));
 					return refreshStatus();
 				});
 			}).catch(function(err) {
@@ -583,9 +575,9 @@ return view.extend({
 							nimbusApi.notifyError(res);
 							return;
 						}
-						nimbusApi.notifySuccess(_('Whitelist policy saved%s.').format(
-							res.hot_reloaded ? _(' and atomically hot-reloaded nftables') : ''
-						));
+						nimbusApi.notifySuccess(res.hot_reloaded
+							? _('Whitelist policy saved and atomically hot-reloaded nftables.')
+							: _('Whitelist policy saved.'));
 						return refreshStatus();
 					}).catch(function(err) {
 						savePolicyBtn.disabled = false;

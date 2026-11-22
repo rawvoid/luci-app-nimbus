@@ -78,10 +78,9 @@ return view.extend({
 					nimbusApi.notifyError(res);
 					return;
 				}
-				nimbusApi.notifySuccess(_('Profile "%s" uploaded (%s).').format(
-					filename,
-					res.checked ? _('validated with sing-box') : _('JSON syntax checked')
-				));
+				nimbusApi.notifySuccess(res.checked
+					? _('Profile "%s" uploaded and validated with sing-box.').format(filename)
+					: _('Profile "%s" uploaded (JSON syntax checked).').format(filename));
 				return refreshList().then(function() {
 					return maybeReloadActive(res);
 				}).then(function() {
@@ -165,10 +164,9 @@ return view.extend({
 							return;
 						}
 						ui.hideModal();
-						nimbusApi.notifySuccess(_('Profile "%s" saved (%s).').format(
-							profile.filename,
-							sres.checked ? _('validated with sing-box') : _('JSON syntax checked')
-						));
+						nimbusApi.notifySuccess(sres.checked
+							? _('Profile "%s" saved and validated with sing-box.').format(profile.filename)
+							: _('Profile "%s" saved (JSON syntax checked).').format(profile.filename));
 						return refreshList().then(function() {
 							return maybeReloadActive(sres);
 						});
@@ -404,11 +402,9 @@ return view.extend({
 					var msg = errs.length ? errs.join('; ') : nimbusApi.formatError(res);
 					nimbusApi.notifyError(msg);
 				} else {
-					nimbusApi.notifySuccess(_('Subscription update finished: %d updated, %d unchanged%s.').format(
-						updated,
-						unchanged,
-						res.reloaded ? _(', service reloaded') : ''
-					));
+					nimbusApi.notifySuccess(res.reloaded
+						? _('Subscription update finished: %d updated, %d unchanged, service reloaded.').format(updated, unchanged)
+						: _('Subscription update finished: %d updated, %d unchanged.').format(updated, unchanged));
 				}
 				return refreshList();
 			}).catch(function(err) {

@@ -964,8 +964,8 @@ msgstr "DNS 上游条目不能为空且不可包含空格。"
 msgid "Hijack LAN External DNS (Port 53)"
 msgstr "劫持 LAN 外部 DNS (53 端口)"
 
-msgid "Redirect LAN TCP/UDP port 53 queries addressed to external IPs back to router port 53."
-msgstr "在 table inet nimbus 中将 LAN 发往外部 IP 的 TCP/UDP 53 查询重定向至路由器本机 53 端口。"
+msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
+msgstr "在 table inet nimbus 中将受代理局域网设备发往外部 IP 的 TCP/UDP 53 查询重定向至路由器本机 53 端口（被设备分流规则或默认策略直连绕行的设备不劫持）。"
 
 msgid "LAN Device Rules"
 msgstr "局域网设备分流规则"

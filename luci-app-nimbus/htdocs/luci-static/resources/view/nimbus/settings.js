@@ -341,7 +341,7 @@ return view.extend({
 		};
 
 		o = sDns.option(form.Flag, 'hijack_lan_dns', _('Hijack LAN External DNS (Port 53)'),
-			_('Redirect LAN TCP/UDP port 53 queries addressed to external IPs back to router port 53.'));
+			_('Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded).'));
 		o.default = '0';
 		o.rmempty = false;
 

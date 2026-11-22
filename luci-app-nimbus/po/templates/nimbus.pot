@@ -959,7 +959,7 @@ msgstr ""
 msgid "Hijack LAN External DNS (Port 53)"
 msgstr ""
 
-msgid "Redirect LAN TCP/UDP port 53 queries addressed to external IPs back to router port 53."
+msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
 msgstr ""
 
 msgid "LAN Device Rules"

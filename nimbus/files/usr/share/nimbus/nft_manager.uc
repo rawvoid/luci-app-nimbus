@@ -710,13 +710,31 @@ function generate_rules(opts) {
 
 	// tproxy_redirect mode
 	if (hijack_lan_dns) {
+		let dns_tail = [ '\t\tmeta l4proto { tcp, udp } th dport 53 counter redirect to :53' ];
+		if (!short_circuit_bypass && use_proxy_subchain)
+			append_subchain(out, 'prerouting_dns_hijack', dns_tail);
+
 		push(out, '');
 		push(out, '\tchain prerouting_dns {');
 		push(out, '\t\ttype nat hook prerouting priority dstnat + 1; policy accept;');
 		push(out, '\t\tiifname != @lan_ifaces return');
+		push(out, '\t\tmeta l4proto != { tcp, udp } return');
+		push(out, '\t\tth dport != 53 return');
 		push(out, '\t\tct status dnat return');
 		push(out, '\t\tfib daddr type local return');
-		push(out, '\t\tmeta l4proto { tcp, udp } th dport 53 counter redirect to :53');
+
+		if (short_circuit_bypass) {
+			push(out, '\t\treturn');
+		} else {
+			append_device_filter_rules(
+				out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+				'return', use_proxy_subchain ? 'prerouting_dns_hijack' : null
+			);
+			if (!use_proxy_subchain) {
+				for (let line in dns_tail)
+					push(out, line);
+			}
+		}
 		push(out, '\t}');
 	}
 

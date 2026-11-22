@@ -391,6 +391,80 @@ check(v4_only.ok === true &&
 	index(v4_only.rules, 'meta nfproto ipv6') < 0,
 	'ipv6_enable=0 + hijack_lan_dns=1 passes nft -c -f and omits IPv6 rules');
 
+let dns_bypass_default_proxy = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/dns_bypass_default_proxy.nft',
+	mode: 'tproxy_redirect',
+	hijack_lan_dns: '1',
+	lan_device_mode: 'default_proxy',
+	lan_devices: [
+		{ enabled: '1', mac: '78:2E:03:53:00:2F', ip: '10.11.1.115', policy: 'bypass' }
+	]
+});
+check(dns_bypass_default_proxy.ok === true, 'hijack_lan_dns=1 default_proxy + bypass passes nft -c -f');
+let d_proto = index(dns_bypass_default_proxy.rules, 'meta l4proto != { tcp, udp } return');
+let d_port = index(dns_bypass_default_proxy.rules, 'th dport != 53 return');
+let d_mac = index(dns_bypass_default_proxy.rules, 'ether saddr 78:2e:03:53:00:2f return');
+let d_ip = index(dns_bypass_default_proxy.rules, 'ip saddr 10.11.1.115 return');
+let d_redir = index(dns_bypass_default_proxy.rules, 'meta l4proto { tcp, udp } th dport 53 counter redirect to :53');
+check(index(dns_bypass_default_proxy.rules, 'prerouting_dns_hijack') < 0 &&
+	d_proto >= 0 && d_port > d_proto && d_mac > d_port && d_ip > d_mac && d_redir > d_ip,
+	'prerouting_dns checks protocol/port before device bypass rules and omits hijack subchain');
+
+let dns_mixed_default_proxy = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/dns_mixed_default_proxy.nft',
+	mode: 'tproxy_redirect',
+	hijack_lan_dns: '1',
+	lan_device_mode: 'default_proxy',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.50', policy: 'proxy' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	]
+});
+check(dns_mixed_default_proxy.ok === true, 'hijack_lan_dns=1 mixed default_proxy passes nft -c -f');
+check(index(dns_mixed_default_proxy.rules, 'chain prerouting_dns_hijack {') >= 0 &&
+	index(dns_mixed_default_proxy.rules, 'ip saddr 10.11.1.50 goto prerouting_dns_hijack') >= 0 &&
+	index(dns_mixed_default_proxy.rules, 'ip saddr 10.11.1.50 goto prerouting_dns_hijack') <
+	index(dns_mixed_default_proxy.rules, 'ip saddr 10.11.1.0/24 return') &&
+	index(dns_mixed_default_proxy.rules, 'ip saddr 10.11.1.0/24 return\n\t\tgoto prerouting_dns_hijack\n\t}') >= 0,
+	'prerouting_dns respects ordered proxy-before-bypass rules and default_proxy fallback');
+
+let dns_mixed_default_bypass = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/dns_mixed_default_bypass.nft',
+	mode: 'tproxy_redirect',
+	hijack_lan_dns: '1',
+	lan_device_mode: 'default_bypass',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.50', policy: 'proxy' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	]
+});
+check(dns_mixed_default_bypass.ok === true &&
+	index(dns_mixed_default_bypass.rules, 'ip saddr 10.11.1.0/24 return\n\t\treturn\n\t}') >= 0,
+	'prerouting_dns respects default_bypass fallback after ordered rules');
+
+let dns_short_circuit = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/dns_short_circuit.nft',
+	mode: 'tproxy_redirect',
+	hijack_lan_dns: '1',
+	lan_device_mode: 'default_bypass',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.115', policy: 'bypass' }
+	]
+});
+check(dns_short_circuit.ok === true &&
+	index(dns_short_circuit.rules, 'prerouting_dns_hijack') < 0 &&
+	index(dns_short_circuit.rules, 'redirect to :53') < 0 &&
+	index(dns_short_circuit.rules, '\t\tfib daddr type local return\n\t\treturn\n\t}\n\n\tchain prerouting_tcp {') >= 0,
+	'prerouting_dns short-circuits safely under default_bypass without active proxy rules');
+
 let v6_only = nft.apply_rules({
 	nft_bin: nft_bin,
 	check_only: true,
@@ -503,6 +577,19 @@ let live_apply_lockdown_subchain = nft.apply_lockdown({
 	]
 });
 check(live_apply_lockdown_subchain.ok === true, 'live nft -f lockdown with ordered goto subchain succeeds in container');
+
+let live_apply_dns_subchain = nft.apply_rules({
+	nft_bin: nft_bin,
+	output_path: work_dir + '/live_dns_subchain.nft',
+	mode: 'tproxy_redirect',
+	hijack_lan_dns: '1',
+	lan_device_mode: 'default_bypass',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.50', policy: 'proxy' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	]
+});
+check(live_apply_dns_subchain.ok === true, 'live nft -f hijack_lan_dns with ordered goto subchain succeeds in container');
 
 check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'delete_table cleans up live table');
 

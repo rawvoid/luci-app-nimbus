@@ -898,17 +898,17 @@ msgstr "UDP 端口 / 范围"
 msgid "Examples: 53, 443, 10000-10100."
 msgstr "示例：53、443、10000-10100。"
 
-msgid "LAN Device Control Mode"
-msgstr "局域网设备控制模式"
+msgid "Default LAN Device Policy"
+msgstr "默认局域网设备策略"
 
-msgid "Proxy All LAN Devices"
-msgstr "代理全部局域网设备"
+msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
+msgstr "未命中下方「局域网设备分流规则」中任何启用条目的默认策略；设备规则按从上到下顺序优先匹配。"
 
-msgid "Bypass Listed Devices"
-msgstr "绕行列表中的直连设备"
+msgid "Proxy Unmatched Devices (Default)"
+msgstr "代理未匹配设备（默认）"
 
-msgid "Proxy Only Listed Devices"
-msgstr "仅代理列表中的代理设备"
+msgid "Bypass Unmatched Devices (Direct)"
+msgstr "直连未匹配设备（绕行）"
 
 msgid "Inject Route Sniff Rule"
 msgstr "注入路由嗅探规则 (Sniff)"
@@ -970,8 +970,8 @@ msgstr "在 table inet nimbus 中将 LAN 发往外部 IP 的 TCP/UDP 53 查询�
 msgid "LAN Device Rules"
 msgstr "局域网设备分流规则"
 
-msgid "Specify per-device MAC or IP/CIDR exceptions used by the LAN Device Control Mode above."
-msgstr "配置按 MAC 或 IP/CIDR 匹配的局域网设备策略，配合上方设备控制模式生效。"
+msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
+msgstr "按从上到下顺序优先匹配（先命中者生效），均未命中时回退至上方默认设备策略；未启用行将被忽略。"
 
 msgid "Description"
 msgstr "备注"

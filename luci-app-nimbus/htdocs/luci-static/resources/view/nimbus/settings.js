@@ -235,11 +235,19 @@ return view.extend({
 			return true;
 		};
 
-		o = sProxy.option(form.ListValue, 'lan_device_mode', _('LAN Device Control Mode'));
-		o.value('all', _('Proxy All LAN Devices'));
-		o.value('bypass_listed', _('Bypass Listed Devices'));
-		o.value('proxy_listed', _('Proxy Only Listed Devices'));
-		o.default = 'all';
+		o = sProxy.option(form.ListValue, 'lan_device_mode', _('Default LAN Device Policy'),
+			_('Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order.'));
+		o.value('default_proxy', _('Proxy Unmatched Devices (Default)'));
+		o.value('default_bypass', _('Bypass Unmatched Devices (Direct)'));
+		o.default = 'default_proxy';
+		o.rmempty = false;
+		o.cfgvalue = function(section_id) {
+			var val = this.super('cfgvalue', [ section_id ]);
+			var v = String(val != null ? val : 'default_proxy').trim();
+			if (v === 'proxy_listed' || v === 'default_bypass')
+				return 'default_bypass';
+			return 'default_proxy';
+		};
 
 		o = sProxy.option(form.Flag, 'sniff', _('Inject Route Sniff Rule'),
 			_('Ensure a modern route sniff action rule covers the active transparent inbounds.'));
@@ -339,9 +347,10 @@ return view.extend({
 
 		// 4. LAN Device Rules
 		var sDev = m.section(form.GridSection, 'lan_device', _('LAN Device Rules'),
-			_('Specify per-device MAC or IP/CIDR exceptions used by the LAN Device Control Mode above.'));
+			_('Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored.'));
 		sDev.anonymous = true;
 		sDev.addremove = true;
+		sDev.sortable = true;
 		sDev.nodescriptions = true;
 
 		o = sDev.option(form.Flag, 'enabled', _('Enabled'));
@@ -398,6 +407,7 @@ return view.extend({
 		o.value('proxy', _('Proxy'));
 		o.default = 'bypass';
 		o.editable = true;
+		o.rmempty = false;
 
 		return m.render();
 	},

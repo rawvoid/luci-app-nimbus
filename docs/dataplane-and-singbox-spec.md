@@ -75,10 +75,7 @@
     set bypass_v4   { type ipv4_addr; flags interval; auto-merge; }
     set bypass_v6   { type ipv6_addr; flags interval; auto-merge; }
 
-    # 设备分流集合（仅在 lan_device_mode != 'all' 且非空时填充）
-    set lan_dev_mac { type ether_addr; }
-    set lan_dev_v4  { type ipv4_addr; flags interval; auto-merge; }
-    set lan_dev_v6  { type ipv6_addr; flags interval; auto-merge; }
+    # 设备分流不再使用无序集合（按 lan_device 列表顺序逐条优先匹配，First-Match Wins）
 
     # 端口过滤集合（仅在 port_filter_mode != 'all' 且非空时填充）
     set filter_tcp_ports { type inet_service; flags interval; }
@@ -112,13 +109,13 @@ table inet nimbus {
         ct status dnat return
         fib daddr type local return
 
-        # [设备分流过滤：按 lan_device_mode 条件生成]
-        # bypass_listed:
-        #   ether saddr @lan_dev_mac return
-        #   ip saddr @lan_dev_v4 return
-        #   ip6 saddr @lan_dev_v6 return
-        # proxy_listed:
-        #   见注1/注2：若全部 @lan_dev_* 为空则直接 return；否则仅匹配集合内设备继续，未命中者 return
+        # [设备分流过滤：按 lan_device 规则自上而下顺序匹配（First-Match Wins），先于默认策略生效]
+        # 每条启用规则依序匹配 ether saddr / ip saddr / ip6 saddr：
+        #   policy='bypass' -> return
+        #   policy='proxy'  -> goto prerouting_tcp_proxy（端口过滤/Fake-IP/白名单/redirect 位于尾部子链）
+        # 均未命中时回退至 lan_device_mode 默认策略：
+        #   default_bypass ('proxy_listed')：return
+        #   default_proxy ('all'/'bypass_listed')：goto prerouting_tcp_proxy（无 proxy 规则时直接内联后续规则）
 
         # [端口过滤：按 port_filter_mode 条件生成，见注3]
         # include: tcp dport != @filter_tcp_ports return（若 filter_tcp_ports 为空则直接 return）
@@ -163,7 +160,10 @@ table inet nimbus {
         ct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip to :$TPROXY_PORT accept
         ct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set $PROXY_MARK counter tproxy ip6 to :$TPROXY_PORT accept
 
-        # [设备分流过滤：命中直连时写 ct mark set ct mark | 0x10 return，见注1/注2]
+        # [设备分流过滤：按 lan_device 规则自上而下顺序匹配（First-Match Wins）]
+        #   policy='bypass' -> ct mark set ct mark | 0x10 return
+        #   policy='proxy'  -> goto prerouting_udp_proxy
+        # 均未命中回退默认策略：default_bypass 时 ct mark set ct mark | 0x10 return；default_proxy 时进入 prerouting_udp_proxy，见注1/注2
         # [端口过滤：命中直连时写 ct mark set ct mark | 0x10 return，见注3]
 
         # Fake-IP 优先通道
@@ -228,9 +228,9 @@ table inet nimbus {
 }
 ```
 
-> **注 1（`proxy_listed` 设备匹配规则）**：因 MAC 与 IP 属于并集匹配，不可在同一条规则内混写 `ip saddr` 与 `ip6 saddr`。实现时必须使用 `jump` 子链或两步标记（先匹配 `@lan_dev_mac` / `@lan_dev_v4` / `@lan_dev_v6` 任一成立则进入代理判断，否则 `return`）。
+> **注 1（设备分流优先顺序与 `goto` 尾子链）**：`lan_device` 规则优先级严格高于全局 `lan_device_mode` 默认策略，并按 UCI 节序号（`.index` / 列表自上而下）顺序匹配、先命中者生效，从而支持如“大网段 `bypass` + 单设备 `proxy`”或“大网段 `proxy` + 单设备 `bypass`”等任意交错规则。当存在有效 `policy='proxy'` 规则时，生成常规尾部子链 `prerouting_tcp_proxy` / `prerouting_udp_proxy` / `forward_lockdown_enforce` 并通过 `goto` 跳转，使命中 `proxy` 的设备跳过后续 `bypass` 规则且不额外占用 `ct mark` 位；当不存在 `policy='proxy'` 规则时，后续过滤与代理规则可直接内联在主链中。
 >
-> **注 2（空设备集在 `proxy_listed` 下的语义）**：当 `lan_device_mode == 'proxy_listed'` 且无任何启用的 `policy='proxy'` 设备（即 `@lan_dev_mac`、`@lan_dev_v4`、`@lan_dev_v6` 全为空）时，禁止跳过过滤规则！必须在链内设备过滤位置直接输出 `return`（在 `prerouting_udp` 中为 `ct mark set ct mark | 0x10 return`），确保不代理任何设备。
+> **注 2（默认直连 `default_bypass` 下无 `proxy` 规则时的语义）**：当 `lan_device_mode` 归一化为 `'default_bypass'`（含旧值 `'proxy_listed'`）且无任何启用的有效 `policy='proxy'` 规则时，必须在链内设备过滤末尾直接输出短路放行（`prerouting_tcp` 与 `forward_lockdown` 中为 `return`，`prerouting_udp` 中为 `ct mark set ct mark | 0x10 return`），确保不会因列表为空而误代理所有设备。
 >
 > **注 3（端口过滤空集与作用范围）**：当 `port_filter_mode == 'include'` 且仅填写 `proxy_tcp_ports`、`proxy_udp_ports` 为空时，`prerouting_udp` 必须直接输出 `ct mark set ct mark | 0x10 return`（全部 UDP 不走代理），不可因 `@filter_udp_ports` 为空而省略过滤导致代理全端口 UDP；反之 `proxy_tcp_ports` 为空时 `prerouting_tcp` 直接 `return`。路由器本机出站链（`output_tcp`、`output_udp`）不应用 `port_filter_mode`。
 
@@ -243,16 +243,16 @@ table inet nimbus
 delete table inet nimbus
 
 table inet nimbus {
-    # [保留 lan_ifaces / reserved_v4/v6 / lan_v4/v6 / wan_v4/v6 / bypass_v4/v6 / lan_dev_*]
+    # [保留 lan_ifaces / reserved_v4/v6 / lan_v4/v6 / wan_v4/v6 / bypass_v4/v6]
 
     chain forward_lockdown {
         type filter hook forward priority filter - 1; policy accept;
         iifname != @lan_ifaces return
         meta l4proto icmpv6 return
 
-        # [设备策略过滤：保持与运行态一致的代理范围边界]
-        # bypass_listed: 放行 @lan_dev_mac / @lan_dev_v4 / @lan_dev_v6 命中设备（return）
-        # proxy_listed: 若 @lan_dev_* 全为空直接 return；否则仅对命中 @lan_dev_* 的设备继续执行后续白名单检查与 reject，未命中设备（原本直连设备）直接 return
+        # [设备策略过滤：按 lan_device 顺序匹配与默认策略回退，保持与运行态完全一致的代理范围边界]
+        # policy='bypass' -> return；policy='proxy' -> goto forward_lockdown_enforce
+        # 未命中回退：default_bypass -> return；default_proxy -> 进入 forward_lockdown_enforce（或内联下方阻断规则）
 
         ip daddr @reserved_v4 return
         ip6 daddr @reserved_v6 return

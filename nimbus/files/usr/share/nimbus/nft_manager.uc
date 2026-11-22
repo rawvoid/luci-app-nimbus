@@ -16,15 +16,6 @@ const RELOADABLE_SETS = [
 	'wan_v6',
 	'fakeip_v4',
 	'fakeip_v6',
-	'lan_dev_direct_v4',
-	'lan_dev_direct_v6',
-	'lan_dev_direct_mac',
-	'lan_dev_proxy_v4',
-	'lan_dev_proxy_v6',
-	'lan_dev_proxy_mac',
-	'lan_dev_block_v4',
-	'lan_dev_block_v6',
-	'lan_dev_block_mac',
 	'filter_tcp_ports',
 	'filter_udp_ports'
 ];
@@ -167,12 +158,10 @@ function netmask_to_prefix(mask_str) {
 }
 
 function normalize_lan_mode(raw) {
-	let m = trim('' + (raw || 'all'));
-	if (m == 'except_listed' || m == 'bypass_listed')
-		return 'bypass_listed';
-	if (m == 'proxy_listed')
-		return 'proxy_listed';
-	return 'all';
+	let m = lc(trim('' + (raw || 'default_proxy')));
+	if (m == 'default_bypass' || m == 'proxy_listed')
+		return 'default_bypass';
+	return 'default_proxy';
 }
 
 function normalize_port_mode(raw) {
@@ -363,6 +352,91 @@ function resolve_network_context(uci_cfg, opts) {
 	};
 }
 
+function collect_ordered_lan_devices(uci_cfg, opts) {
+	let options = opts || {};
+	let entries = [];
+
+	if (type(options.lan_devices) == 'array') {
+		for (let d in options.lan_devices)
+			push(entries, d);
+	}
+
+	if (type(uci_cfg) == 'object') {
+		if (type(uci_cfg.lan_devices) == 'array') {
+			for (let d in uci_cfg.lan_devices)
+				push(entries, d);
+		}
+		let sec_objs = [];
+		for (let k, sec in uci_cfg) {
+			if (type(sec) == 'object' && sec['.type'] == 'lan_device')
+				push(sec_objs, { seq: length(sec_objs), sec: sec });
+		}
+		sort(sec_objs, (a, b) => {
+			let ai = (type(a.sec['.index']) == 'int') ? a.sec['.index'] : null;
+			let bi = (type(b.sec['.index']) == 'int') ? b.sec['.index'] : null;
+			if (ai != null && bi != null && ai != bi)
+				return ai - bi;
+			return a.seq - b.seq;
+		});
+		for (let item in sec_objs)
+			push(entries, item.sec);
+	}
+
+	if (length(entries) == 0) {
+		let leg_direct = {
+			enabled: '1',
+			policy: 'bypass',
+			mac: options.lan_dev_direct_mac,
+			ip: [ ...(to_list(options.lan_dev_direct_v4, [])), ...(to_list(options.lan_dev_direct_v6, [])) ]
+		};
+		if (length(to_list(leg_direct.mac, [])) > 0 || length(leg_direct.ip) > 0)
+			push(entries, leg_direct);
+
+		let leg_proxy = {
+			enabled: '1',
+			policy: 'proxy',
+			mac: options.lan_dev_proxy_mac,
+			ip: [ ...(to_list(options.lan_dev_proxy_v4, [])), ...(to_list(options.lan_dev_proxy_v6, [])) ]
+		};
+		if (length(to_list(leg_proxy.mac, [])) > 0 || length(leg_proxy.ip) > 0)
+			push(entries, leg_proxy);
+	}
+
+	return entries;
+}
+
+/**
+ * Parse enabled `lan_device` UCI entries into ordered first-match rules.
+ */
+function parse_device_rules(uci_cfg, opts) {
+	let dev_entries = collect_ordered_lan_devices(uci_cfg, opts);
+	let rules = [];
+
+	for (let dev in dev_entries) {
+		if (type(dev) != 'object' || dev.enabled == '0' || dev.enabled === false)
+			continue;
+
+		let pol = lc(trim('' + (dev.policy ?? 'bypass')));
+		if (pol != 'bypass' && pol != 'proxy')
+			continue;
+
+		let macs = filter_mac_list(dev.mac);
+		let v4 = filter_ip_list(dev.ip, 4);
+		let v6 = filter_ip_list(dev.ip, 6);
+		if (length(macs) == 0 && length(v4) == 0 && length(v6) == 0)
+			continue;
+
+		push(rules, {
+			policy: pol,
+			macs: macs,
+			v4: v4,
+			v6: v6
+		});
+	}
+
+	return rules;
+}
+
 function parse_device_sets(uci_cfg, opts, lan_mode) {
 	let options = opts || {};
 	let sets = {
@@ -377,49 +451,133 @@ function parse_device_sets(uci_cfg, opts, lan_mode) {
 		lan_dev_block_mac: filter_mac_list(options.lan_dev_block_mac)
 	};
 
-	let dev_entries = [];
-	if (type(options.lan_devices) == 'array') {
-		for (let d in options.lan_devices)
-			push(dev_entries, d);
-	}
-	if (type(uci_cfg) == 'object') {
-		if (type(uci_cfg.lan_devices) == 'array') {
-			for (let d in uci_cfg.lan_devices)
-				push(dev_entries, d);
-		}
-		for (let k, sec in uci_cfg) {
-			if (type(sec) == 'object' && sec['.type'] == 'lan_device')
-				push(dev_entries, sec);
-		}
-	}
-
-	let default_policy = (lan_mode == 'proxy_listed') ? 'proxy' : 'bypass';
-	for (let dev in dev_entries) {
-		if (type(dev) != 'object' || dev.enabled == '0' || dev.enabled === false)
-			continue;
-
-		let pol = lc(trim('' + (dev.policy || default_policy)));
-		let prefix = 'lan_dev_direct';
-		if (pol == 'proxy')
-			prefix = 'lan_dev_proxy';
-		else if (pol == 'block')
-			prefix = 'lan_dev_block';
-
-		for (let mac in to_list(dev.mac, [])) {
-			if (is_valid_mac(mac))
-				push_unique(sets[prefix + '_mac'], lc(trim(mac)));
-		}
-
-		for (let ip in to_list(dev.ip, [])) {
-			let c = classify_ip_or_cidr(ip);
-			if (c && c.family == 4)
-				push_unique(sets[prefix + '_v4'], c.value);
-			else if (c && c.family == 6)
-				push_unique(sets[prefix + '_v6'], c.value);
-		}
+	for (let r in parse_device_rules(uci_cfg, options)) {
+		let prefix = (r.policy == 'proxy') ? 'lan_dev_proxy' : 'lan_dev_direct';
+		for (let m in r.macs)
+			push_unique(sets[prefix + '_mac'], m);
+		for (let ip4 in r.v4)
+			push_unique(sets[prefix + '_v4'], ip4);
+		for (let ip6 in r.v6)
+			push_unique(sets[prefix + '_v6'], ip6);
 	}
 
 	return sets;
+}
+
+function has_active_proxy_device_rules(dev_rules, ipv4_enable, ipv6_enable) {
+	for (let r in dev_rules) {
+		if (r.policy != 'proxy')
+			continue;
+		if (length(r.macs) > 0)
+			return true;
+		if (ipv4_enable && length(r.v4) > 0)
+			return true;
+		if (ipv6_enable && length(r.v6) > 0)
+			return true;
+	}
+	return false;
+}
+
+function append_device_filter_rules(out, dev_rules, lan_mode, ipv4_enable, ipv6_enable, bypass_verdict, proxy_target_chain) {
+	for (let r in dev_rules) {
+		let action = (r.policy == 'proxy' && proxy_target_chain)
+			? ('goto ' + proxy_target_chain)
+			: bypass_verdict;
+		for (let mac in r.macs)
+			push(out, sprintf('\t\tether saddr %s %s', mac, action));
+		if (ipv4_enable) {
+			for (let ip4 in r.v4)
+				push(out, sprintf('\t\tip saddr %s %s', ip4, action));
+		}
+		if (ipv6_enable) {
+			for (let ip6 in r.v6)
+				push(out, sprintf('\t\tip6 saddr %s %s', ip6, action));
+		}
+	}
+
+	if (lan_mode == 'default_bypass') {
+		push(out, '\t\t' + bypass_verdict);
+	} else if (proxy_target_chain) {
+		push(out, '\t\tgoto ' + proxy_target_chain);
+	}
+}
+
+function append_daddr_bypass_lines(out, ipv4_enable, ipv6_enable, verdict) {
+	for (let set_prefix in [ 'reserved', 'lan', 'wan', 'bypass' ]) {
+		if (ipv4_enable)
+			push(out, sprintf('\t\tip daddr @%s_v4 %s', set_prefix, verdict));
+		if (ipv6_enable)
+			push(out, sprintf('\t\tip6 daddr @%s_v6 %s', set_prefix, verdict));
+	}
+}
+
+function build_lockdown_tail_lines(ipv4_enable, ipv6_enable) {
+	let lines = [];
+	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
+	push(lines, '\t\tcounter name "lockdown_dropped" counter reject with icmpx type admin-prohibited');
+	return lines;
+}
+
+function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_ports, redirect_port) {
+	let lines = [];
+
+	if (port_mode == 'include') {
+		if (length(filter_tcp_ports) == 0)
+			push(lines, '\t\treturn');
+		else
+			push(lines, '\t\ttcp dport != @filter_tcp_ports return');
+	} else if (port_mode == 'exclude' && length(filter_tcp_ports) > 0) {
+		push(lines, '\t\ttcp dport @filter_tcp_ports return');
+	}
+
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+
+	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
+
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+
+	return lines;
+}
+
+function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port) {
+	let lines = [];
+
+	if (port_mode == 'include') {
+		if (length(filter_udp_ports) == 0)
+			push(lines, '\t\tct mark set ct mark | 0x10 return');
+		else
+			push(lines, '\t\tudp dport != @filter_udp_ports ct mark set ct mark | 0x10 return');
+	} else if (port_mode == 'exclude' && length(filter_udp_ports) > 0) {
+		push(lines, '\t\tudp dport @filter_udp_ports ct mark set ct mark | 0x10 return');
+	}
+
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+
+	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'ct mark set ct mark | 0x10 return');
+
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+
+	return lines;
+}
+
+function append_subchain(out, chain_name, body_lines) {
+	push(out, '');
+	push(out, sprintf('\tchain %s {', chain_name));
+	for (let line in body_lines)
+		push(out, line);
+	push(out, '\t}');
 }
 
 function format_set_block(name, set_type, flags_line, elements, quote_elems) {
@@ -466,7 +624,7 @@ function generate_rules(opts) {
 	let lan_mode = normalize_lan_mode(
 		options.lan_proxy_mode ?? options.lan_device_mode ??
 		p.lan_device_mode ?? p.lan_proxy_mode ??
-		g.lan_device_mode ?? g.lan_proxy_mode ?? 'all'
+		g.lan_device_mode ?? g.lan_proxy_mode ?? 'default_proxy'
 	);
 
 	let port_mode = normalize_port_mode(
@@ -491,7 +649,7 @@ function generate_rules(opts) {
 	) ?? common.DEFAULT_TPROXY_PORT;
 
 	let net_ctx = resolve_network_context(uci_cfg, options);
-	let dev_sets = parse_device_sets(uci_cfg, options, lan_mode);
+	let dev_rules = parse_device_rules(uci_cfg, options);
 
 	let fakeip_v4 = filter_ip_list(options.fakeip_v4 ?? ctx?.fakeip?.ipv4, 4);
 	let fakeip_v6 = filter_ip_list(options.fakeip_v6 ?? ctx?.fakeip?.ipv6, 6);
@@ -526,18 +684,6 @@ function generate_rules(opts) {
 	push(out, format_set_block('bypass_v4', 'ipv4_addr', interval_flags, bypass_v4, false));
 	push(out, format_set_block('bypass_v6', 'ipv6_addr', interval_flags, bypass_v6, false));
 
-	push(out, format_set_block('lan_dev_direct_v4', 'ipv4_addr', interval_flags, dev_sets.lan_dev_direct_v4, false));
-	push(out, format_set_block('lan_dev_direct_v6', 'ipv6_addr', interval_flags, dev_sets.lan_dev_direct_v6, false));
-	push(out, format_set_block('lan_dev_direct_mac', 'ether_addr', null, dev_sets.lan_dev_direct_mac, false));
-
-	push(out, format_set_block('lan_dev_proxy_v4', 'ipv4_addr', interval_flags, dev_sets.lan_dev_proxy_v4, false));
-	push(out, format_set_block('lan_dev_proxy_v6', 'ipv6_addr', interval_flags, dev_sets.lan_dev_proxy_v6, false));
-	push(out, format_set_block('lan_dev_proxy_mac', 'ether_addr', null, dev_sets.lan_dev_proxy_mac, false));
-
-	push(out, format_set_block('lan_dev_block_v4', 'ipv4_addr', interval_flags, dev_sets.lan_dev_block_v4, false));
-	push(out, format_set_block('lan_dev_block_v6', 'ipv6_addr', interval_flags, dev_sets.lan_dev_block_v6, false));
-	push(out, format_set_block('lan_dev_block_mac', 'ether_addr', null, dev_sets.lan_dev_block_mac, false));
-
 	push(out, format_set_block('filter_tcp_ports', 'inet_service', interval_flags, filter_tcp_ports, false));
 	push(out, format_set_block('filter_udp_ports', 'inet_service', interval_flags, filter_udp_ports, false));
 
@@ -545,54 +691,28 @@ function generate_rules(opts) {
 	push(out, '\tcounter udp_proxied {}');
 	push(out, '\tcounter lockdown_dropped {}');
 
-	let has_proxy_devs = (length(dev_sets.lan_dev_proxy_mac) > 0) ||
-		(ipv4_enable && length(dev_sets.lan_dev_proxy_v4) > 0) ||
-		(ipv6_enable && length(dev_sets.lan_dev_proxy_v6) > 0);
+	let use_proxy_subchain = has_active_proxy_device_rules(dev_rules, ipv4_enable, ipv6_enable);
 
 	if (is_lockdown) {
+		let lockdown_tail = build_lockdown_tail_lines(ipv4_enable, ipv6_enable);
+		if (use_proxy_subchain)
+			append_subchain(out, 'forward_lockdown_enforce', lockdown_tail);
+
 		push(out, '');
 		push(out, '\tchain forward_lockdown {');
 		push(out, '\t\ttype filter hook forward priority filter - 1; policy accept;');
 		push(out, '\t\tiifname != @lan_ifaces return');
 		push(out, '\t\tmeta l4proto icmpv6 return');
 
-		push(out, '\t\tether saddr @lan_dev_direct_mac return');
-		if (ipv4_enable)
-			push(out, '\t\tip saddr @lan_dev_direct_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 saddr @lan_dev_direct_v6 return');
+		append_device_filter_rules(
+			out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+			'return', use_proxy_subchain ? 'forward_lockdown_enforce' : null
+		);
 
-		if (lan_mode == 'proxy_listed') {
-			if (!has_proxy_devs) {
-				push(out, '\t\treturn');
-			} else {
-				push(out, '\t\tether saddr @lan_dev_proxy_mac ct mark set ct mark | 0x40');
-				if (ipv4_enable)
-					push(out, '\t\tip saddr @lan_dev_proxy_v4 ct mark set ct mark | 0x40');
-				if (ipv6_enable)
-					push(out, '\t\tip6 saddr @lan_dev_proxy_v6 ct mark set ct mark | 0x40');
-				push(out, '\t\tct mark & 0x40 == 0 return');
-			}
+		if (!use_proxy_subchain) {
+			for (let line in lockdown_tail)
+				push(out, line);
 		}
-
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @reserved_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @reserved_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @lan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @lan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @wan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @wan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @bypass_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @bypass_v6 return');
-
-		push(out, '\t\tcounter name "lockdown_dropped" counter reject with icmpx type admin-prohibited');
 		push(out, '\t}');
 		push(out, '}');
 		return join('\n', out) + '\n';
@@ -611,6 +731,10 @@ function generate_rules(opts) {
 	}
 
 	// prerouting_tcp
+	let tcp_tail = build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_ports, redirect_port);
+	if (use_proxy_subchain)
+		append_subchain(out, 'prerouting_tcp_proxy', tcp_tail);
+
 	push(out, '');
 	push(out, '\tchain prerouting_tcp {');
 	push(out, '\t\ttype nat hook prerouting priority dstnat + 2; policy accept;');
@@ -620,65 +744,22 @@ function generate_rules(opts) {
 	push(out, '\t\tct status dnat return');
 	push(out, '\t\tfib daddr type local return');
 
-	if (lan_mode == 'bypass_listed' || lan_mode == 'proxy_listed') {
-		push(out, '\t\tether saddr @lan_dev_direct_mac return');
-		if (ipv4_enable)
-			push(out, '\t\tip saddr @lan_dev_direct_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 saddr @lan_dev_direct_v6 return');
+	append_device_filter_rules(
+		out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+		'return', use_proxy_subchain ? 'prerouting_tcp_proxy' : null
+	);
+
+	if (!use_proxy_subchain) {
+		for (let line in tcp_tail)
+			push(out, line);
 	}
-
-	if (lan_mode == 'proxy_listed') {
-		if (!has_proxy_devs) {
-			push(out, '\t\treturn');
-		} else {
-			push(out, '\t\tether saddr @lan_dev_proxy_mac ct mark set ct mark | 0x40');
-			if (ipv4_enable)
-				push(out, '\t\tip saddr @lan_dev_proxy_v4 ct mark set ct mark | 0x40');
-			if (ipv6_enable)
-				push(out, '\t\tip6 saddr @lan_dev_proxy_v6 ct mark set ct mark | 0x40');
-			push(out, '\t\tct mark & 0x40 == 0 return');
-		}
-	}
-
-	if (port_mode == 'include') {
-		if (length(filter_tcp_ports) == 0)
-			push(out, '\t\treturn');
-		else
-			push(out, '\t\ttcp dport != @filter_tcp_ports return');
-	} else if (port_mode == 'exclude' && length(filter_tcp_ports) > 0) {
-		push(out, '\t\ttcp dport @filter_tcp_ports return');
-	}
-
-	if (ipv4_enable)
-		push(out, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
-	if (ipv6_enable)
-		push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
-
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @reserved_v4 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @reserved_v6 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @lan_v4 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @lan_v6 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @wan_v4 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @wan_v6 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @bypass_v4 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @bypass_v6 return');
-
-	if (ipv4_enable)
-		push(out, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
-	if (ipv6_enable)
-		push(out, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
 	push(out, '\t}');
 
 	// prerouting_udp
+	let udp_tail = build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port);
+	if (use_proxy_subchain)
+		append_subchain(out, 'prerouting_udp_proxy', udp_tail);
+
 	push(out, '');
 	push(out, '\tchain prerouting_udp {');
 	push(out, '\t\ttype filter hook prerouting priority mangle; policy accept;');
@@ -704,62 +785,15 @@ function generate_rules(opts) {
 	if (ipv6_enable)
 		push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 
-	if (lan_mode == 'bypass_listed' || lan_mode == 'proxy_listed') {
-		push(out, '\t\tether saddr @lan_dev_direct_mac ct mark set ct mark | 0x10 return');
-		if (ipv4_enable)
-			push(out, '\t\tip saddr @lan_dev_direct_v4 ct mark set ct mark | 0x10 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 saddr @lan_dev_direct_v6 ct mark set ct mark | 0x10 return');
+	append_device_filter_rules(
+		out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
+		'ct mark set ct mark | 0x10 return', use_proxy_subchain ? 'prerouting_udp_proxy' : null
+	);
+
+	if (!use_proxy_subchain) {
+		for (let line in udp_tail)
+			push(out, line);
 	}
-
-	if (lan_mode == 'proxy_listed') {
-		if (!has_proxy_devs) {
-			push(out, '\t\tct mark set ct mark | 0x10 return');
-		} else {
-			push(out, '\t\tether saddr @lan_dev_proxy_mac ct mark set ct mark | 0x40');
-			if (ipv4_enable)
-				push(out, '\t\tip saddr @lan_dev_proxy_v4 ct mark set ct mark | 0x40');
-			if (ipv6_enable)
-				push(out, '\t\tip6 saddr @lan_dev_proxy_v6 ct mark set ct mark | 0x40');
-			push(out, '\t\tct mark & 0x40 == 0 ct mark set ct mark | 0x10 return');
-		}
-	}
-
-	if (port_mode == 'include') {
-		if (length(filter_udp_ports) == 0)
-			push(out, '\t\tct mark set ct mark | 0x10 return');
-		else
-			push(out, '\t\tudp dport != @filter_udp_ports ct mark set ct mark | 0x10 return');
-	} else if (port_mode == 'exclude' && length(filter_udp_ports) > 0) {
-		push(out, '\t\tudp dport @filter_udp_ports ct mark set ct mark | 0x10 return');
-	}
-
-	if (ipv4_enable)
-		push(out, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
-	if (ipv6_enable)
-		push(out, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
-
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @reserved_v4 ct mark set ct mark | 0x10 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @reserved_v6 ct mark set ct mark | 0x10 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @lan_v4 ct mark set ct mark | 0x10 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @lan_v6 ct mark set ct mark | 0x10 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @wan_v4 ct mark set ct mark | 0x10 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @wan_v6 ct mark set ct mark | 0x10 return');
-	if (ipv4_enable)
-		push(out, '\t\tip daddr @bypass_v4 ct mark set ct mark | 0x10 return');
-	if (ipv6_enable)
-		push(out, '\t\tip6 daddr @bypass_v6 ct mark set ct mark | 0x10 return');
-
-	if (ipv4_enable)
-		push(out, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
-	if (ipv6_enable)
-		push(out, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 	push(out, '\t}');
 
 	if (proxy_local) {
@@ -1106,13 +1140,13 @@ function parse_counters(raw_input) {
 				let pkts = to_nonneg_int(ex.counter.packets);
 				let bytes = to_nonneg_int(ex.counter.bytes);
 
-				if (chain == 'prerouting_tcp' || chain == 'output_tcp') {
+				if (chain == 'prerouting_tcp' || chain == 'prerouting_tcp_proxy' || chain == 'output_tcp') {
 					rule_tcp_p += pkts;
 					rule_tcp_b += bytes;
-				} else if (chain == 'prerouting_udp') {
+				} else if (chain == 'prerouting_udp' || chain == 'prerouting_udp_proxy') {
 					rule_udp_p += pkts;
 					rule_udp_b += bytes;
-				} else if (chain == 'forward_lockdown') {
+				} else if (chain == 'forward_lockdown' || chain == 'forward_lockdown_enforce') {
 					rule_lock_p += pkts;
 					rule_lock_b += bytes;
 				}
@@ -1198,6 +1232,7 @@ const build_rules_nft = generate_rules;
 
 export {
 	resolve_network_context,
+	parse_device_rules,
 	parse_device_sets,
 	parse_port_elements,
 	generate_rules,

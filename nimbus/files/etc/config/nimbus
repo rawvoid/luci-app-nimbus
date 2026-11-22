@@ -22,7 +22,7 @@ config proxy 'proxy'
 	option port_filter_mode 'all'
 	option sniff '0'
 	option block_quic '0'
-	option lan_device_mode 'all'
+	option lan_device_mode 'default_proxy'
 
 config dns 'dns'
 	option mode 'none'

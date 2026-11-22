@@ -31,14 +31,15 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 	for (let sname in [
 		'lan_ifaces', 'reserved_v4', 'reserved_v6', 'lan_v4', 'lan_v6',
 		'wan_v4', 'wan_v6', 'fakeip_v4', 'fakeip_v6', 'bypass_v4', 'bypass_v6',
-		'lan_dev_direct_v4', 'lan_dev_direct_v6', 'lan_dev_direct_mac',
-		'lan_dev_proxy_v4', 'lan_dev_proxy_v6', 'lan_dev_proxy_mac',
-		'lan_dev_block_v4', 'lan_dev_block_v6', 'lan_dev_block_mac',
 		'filter_tcp_ports', 'filter_udp_ports'
 	]) {
 		check(index(rules, 'set ' + sname + ' {') >= 0,
 			sprintf('declares set %s: %s', sname, combo_desc));
 	}
+	check(index(rules, 'set lan_dev_') < 0,
+		'omits legacy unordered lan_dev_* sets: ' + combo_desc);
+	check(index(rules, '0x40') < 0,
+		'does not pollute ct mark 0x40: ' + combo_desc);
 
 	let lines = split(rules, '\n');
 	for (let line in lines) {
@@ -61,8 +62,6 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 			'lockdown never hooks input/prerouting/output: ' + combo_desc);
 		check(index(rules, 'meta l4proto icmpv6 return') >= 0,
 			'lockdown preserves icmpv6 NDP: ' + combo_desc);
-		check(index(rules, '@lan_dev_direct_mac return') >= 0,
-			'lockdown allows lan_dev_direct_mac: ' + combo_desc);
 		check(index(rules, 'counter name "lockdown_dropped"') >= 0 &&
 			index(rules, 'reject with icmpx type admin-prohibited') >= 0,
 			'lockdown rejects with counter name "lockdown_dropped": ' + combo_desc);
@@ -79,12 +78,13 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 
 // 1. Exhaustive matrix validation with real `nft -c -f`:
 // {main, side} x {tproxy_redirect, lockdown} x {router_proxy=0,1} x
-// {port_filter_mode=all,include,exclude,empty-include} x {lan_proxy_mode=all,proxy_listed,except_listed}
+// {port_filter_mode=all,include,exclude,empty-include} x
+// {lan_device_mode=default_proxy,default_bypass,all,proxy_listed,except_listed}
 let topologies = [ 'main', 'side' ];
 let modes = [ 'tproxy_redirect', 'lockdown' ];
 let router_proxies = [ '0', '1' ];
 let port_modes = [ 'all', 'include', 'exclude', 'empty-include' ];
-let lan_modes = [ 'all', 'proxy_listed', 'except_listed' ];
+let lan_modes = [ 'default_proxy', 'default_bypass', 'all', 'proxy_listed', 'except_listed' ];
 
 let matrix_count = 0;
 for (let topo in topologies) {
@@ -132,6 +132,8 @@ for (let topo in topologies) {
 
 					check(res.ok === true, 'nft -c -f passed for ' + desc + (res.error ? (': ' + res.error) : ''));
 					assert_rules_invariants(res.rules, mode, desc);
+					check(index(res.rules, 'aa:bb:cc:dd:ee:03') < 0,
+						'ignores unsupported device policy block: ' + desc);
 
 					if (topo == 'side') {
 						check(index(res.rules, '203.0.113.10') < 0 && index(res.rules, '2001:db8:1::1') < 0,
@@ -142,6 +144,12 @@ for (let topo in topologies) {
 					}
 
 					if (mode == 'tproxy_redirect') {
+						check(index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 return') >= 0 &&
+							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 ct mark set ct mark | 0x10 return') >= 0 &&
+							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:02 goto prerouting_tcp_proxy') >= 0 &&
+							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:02 goto prerouting_udp_proxy') >= 0,
+							'device rules apply prior to default policy in tproxy_redirect: ' + desc);
+
 						if (rp == '1') {
 							check(index(res.rules, 'chain output_tcp {') >= 0 &&
 								index(res.rules, 'chain output_udp {') >= 0 &&
@@ -169,45 +177,110 @@ for (let topo in topologies) {
 								index(res.rules, 'udp dport @filter_udp_ports ct mark set ct mark | 0x10 return') >= 0,
 								'exclude mode returns on @filter_tcp_ports and @filter_udp_ports: ' + desc);
 						}
-					}
-
-					if (lm == 'proxy_listed') {
-						check(index(res.rules, 'ct mark & 0x40 == 0') >= 0,
-							'proxy_listed with proxy devices uses union mark 0x40 check: ' + desc);
+					} else {
+						check(index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 return') >= 0 &&
+							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:02 goto forward_lockdown_enforce') >= 0,
+							'lockdown preserves bypass and proxy device rules across all modes: ' + desc);
 					}
 				}
 			}
 		}
 	}
 }
-check(matrix_count == 96, 'tested all 96 primary matrix combinations');
+check(matrix_count == 160, 'tested all 160 primary matrix combinations');
 
-// 2. Additional edge combinations: empty proxy_listed, single-stack IPv4-only / IPv6-only, hijack_lan_dns=1
+// 2. Device rule precedence, first-match ordering, .index sorting, empty/bypass-only edge cases
+let all_with_bypass = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/all_with_bypass.nft',
+	mode: 'tproxy_redirect',
+	lan_device_mode: 'all',
+	lan_devices: [
+		{ enabled: '1', mac: '78:2E:03:53:00:2F', ip: '10.11.1.115', policy: 'bypass' },
+		{ enabled: '0', mac: 'AA:BB:CC:DD:EE:99', ip: '10.11.1.200', policy: 'proxy' }
+	]
+});
+check(all_with_bypass.ok === true &&
+	index(all_with_bypass.rules, 'ether saddr 78:2e:03:53:00:2f return') >= 0 &&
+	index(all_with_bypass.rules, 'ip saddr 10.11.1.115 return') >= 0 &&
+	index(all_with_bypass.rules, 'ether saddr 78:2e:03:53:00:2f ct mark set ct mark | 0x10 return') >= 0 &&
+	index(all_with_bypass.rules, 'ip saddr 10.11.1.115 ct mark set ct mark | 0x10 return') >= 0 &&
+	index(all_with_bypass.rules, 'prerouting_tcp_proxy') < 0 &&
+	index(all_with_bypass.rules, 'aa:bb:cc:dd:ee:99') < 0,
+	'default_proxy / legacy all applies enabled bypass rule, skips disabled rows, and avoids subchains');
+
+let host_proxy_before_subnet_bypass = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/order_a.nft',
+	mode: 'tproxy_redirect',
+	lan_device_mode: 'default_proxy',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.50', policy: 'proxy' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	]
+});
+check(host_proxy_before_subnet_bypass.ok === true, 'host proxy before subnet bypass passes nft -c -f');
+check(index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_tcp_proxy') >= 0 &&
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_tcp_proxy') <
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.0/24 return') &&
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_udp_proxy') >= 0 &&
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_udp_proxy') <
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.0/24 ct mark set ct mark | 0x10 return'),
+	'first-match order puts host proxy before subnet bypass in TCP and UDP');
+
+let subnet_bypass_before_host_proxy = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/order_b.nft',
+	mode: 'lockdown',
+	uci: {
+		global: { topology: 'main', lan_interfaces: [ 'lan' ] },
+		proxy: { lan_device_mode: 'default_bypass' },
+		z_subnet: { '.type': 'lan_device', '.index': 1, enabled: '1', ip: '10.11.1.50', policy: 'proxy' },
+		a_subnet: { '.type': 'lan_device', '.index': 0, enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	}
+});
+check(subnet_bypass_before_host_proxy.ok === true, 'UCI .index ordered lockdown rules pass nft -c -f');
+check(index(subnet_bypass_before_host_proxy.rules, 'ip saddr 10.11.1.0/24 return') >= 0 &&
+	index(subnet_bypass_before_host_proxy.rules, 'ip saddr 10.11.1.0/24 return') <
+	index(subnet_bypass_before_host_proxy.rules, 'ip saddr 10.11.1.50 goto forward_lockdown_enforce'),
+	'UCI .index controls first-match order strictly regardless of object key order');
+
 let empty_proxy_tproxy = nft.apply_rules({
 	nft_bin: nft_bin,
 	check_only: true,
 	output_path: work_dir + '/empty_proxy_tproxy.nft',
 	mode: 'tproxy_redirect',
 	lan_proxy_mode: 'proxy_listed',
-	lan_devices: []
+	lan_devices: [
+		{ enabled: '1', mac: '78:2E:03:53:00:2F', policy: 'bypass' }
+	]
 });
 check(empty_proxy_tproxy.ok === true &&
-	index(empty_proxy_tproxy.rules, 'ct mark & 0x40') < 0 &&
-	index(empty_proxy_tproxy.rules, '\t\treturn\n\t\tip daddr @fakeip_v4') >= 0 &&
-	index(empty_proxy_tproxy.rules, '\t\tct mark set ct mark | 0x10 return\n\t\tip daddr @fakeip_v4') >= 0,
-	'empty proxy_listed in tproxy_redirect short-circuits immediately');
+	index(empty_proxy_tproxy.rules, 'prerouting_tcp_proxy') < 0 &&
+	index(empty_proxy_tproxy.rules, 'prerouting_udp_proxy') < 0 &&
+	index(empty_proxy_tproxy.rules, 'ether saddr 78:2e:03:53:00:2f return\n\t\treturn\n\t\tip daddr @fakeip_v4') >= 0 &&
+	index(empty_proxy_tproxy.rules, 'ether saddr 78:2e:03:53:00:2f ct mark set ct mark | 0x10 return\n\t\tct mark set ct mark | 0x10 return\n\t\tip daddr @fakeip_v4') >= 0,
+	'default_bypass / proxy_listed without active proxy rules short-circuits safely');
 
 let empty_proxy_lockdown = nft.apply_rules({
 	nft_bin: nft_bin,
 	check_only: true,
 	output_path: work_dir + '/empty_proxy_lockdown.nft',
 	mode: 'lockdown',
-	lan_proxy_mode: 'proxy_listed',
-	lan_devices: []
+	lan_device_mode: 'default_bypass',
+	ipv4_enable: '0',
+	ipv6_enable: '1',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.50', policy: 'proxy' }
+	]
 });
 check(empty_proxy_lockdown.ok === true &&
-	index(empty_proxy_lockdown.rules, '\t\treturn\n\t\tip daddr @reserved_v4') >= 0,
-	'empty proxy_listed in lockdown short-circuits immediately');
+	index(empty_proxy_lockdown.rules, 'forward_lockdown_enforce') < 0 &&
+	index(empty_proxy_lockdown.rules, '\t\treturn\n\t\tip6 daddr @reserved_v6') >= 0,
+	'default_bypass with IPv4-only proxy rule under ipv4_enable=0 short-circuits safely');
 
 let v4_only = nft.apply_rules({
 	nft_bin: nft_bin,
@@ -314,6 +387,29 @@ check(live_ctrs.ok === true &&
 	live_ctrs.tcp_packets == 0 && live_ctrs.udp_packets == 0 && live_ctrs.lockdown_rejected_packets == 0,
 	'live get_counters queries nft -j list counters table inet nimbus');
 
+let live_apply_subchain = nft.apply_rules({
+	nft_bin: nft_bin,
+	output_path: work_dir + '/live_rules_subchain.nft',
+	mode: 'tproxy_redirect',
+	lan_device_mode: 'default_proxy',
+	lan_devices: [
+		{ enabled: '1', mac: 'AA:BB:CC:DD:EE:02', ip: '10.11.1.50', policy: 'proxy' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'bypass' }
+	]
+});
+check(live_apply_subchain.ok === true, 'live nft -f with ordered goto subchains succeeds in container');
+
+let live_apply_lockdown_subchain = nft.apply_lockdown({
+	nft_bin: nft_bin,
+	output_path: work_dir + '/live_lockdown_subchain.nft',
+	lan_device_mode: 'default_bypass',
+	lan_devices: [
+		{ enabled: '1', ip: '10.11.1.5', policy: 'bypass' },
+		{ enabled: '1', ip: '10.11.1.0/24', policy: 'proxy' }
+	]
+});
+check(live_apply_lockdown_subchain.ok === true, 'live nft -f lockdown with ordered goto subchain succeeds in container');
+
 check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'delete_table cleans up live table');
 
 // 4. get_counters JSON parsing tests (both `nft -j list counters` and `nft -j list table` formats)
@@ -348,7 +444,7 @@ let sample_list_table_json = sprintf('%J', {
 			rule: {
 				family: 'inet',
 				table: 'nimbus',
-				chain: 'prerouting_tcp',
+				chain: 'prerouting_tcp_proxy',
 				expr: [ { counter: { packets: 25, bytes: 1200 } } ]
 			}
 		},
@@ -356,7 +452,7 @@ let sample_list_table_json = sprintf('%J', {
 			rule: {
 				family: 'inet',
 				table: 'nimbus',
-				chain: 'prerouting_udp',
+				chain: 'prerouting_udp_proxy',
 				expr: [ { counter: { packets: 40, bytes: 8000 } } ]
 			}
 		},
@@ -364,7 +460,7 @@ let sample_list_table_json = sprintf('%J', {
 			rule: {
 				family: 'inet',
 				table: 'nimbus',
-				chain: 'forward_lockdown',
+				chain: 'forward_lockdown_enforce',
 				expr: [ { counter: { packets: 7, bytes: 420 } } ]
 			}
 		}

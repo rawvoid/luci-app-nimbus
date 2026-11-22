@@ -10,4 +10,16 @@ if [ ! -f /etc/nimbus/lists/local/custom_direct.txt ]; then
 	printf '# Custom direct IPv4/IPv6 CIDR entries (one per line)\n' > /etc/nimbus/lists/local/custom_direct.txt
 fi
 
+if command -v uci >/dev/null 2>&1; then
+	lan_mode=$(uci -q get nimbus.proxy.lan_device_mode || true)
+	case "$lan_mode" in
+		all|bypass_listed|except_listed)
+			uci -q set nimbus.proxy.lan_device_mode='default_proxy' && uci -q commit nimbus
+			;;
+		proxy_listed)
+			uci -q set nimbus.proxy.lan_device_mode='default_bypass' && uci -q commit nimbus
+			;;
+	esac
+fi
+
 exit 0

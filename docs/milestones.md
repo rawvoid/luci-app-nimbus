@@ -71,7 +71,7 @@
 **目标**：打通独立防火墙表 `table inet nimbus` 双态生成、双栈策略路由、`procd` + `supervisor.uc` 托管、Fail-Closed 状态机与接口事件自愈。
 
 ### 交付物
-- `nimbus/files/usr/share/nimbus/nft_manager.uc`（双态规则生成、`lan_v4`/`lan_v6` 绕行、`port_filter_mode` 含空集 `include` 安全放行、`ct mark` 首包按位缓存、`lockdown` 下 `proxy_listed` 范围隔离、`bypass_sets.nft` / `wan_sets.nft` 原子热更新、计数器 JSON 解析、LAN Zone `input` 诊断检测）
+- `nimbus/files/usr/share/nimbus/nft_manager.uc`（双态规则生成、`lan_v4`/`lan_v6` 绕行、`port_filter_mode` 含空集 `include` 安全放行、`ct mark` 首包按位缓存、设备分流规则优先于 `lan_device_mode` 默认策略按序匹配、`lockdown` 下 `default_bypass` 范围隔离、`bypass_sets.nft` / `wan_sets.nft` 原子热更新、计数器 JSON 解析、LAN Zone `input` 诊断检测）
 - `nimbus/files/usr/share/nimbus/route_manager.uc`（IPv4/IPv6 `tproxy_redirect` 策略路由、`sysctl` 调优、幂等清理与自愈）
 - `nimbus/files/usr/share/nimbus/supervisor.uc`（纯 `ucode` + `uloop` 监督器：管理 `sing-box.pid`、区分 `SIGTERM` 主动停机与异常崩溃重试窗口、耗尽触发 Fail Handler、`30s` 定时器对 `/var/log/nimbus.log` 实施 512KB->256KB 滞回截断）
 - `nimbus/files/etc/init.d/nimbus`（`USE_PROCD=1`、托管 `supervisor.uc` 且不开 `procd respawn`、自动计算 `GOMEMLIMIT`、`-D /var/run/nimbus`、`RLIMIT_NOFILE=65535`、校验失败 Fail Handler、比对 `config.json` `SHA256` 的差异化 `reload_service` 与 `procd_add_reload_trigger`）
@@ -79,11 +79,11 @@
 - `tests/unit/test_nft_manager.uc`、`tests/unit/test_supervisor.uc`
 
 ### 验收标准
-- [ ] 生成的 `tproxy_redirect`、`lockdown` 双态 `nftables` 规则在各类边界组合（空 Set、单栈 IPv4/IPv6、`proxy_local=0/1`、`hijack_lan_dns=0/1`、`lan_device_mode=all/bypass_listed/proxy_listed` 空/非空、`port_filter_mode=all/include/exclude` 空/非空）下均不输出非法 `elements = { }` 且无范围泄漏
+- [ ] 生成的 `tproxy_redirect`、`lockdown` 双态 `nftables` 规则在各类边界组合（空 Set、单栈 IPv4/IPv6、`proxy_local=0/1`、`hijack_lan_dns=0/1`、`lan_device_mode=default_proxy/default_bypass` 及旧值兼容与空/交错/排序规则、`port_filter_mode=all/include/exclude` 空/非空）下均不输出非法 `elements = { }` 且无范围泄漏
 - [ ] 所有生成的规则文件通过真实 `sudo nft -c -f` 语法校验
 - [ ] `prerouting_dns`（`dstnat + 1`）与 `prerouting_tcp`（`dstnat + 2`）均含 `ct status dnat return` 与 `fib daddr type local return`
 - [ ] `prerouting_udp` 正确实现 `ct mark & 0x30` 按位缓存及 `port_filter_mode='include'` 空集安全放行
-- [ ] `lockdown` 规则仅 Hook `forward` 链，不拦截 `input`，无条件放行 `icmpv6`，并正确保留 `proxy_listed` 直连设备通路
+- [ ] `lockdown` 规则仅 Hook `forward` 链，不拦截 `input`，无条件放行 `icmpv6`，并正确保留直连规则与 `default_bypass` 未命中直连设备通路
 - [ ] `supervisor.uc` 单元测试验证 `SIGTERM` 退出不触发 Fail Handler，崩溃耗尽后触发 `LOCKDOWN`/`fail_open=1` 且不重新拉起，超过 512KB 日志滞回截断为 256KB
 - [ ] `init.d` `reload_service` 在仅变更不影响 `config.json` 的配置时跳过重启 `sing-box`
 - [ ] `topology='side'` 且无 `wan`/`wan6` 接口时不报错、自动绕行 `lan_v4`/`lan_v6` 并关闭 LAN 口 `send_redirects`

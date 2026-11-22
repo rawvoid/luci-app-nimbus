@@ -893,16 +893,16 @@ msgstr ""
 msgid "Examples: 53, 443, 10000-10100."
 msgstr ""
 
-msgid "LAN Device Control Mode"
+msgid "Default LAN Device Policy"
 msgstr ""
 
-msgid "Proxy All LAN Devices"
+msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
 msgstr ""
 
-msgid "Bypass Listed Devices"
+msgid "Proxy Unmatched Devices (Default)"
 msgstr ""
 
-msgid "Proxy Only Listed Devices"
+msgid "Bypass Unmatched Devices (Direct)"
 msgstr ""
 
 msgid "Inject Route Sniff Rule"
@@ -965,7 +965,7 @@ msgstr ""
 msgid "LAN Device Rules"
 msgstr ""
 
-msgid "Specify per-device MAC or IP/CIDR exceptions used by the LAN Device Control Mode above."
+msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
 msgstr ""
 
 msgid "Description"

@@ -60,7 +60,7 @@
 | `proxy_udp_ports` | `list(portrange)` | `[]` | 端口或范围（如 `'53'`, `'443'`） | 非 `'all'` 模式下生效的 UDP 端口集合 |
 | `sniff` | `bool` | `'0'` | `'0'`, `'1'` | `'1'` 时在 `sing-box` 路由表头部为生效透明代理入站注入 `{ "action": "sniff" }` 规则（若尚未被全局或对应 `inbound` 嗅探规则覆盖） |
 | `block_quic` | `bool` | `'0'` | `'0'`, `'1'` | `'1'` 时在 `sing-box` 路由表注入 `protocol: quic -> action: reject` |
-| `lan_device_mode` | `enum` | `'all'` | `'all'`, `'bypass_listed'`, `'proxy_listed'` | 局域网设备控制：`all`=全部代理；`bypass_listed`=列表中 `bypass` 设备直连；`proxy_listed`=仅列表中 `proxy` 设备走代理 |
+| `lan_device_mode` | `enum` | `'default_proxy'` | `'default_proxy'`, `'default_bypass'`（兼容旧值 `'all'` / `'bypass_listed'` / `'except_listed'` -> `'default_proxy'`，`'proxy_listed'` -> `'default_bypass'`） | 未命中下方 `lan_device` 规则的局域网设备默认策略：`default_proxy`=默认走代理；`default_bypass`=默认直连绕行。下方 `lan_device` 规则按顺序**优先于**本默认策略生效 |
 
 ---
 
@@ -140,7 +140,7 @@
 | `enabled` | `bool` | `'1'` | `'0'`, `'1'` | 是否生效 |
 | `mac` | `macaddr` | `''` | `XX:XX:XX:XX:XX:XX`（与 `ip` 至少填一项） | 按源 MAC 匹配（双栈生效） |
 | `ip` | `ipaddr/cidr` | `''` | 合法 IPv4 或 IPv6 地址/网段（与 `mac` 至少填一项） | 按源 IP 匹配 |
-| `policy` | `enum` | `'bypass'` | `'bypass'`, `'proxy'` | `'bypass'`=直连绕行；`'proxy'`=在 `proxy_listed` 模式下纳入代理 |
+| `policy` | `enum` | `'bypass'` | `'bypass'`, `'proxy'` | `'bypass'`=命中该规则的设备直连绕行；`'proxy'`=命中该规则的设备进入代理链路。启用规则按配置顺序自上而下**优先于** `proxy.lan_device_mode` 匹配（先命中者生效） |
 
 ---
 
@@ -171,7 +171,7 @@ config proxy 'proxy'
 	option port_filter_mode 'all'
 	option sniff '0'
 	option block_quic '0'
-	option lan_device_mode 'all'
+	option lan_device_mode 'default_proxy'
 
 config dns 'dns'
 	option mode 'none'

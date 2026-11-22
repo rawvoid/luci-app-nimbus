@@ -1,0 +1,50 @@
+{
+	"luci-app-nimbus": {
+		"description": "Grant access to Nimbus transparent proxy management",
+		"read": {
+			"ubus": {
+				"luci.nimbus": [
+					"status",
+					"log_read",
+					"profile_list",
+					"profile_read",
+					"list_status",
+					"list_read",
+					"core_info",
+					"core_check_update",
+					"core_task_status"
+				],
+				"network.interface": [ "dump" ],
+				"luci-rpc": [ "getHostHints" ]
+			},
+			"uci": [ "nimbus", "network", "firewall" ]
+		},
+		"write": {
+			"cgi-io": [ "upload" ],
+			"ubus": {
+				"luci.nimbus": [
+					"api_secret",
+					"service_action",
+					"log_clear",
+					"profile_save",
+					"profile_meta_save",
+					"profile_activate",
+					"profile_delete",
+					"profile_update",
+					"whitelist_config_save",
+					"list_source_save",
+					"list_save",
+					"list_delete",
+					"list_update",
+					"core_install"
+				]
+			},
+			"uci": [ "nimbus" ],
+			"file": {
+				"/tmp/nimbus-upload.json": [ "write" ],
+				"/tmp/nimbus-upload.txt": [ "write" ],
+				"/tmp/nimbus-upload.bin": [ "write" ]
+			}
+		}
+	}
+}

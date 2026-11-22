@@ -1,0 +1,61 @@
+{
+	"admin/services/nimbus": {
+		"title": "Nimbus",
+		"order": 30,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-nimbus" ],
+			"uci": { "nimbus": true }
+		}
+	},
+	"admin/services/nimbus/overview": {
+		"title": "Overview",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "nimbus/overview"
+		}
+	},
+	"admin/services/nimbus/settings": {
+		"title": "Settings",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "nimbus/settings"
+		}
+	},
+	"admin/services/nimbus/profiles": {
+		"title": "Profiles",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "nimbus/profiles"
+		}
+	},
+	"admin/services/nimbus/whitelists": {
+		"title": "Whitelists",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "nimbus/whitelists"
+		}
+	},
+	"admin/services/nimbus/core": {
+		"title": "Core",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "nimbus/core"
+		}
+	},
+	"admin/services/nimbus/logs": {
+		"title": "Logs",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "nimbus/logs"
+		}
+	}
+}

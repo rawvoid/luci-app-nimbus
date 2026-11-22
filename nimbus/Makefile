@@ -101,6 +101,10 @@ define Package/nimbus/install
 	$(INSTALL_DATA) ./files/usr/share/nimbus/config_builder.uc $(1)/usr/share/nimbus/config_builder.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/nft_manager.uc $(1)/usr/share/nimbus/nft_manager.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/route_manager.uc $(1)/usr/share/nimbus/route_manager.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/dns_manager.uc $(1)/usr/share/nimbus/dns_manager.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/list_updater.uc $(1)/usr/share/nimbus/list_updater.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/profile_updater.uc $(1)/usr/share/nimbus/profile_updater.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/core_manager.uc $(1)/usr/share/nimbus/core_manager.uc
 	$(INSTALL_BIN) ./files/usr/share/nimbus/supervisor.uc $(1)/usr/share/nimbus/supervisor.uc
 endef
 

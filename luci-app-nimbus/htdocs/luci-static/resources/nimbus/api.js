@@ -169,7 +169,7 @@ var callGetHostHints = rpc.declare({
 	expect: { '': {} }
 });
 
-var NimbusApi = baseclass.extend({
+return baseclass.extend({
 	MAX_DIRECT_TEXT_BYTES: MAX_DIRECT_TEXT_BYTES,
 	UPLOAD_PROFILE_PATH: UPLOAD_PROFILE_PATH,
 	UPLOAD_LIST_PATH: UPLOAD_LIST_PATH,
@@ -484,5 +484,3 @@ var NimbusApi = baseclass.extend({
 		});
 	}
 });
-
-return new NimbusApi();

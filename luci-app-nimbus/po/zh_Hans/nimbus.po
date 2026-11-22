@@ -340,6 +340,9 @@ msgstr "未配置 API 密钥。"
 msgid "Close"
 msgstr "关闭"
 
+msgid "Service did not start because it is disabled in Settings (global.enabled)."
+msgstr "服务未启动，因为当前在设置中已禁用（global.enabled）。"
+
 msgid "Service action \"%s\" completed."
 msgstr "服务操作 \"%s\" 已完成。"
 
@@ -363,6 +366,12 @@ msgstr "当前 DNS 模式为 \"singbox\"，为防止 DNS 泄漏，dnsmasq 仍指
 
 msgid "Last Error: "
 msgstr "最近错误: "
+
+msgid "Nimbus service is currently disabled in Settings. "
+msgstr "Nimbus 服务当前在设置中处于禁用状态。"
+
+msgid "Go to Settings"
+msgstr "前往设置"
 
 msgid "sing-box core binary is not installed yet. "
 msgstr "尚未安装 sing-box 内核二进制文件。"
@@ -679,6 +688,12 @@ msgstr "以只读源形式存储于 /etc/nimbus/profiles/，例如 main_sub.json
 msgid "failed"
 msgstr "失败"
 
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败，已平滑重载服务。"
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败。"
+
 msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
 msgstr "订阅更新完成：%d 个已更新，%d 个无变化，已平滑重载服务。"
 
@@ -820,11 +835,11 @@ msgstr "日志级别"
 msgid "Go Memory Limit (GOMEMLIMIT)"
 msgstr "Go 内存限制 (GOMEMLIMIT)"
 
-msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit value such as 128MiB."
-msgstr "填写 \"auto\"（按总内存 40% 计算，限制在 32MiB–256MiB）或指定值如 128MiB。"
+msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr "填写 \"auto\"（按总内存 40% 计算，限制在 32MiB–256MiB）或指定二进制内存值（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
 
-msgid "Must be \"auto\" or a Go memory limit (e.g. 128MiB)."
-msgstr "必须为 \"auto\" 或合法的 Go 内存格式（例如 128MiB）。"
+msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr "必须为 \"auto\" 或合法的二进制 Go 内存限制（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
 
 msgid "Data Plane & Traffic Filtering"
 msgstr "数据面与流量过滤"

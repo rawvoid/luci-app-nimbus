@@ -335,6 +335,9 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
+msgid "Service did not start because it is disabled in Settings (global.enabled)."
+msgstr ""
+
 msgid "Service action \"%s\" completed."
 msgstr ""
 
@@ -357,6 +360,12 @@ msgid "DNS mode is set to \"singbox\", so dnsmasq remains pointed at 127.0.0.1 t
 msgstr ""
 
 msgid "Last Error: "
+msgstr ""
+
+msgid "Nimbus service is currently disabled in Settings. "
+msgstr ""
+
+msgid "Go to Settings"
 msgstr ""
 
 msgid "sing-box core binary is not installed yet. "
@@ -674,6 +683,12 @@ msgstr ""
 msgid "failed"
 msgstr ""
 
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
+msgstr ""
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
+msgstr ""
+
 msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
 msgstr ""
 
@@ -815,10 +830,10 @@ msgstr ""
 msgid "Go Memory Limit (GOMEMLIMIT)"
 msgstr ""
 
-msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit value such as 128MiB."
+msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
 msgstr ""
 
-msgid "Must be \"auto\" or a Go memory limit (e.g. 128MiB)."
+msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
 msgstr ""
 
 msgid "Data Plane & Traffic Filtering"

@@ -516,10 +516,6 @@ function run_supervisor_daemon(paths) {
 	let log_timer_ms = env_int('NIMBUS_LOG_TIMER_MS', DEFAULT_LOG_TIMER_MS);
 	let kill_grace_ms = env_int('NIMBUS_KILL_GRACE_MS', DEFAULT_KILL_GRACE_MS);
 
-	common.ensure_dir(paths.work_dir, 0755);
-
-	uloop.init();
-
 	let stopping = false;
 	let child_proc = null;
 	let child_pid = null;
@@ -529,6 +525,9 @@ function run_supervisor_daemon(paths) {
 	let retry_timer = null;
 	let kill_timer = null;
 	let log_timer = null;
+	let use_uloop_signal = (type(uloop.signal) == 'function');
+	let sig_term = null;
+	let sig_int = null;
 
 	function cleanup_timers() {
 		if (retry_timer) {
@@ -542,6 +541,22 @@ function run_supervisor_daemon(paths) {
 		if (log_timer) {
 			log_timer.cancel();
 			log_timer = null;
+		}
+	}
+
+	function cleanup_signals() {
+		if (use_uloop_signal) {
+			if (sig_term) {
+				sig_term.delete();
+				sig_term = null;
+			}
+			if (sig_int) {
+				sig_int.delete();
+				sig_int = null;
+			}
+		} else if (type(signal) == 'function') {
+			signal('SIGTERM', 'default');
+			signal('SIGINT', 'default');
 		}
 	}
 
@@ -647,9 +662,6 @@ function run_supervisor_daemon(paths) {
 		uloop.end();
 	}
 
-	let sig_term = uloop.signal('SIGTERM', handle_stop_signal);
-	let sig_int = uloop.signal('SIGINT', handle_stop_signal);
-
 	function schedule_log_truncation() {
 		if (stopping)
 			return;
@@ -660,18 +672,41 @@ function run_supervisor_daemon(paths) {
 		});
 	}
 
-	common.truncate_log_hysteresis(paths.log_file, common.LOG_HIGH_BYTES, common.LOG_KEEP_BYTES);
-	schedule_log_truncation();
-	spawn_child();
+	try {
+		common.ensure_dir(paths.work_dir, 0755);
+		uloop.init();
 
-	uloop.run();
+		if (use_uloop_signal) {
+			sig_term = uloop.signal('SIGTERM', handle_stop_signal);
+			sig_int = uloop.signal('SIGINT', handle_stop_signal);
+		} else if (type(signal) == 'function') {
+			sig_term = signal('SIGTERM', handle_stop_signal);
+			sig_int = signal('SIGINT', handle_stop_signal);
+		} else {
+			die('neither uloop.signal nor global signal() is available');
+		}
 
-	if (sig_term)
-		sig_term.delete();
-	if (sig_int)
-		sig_int.delete();
-	cleanup_timers();
-	return 0;
+		common.truncate_log_hysteresis(paths.log_file, common.LOG_HIGH_BYTES, common.LOG_KEEP_BYTES);
+		schedule_log_truncation();
+		spawn_child();
+
+		uloop.run();
+		cleanup_signals();
+		cleanup_timers();
+		return 0;
+	} catch (err) {
+		cleanup_signals();
+		cleanup_timers();
+		if (child_proc && child_pid != null)
+			system([ '/bin/kill', '-TERM', '' + child_pid ]);
+		if (!stopping) {
+			let msg = err?.message || ('' + err) || 'unknown runtime error';
+			execute_fail_handler(sprintf('supervisor unexpected error: %s', msg), paths, null);
+			return 1;
+		}
+		fs.unlink(paths.pid_file);
+		return 0;
+	}
 }
 
 let paths = get_runtime_paths();

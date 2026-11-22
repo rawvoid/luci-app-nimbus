@@ -523,7 +523,7 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 1. **进程托管与 PID**：注入 `GOMEMLIMIT` 与 `GOGC=50`，拉起 `sing-box run -c /var/run/nimbus/config.json -D /var/run/nimbus`，将真实子进程 PID 写入 `/var/run/nimbus/sing-box.pid`。
 2. **主动停机 vs 异常崩溃区分**：
-   - 通过 `uloop.signal` 捕获 `SIGTERM` / `SIGINT`：置 `stopping = true`，向 `sing-box` 发送 `SIGTERM`（最多等待 5 秒后发送 `SIGKILL`），清理 `sing-box.pid` 后干净退出，**不触发** Fail Handler。
+   - 捕获 `SIGTERM` / `SIGINT`（OpenWrt 24.10+ 优先使用 `uloop.signal`，在 OpenWrt 23.05 等未导出 `uloop.signal` 的 `ucode` 版本上回退至内建 `signal()` 配合 `uc_vm_signal_notifyfd` 唤醒 `uloop`）：置 `stopping = true`，向 `sing-box` 发送 `SIGTERM`（最多等待 5 秒后发送 `SIGKILL`），清理 `sing-box.pid` 后干净退出，**不触发** Fail Handler。
 3. **崩溃重试窗口与 Fail Handler**：
    - 若非 `stopping` 下 `sing-box` 异常退出，内部维护重试窗口（默认阈值 `3600s`、退避 `3s`、最多重试 `5` 次）：窗口内瞬时崩溃直接拉起并更新 `sing-box.pid`，期间防火墙表与路由保持在线零泄漏。
    - 连续崩溃耗尽重试上限时，清理 `sing-box.pid`，获取锁并调用统一 Fail Handler（`fail_open='0'` 切换为 `LOCKDOWN`；`fail_open='1'` 删表清路由并还原 `dnsmasq`）后主动退出，由 `procd` 保持停止态不再拉起。

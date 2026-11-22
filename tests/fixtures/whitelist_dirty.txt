@@ -1,0 +1,36 @@
+# Dirty whitelist fixture with comments, ports, duplicates, and unsafe/invalid lines
+// BGP export header comment
+; Semicolon comment line
+
+  1.0.1.0/24   # China Telecom block 1
+1.0.2.0/23 ; inline semicolon comment
+223.5.5.5:53 // strip port 53
+114.114.114.114
+1.0.1.0/24
+
+2400:3200::/32 # Alibaba IPv6
+[2400:3200::1]:443 // bracketed IPv6 with port
+2408:8000::/20
+2400:3200::/32
+
+baidu.com # valid domain
+sub.example.com:8443 // domain with port
+
+# Unsafe /0 and loopback/private/reserved entries (must be rejected)
+0.0.0.0/0
+::/0
+1.2.3.4/0
+127.0.0.1
+::1
+10.0.0.1
+172.16.5.0/24
+192.168.1.0/24
+169.254.1.1
+198.18.0.1
+fe80::1
+fc00::1
+
+# Malformed CIDR entries (must be rejected)
+1.2.3.999/24
+1.2.3.4/33
+2400:3200::/129

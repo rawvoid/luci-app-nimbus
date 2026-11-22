@@ -1,0 +1,94 @@
+{
+  "tag_name": "v1.14.4",
+  "name": "1.14.4",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-11-18T10:00:00Z",
+  "html_url": "https://github.com/SagerNet/sing-box/releases/tag/v1.14.4",
+  "body": "Release v1.14.4\n\n8f7c5f0651238850d96a0e488e5473cd77ec1a0098f63942e943f475a12057ca  sing-box-1.14.4-linux-amd64-musl.tar.gz\nb95e25f921dc5e17a4cf13327243d1177642c7e35425bf5372862c477c359f56  sing-box-1.14.4-linux-arm64-musl.tar.gz\n",
+  "assets": [
+    {
+      "name": "Sha256Sums",
+      "size": 4096,
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/Sha256Sums"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-amd64-musl.tar.gz",
+      "size": 12451840,
+      "digest": "sha256:8f7c5f0651238850d96a0e488e5473cd77ec1a0098f63942e943f475a12057ca",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-386-musl.tar.gz",
+      "size": 11534336,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-386-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-arm64-musl.tar.gz",
+      "size": 11842900,
+      "digest": "sha256:b95e25f921dc5e17a4cf13327243d1177642c7e35425bf5372862c477c359f56",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-arm64-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-armv7-musl.tar.gz",
+      "size": 11206656,
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-armv7-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-armv7.tar.gz",
+      "size": 11100000,
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-armv7.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-armv6-musl.tar.gz",
+      "size": 11050000,
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-armv6-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-armv5-musl.tar.gz",
+      "size": 11010000,
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-armv5-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-mipsle-softfloat-musl.tar.gz",
+      "size": 10890000,
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-mipsle-softfloat-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-mips-softfloat-musl.tar.gz",
+      "size": 10895000,
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-mips-softfloat-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-mips64le-musl.tar.gz",
+      "size": 11300000,
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-mips64le-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-mips64-musl.tar.gz",
+      "size": 11310000,
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-mips64-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-riscv64-musl.tar.gz",
+      "size": 11700000,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-riscv64-musl.tar.gz"
+    },
+    {
+      "name": "sing-box-1.14.4-linux-loong64-musl.tar.gz",
+      "size": 11650000,
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "browser_download_url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-loong64-musl.tar.gz"
+    }
+  ]
+}

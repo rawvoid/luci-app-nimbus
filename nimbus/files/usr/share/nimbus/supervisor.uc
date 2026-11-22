@@ -27,13 +27,17 @@ function env_int(name, fallback) {
 }
 
 function get_runtime_paths() {
+	let work_dir = getenv('NIMBUS_WORK_DIR') || common.RUN_DIR;
+	let runtime_dir = getenv('NIMBUS_RUNTIME_DIR') || work_dir;
 	return {
 		uci_confdir: getenv('NIMBUS_UCI_CONFDIR') || null,
 		uci_savedir: getenv('NIMBUS_UCI_SAVEDIR') || null,
 		bin_path: getenv('NIMBUS_BIN_PATH') || null,
 		profile_path: getenv('NIMBUS_PROFILE_PATH') || null,
 		config_file: getenv('NIMBUS_CONFIG_FILE') || common.CONFIG_FILE,
-		work_dir: getenv('NIMBUS_WORK_DIR') || common.RUN_DIR,
+		work_dir: work_dir,
+		runtime_dir: runtime_dir,
+		core_stamp_file: getenv('NIMBUS_CORE_STAMP_FILE') || (runtime_dir + '/core.stamp'),
 		pid_file: getenv('NIMBUS_PID_FILE') || common.PID_FILE,
 		state_file: getenv('NIMBUS_STATE_FILE') || common.STATE_FILE,
 		lock_file: getenv('NIMBUS_LOCK_FILE') || common.LOCK_FILE,
@@ -82,6 +86,21 @@ function is_pid_alive(pid_path) {
 	return (fs.stat('/proc/' + pid) != null);
 }
 
+function resolve_core_bin(paths, uci_cfg) {
+	return paths.bin_path ||
+		uci_cfg?.core?.bin_path ||
+		uci_cfg?.core?.core_path ||
+		common.DEFAULT_CORE_PATH;
+}
+
+function compute_core_stamp(core_bin, version_str, bin_sha256) {
+	let ver = version_str || '';
+	if (type(bin_sha256) == 'string' && length(bin_sha256) > 0)
+		return sprintf('%s:%s:%s', core_bin, ver, bin_sha256);
+	let st_bin = fs.stat(core_bin);
+	return sprintf('%s:%s:%d:%d', core_bin, ver, st_bin?.size ?? 0, st_bin?.mtime ?? 0);
+}
+
 function maybe_apply_dns(uci_cfg, effective_dns_port, paths) {
 	dns.apply_dns(uci_cfg, {
 		effective_dns_port: effective_dns_port,
@@ -122,8 +141,9 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 		active_profile: g.active_profile || '',
 		config_hash: config_hash || null,
 		core: {
-			bin_path: c.bin_path || '/etc/nimbus/bin/sing-box',
-			version: bctx.core_version || null
+			bin_path: bctx.core_bin || c.bin_path || c.core_path || common.DEFAULT_CORE_PATH,
+			version: bctx.core_version || null,
+			bin_sha256: bctx.bin_sha256 ?? null
 		},
 		effective: {
 			outbound_mark: out_mark,
@@ -261,17 +281,20 @@ function cmd_prepare_start(paths, is_reload) {
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
 	let old_state = common.read_state(paths.state_file) || {};
 	let old_hash = old_state.config_hash || common.sha256_file(paths.config_file);
+	let core_bin = resolve_core_bin(paths, uci_cfg);
 
 	if (!is_reload) {
-		common.write_state(build_state_payload('preparing', uci_cfg, null, old_hash, [], null, null, old_state), paths.state_file);
+		common.write_state(build_state_payload('preparing', uci_cfg, {
+			core_bin: core_bin,
+			bin_sha256: old_state?.core?.bin_sha256 ?? null
+		}, old_hash, [], null, null, old_state), paths.state_file);
 	}
 
-	let bin_path = paths.bin_path || uci_cfg?.core?.bin_path || '/etc/nimbus/bin/sing-box';
 	let bres = cb.build_config({
 		uci: uci_cfg,
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
-		bin_path: bin_path,
+		bin_path: core_bin,
 		profile_path: paths.profile_path,
 		output_path: paths.config_file,
 		check_dir: paths.check_dir
@@ -282,6 +305,15 @@ function cmd_prepare_start(paths, is_reload) {
 		common.release_lock(lock_fh);
 		return 1;
 	}
+
+	let ver_str = bres.context?.core_version || null;
+	if (!ver_str) {
+		let pver = cb.probe_core_version(core_bin);
+		if (pver.ok)
+			ver_str = pver.version;
+	}
+	let new_bin_sha = common.sha256_file(core_bin);
+	let core_stamp = compute_core_stamp(core_bin, ver_str, new_bin_sha);
 
 	let new_hash = common.sha256_file(paths.config_file);
 	let warnings = [ ...(bres.context?.warnings || []) ];
@@ -346,13 +378,30 @@ function cmd_prepare_start(paths, is_reload) {
 		});
 	}
 
-	let running_state = build_state_payload('running', uci_cfg, bres.context, new_hash, warnings, null, wl, old_state);
+	common.atomic_write(paths.core_stamp_file, core_stamp + '\n', 0600);
+
+	let state_ctx = {
+		...(bres.context || {}),
+		core_bin: core_bin,
+		core_version: ver_str,
+		bin_sha256: new_bin_sha
+	};
+	let running_state = build_state_payload('running', uci_cfg, state_ctx, new_hash, warnings, null, wl, old_state);
 	common.write_state(running_state, paths.state_file);
 
+	let old_bin_path = old_state?.core?.bin_path;
+	let old_bin_sha = old_state?.core?.bin_sha256;
+	let old_core_ver = old_state?.core?.version;
+	let core_changed = (
+		old_bin_path != core_bin ||
+		(old_bin_sha != null && new_bin_sha != old_bin_sha) ||
+		(old_bin_sha == null && old_core_ver != null && ver_str != null && old_core_ver != ver_str)
+	);
 	let skip_restart = (is_reload &&
 		old_state.state == 'running' &&
 		old_hash != null &&
 		new_hash == old_hash &&
+		!core_changed &&
 		is_pid_alive(paths.pid_file));
 
 	common.release_lock(lock_fh);
@@ -429,7 +478,7 @@ function cmd_hotplug(paths) {
 
 function run_supervisor_daemon(paths) {
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
-	let bin_path = paths.bin_path || uci_cfg?.core?.bin_path || '/etc/nimbus/bin/sing-box';
+	let bin_path = resolve_core_bin(paths, uci_cfg);
 	let gomemlimit = getenv('GOMEMLIMIT') || compute_gomemlimit(uci_cfg?.global?.gomemlimit);
 	let gogc = getenv('GOGC') || '50';
 

@@ -447,7 +447,7 @@ var NimbusApi = baseclass.extend({
 	buildApiUrl: function(apiInfo, pathSuffix) {
 		if (!apiInfo || !apiInfo.detected || !apiInfo.port)
 			return null;
-		var scheme = apiInfo.scheme || 'http';
+		var scheme = (apiInfo.scheme === 'https') ? 'https' : 'http';
 		var rawListen = String(apiInfo.listen || '').trim();
 		var host = window.location.hostname || '127.0.0.1';
 		if (rawListen && rawListen !== '0.0.0.0' && rawListen !== '::' && rawListen !== '*')

@@ -262,10 +262,15 @@ return view.extend({
 				[ _('SHA256 Digest'), asset.digest ? E('code', { 'style': 'word-break:break-all;' }, asset.digest) : _('Not provided in release metadata') ]
 			];
 			if (updateInfo.release_url) {
-				rows.push([
-					_('Release Notes'),
-					E('a', { 'href': updateInfo.release_url, 'target': '_blank', 'rel': 'noopener noreferrer' }, updateInfo.release_url)
-				]);
+				var releaseUrl = String(updateInfo.release_url).trim();
+				if (releaseUrl) {
+					rows.push([
+						_('Release Notes'),
+						/^https?:\/\//i.test(releaseUrl)
+							? E('a', { 'href': releaseUrl, 'target': '_blank', 'rel': 'noopener noreferrer' }, releaseUrl)
+							: releaseUrl
+					]);
+				}
 			}
 
 			dom.content(releaseBox, [

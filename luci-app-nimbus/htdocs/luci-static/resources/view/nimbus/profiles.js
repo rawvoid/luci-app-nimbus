@@ -398,9 +398,16 @@ return view.extend({
 						errs.push('%s: %s'.format(r.id, r.error || _('failed')));
 					}
 				});
-				if (!res || res.ok === false) {
-					var msg = errs.length ? errs.join('; ') : nimbusApi.formatError(res);
-					nimbusApi.notifyError(msg);
+				if (!res || (res.ok === false && failed === 0)) {
+					nimbusApi.notifyError(res);
+				} else if (failed > 0) {
+					var summary = res.reloaded
+						? _('Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded.').format(updated, unchanged, failed)
+						: _('Subscription update finished: %d updated, %d unchanged, %d failed.').format(updated, unchanged, failed);
+					var notice = errs.length
+						? E('div', {}, [ E('p', {}, summary), E('p', {}, errs.join('; ')) ])
+						: E('p', {}, summary);
+					ui.addNotification(null, notice, 'warning');
 				} else {
 					nimbusApi.notifySuccess(res.reloaded
 						? _('Subscription update finished: %d updated, %d unchanged, service reloaded.').format(updated, unchanged)

@@ -4,6 +4,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)
+NIMBUS_SHARE="${REPO_ROOT}/nimbus/files/usr/share"
 NIMBUS_LIB="${REPO_ROOT}/nimbus/files/usr/share/nimbus"
 UNIT_DIR="${SCRIPT_DIR}/unit"
 
@@ -28,7 +29,7 @@ for test_file in "$UNIT_DIR"/test_*.uc; do
 	printf '[test] running %s ...\n' "$(basename "$test_file")"
 	(
 		cd "$WORK_TMP"
-		ucode -S -L "$NIMBUS_LIB" "$test_file"
+		ucode -S -L "$NIMBUS_SHARE" -L "$NIMBUS_LIB" "$test_file"
 	)
 	count=$((count + 1))
 done

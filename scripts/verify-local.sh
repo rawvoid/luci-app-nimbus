@@ -333,6 +333,7 @@ if [ -d /work/tests/fixtures ]; then
 fi
 printf '[container] nft checks passed (2 baseline probes, %d fixture(s))\n' "$nft_fixture_count"
 
+NIMBUS_SHARE="/work/nimbus/files/usr/share"
 NIMBUS_LIB="/work/nimbus/files/usr/share/nimbus"
 uc_mod_count=0
 uc_script_count=0
@@ -357,7 +358,7 @@ if [ -d /work/nimbus/files/usr/share/rpcd/ucode ]; then
     for uc_file in /work/nimbus/files/usr/share/rpcd/ucode/*.uc; do
         [ -f "$uc_file" ] || continue
         printf '[container] ucode compile check: %s\n' "$uc_file"
-        ucode -S -L "$NIMBUS_LIB" -c -o /dev/null "$uc_file"
+        ucode -S -L "$NIMBUS_SHARE" -L "$NIMBUS_LIB" -c -o /dev/null "$uc_file"
         uc_script_count=$((uc_script_count + 1))
     done
 fi
@@ -366,7 +367,7 @@ if [ -d /work/tests/unit ]; then
     for uc_file in /work/tests/unit/*.uc; do
         [ -f "$uc_file" ] || continue
         printf '[container] ucode compile check: %s\n' "$uc_file"
-        ucode -S -L "$NIMBUS_LIB" -c -o /dev/null "$uc_file"
+        ucode -S -L "$NIMBUS_SHARE" -L "$NIMBUS_LIB" -c -o /dev/null "$uc_file"
         uc_script_count=$((uc_script_count + 1))
     done
 fi

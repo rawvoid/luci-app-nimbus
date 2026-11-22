@@ -106,6 +106,12 @@ define Package/nimbus/install
 	$(INSTALL_DATA) ./files/usr/share/nimbus/profile_updater.uc $(1)/usr/share/nimbus/profile_updater.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/core_manager.uc $(1)/usr/share/nimbus/core_manager.uc
 	$(INSTALL_BIN) ./files/usr/share/nimbus/supervisor.uc $(1)/usr/share/nimbus/supervisor.uc
+
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
+	$(INSTALL_DATA) ./files/usr/share/rpcd/ucode/luci.nimbus.uc $(1)/usr/share/rpcd/ucode/luci.nimbus.uc
+
+	$(INSTALL_DIR) $(1)/usr/share/ucode
+	$(LN) ../nimbus $(1)/usr/share/ucode/nimbus
 endef
 
 $(eval $(call BuildPackage,nimbus))

@@ -378,7 +378,7 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 #### Step 5：现代路由动作注入（嗅探与 QUIC 拒绝）
 - **嗅探（Sniff）**：严禁向任何自动生成的入站写入已移除的入站级 `sniff` 字段。检查 `cfg.route.rules` 是否已存在无 `inbound` 限制的全局 `{ "action": "sniff" }` 规则：
-  - 当 `injected_tags` 非空，或 `uci.proxy.block_quic == '1'` 且目标生效透明代理入站尚无嗅探覆盖时，在 `cfg.route.rules` 头部（`hijack-dns` 之后）按需插入 `{ "inbound": ["<target_tags...>"], "action": "sniff" }`。
+  - 当 `injected_tags` 非空，或 `uci.proxy.sniff == '1'` / `uci.proxy.block_quic == '1'`（以及存在从旧版入站级 `sniff` 迁移而来的 tag）且目标生效透明代理入站尚无嗅探覆盖时，在 `cfg.route.rules` 头部（`hijack-dns` 之后）按需插入 `{ "inbound": ["<target_tags...>"], "action": "sniff" }`。
 - **QUIC 拒绝**：若 `uci.proxy.block_quic == '1'` 且现有规则中尚无 `protocol: "quic"` 的 `reject` 规则，紧跟在 `sniff` 规则之后插入：
   ```json
   { "protocol": "quic", "action": "reject" }

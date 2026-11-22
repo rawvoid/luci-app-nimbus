@@ -20,6 +20,7 @@ config proxy 'proxy'
 	option proxy_mark '0x1'
 	option route_table '100'
 	option port_filter_mode 'all'
+	option sniff '0'
 	option block_quic '0'
 	option lan_device_mode 'all'
 

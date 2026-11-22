@@ -58,6 +58,7 @@
 | `port_filter_mode` | `enum` | `'all'` | `'all'`, `'include'`, `'exclude'` | 目标端口过滤：`all`=全端口；`include`=仅代理指定端口；`exclude`=排除指定端口 |
 | `proxy_tcp_ports` | `list(portrange)` | `[]` | 端口或范围（如 `'80'`, `'443'`, `'8000-8999'`） | 非 `'all'` 模式下生效的 TCP 端口集合 |
 | `proxy_udp_ports` | `list(portrange)` | `[]` | 端口或范围（如 `'53'`, `'443'`） | 非 `'all'` 模式下生效的 UDP 端口集合 |
+| `sniff` | `bool` | `'0'` | `'0'`, `'1'` | `'1'` 时在 `sing-box` 路由表头部为生效透明代理入站注入 `{ "action": "sniff" }` 规则（若尚未被全局或对应 `inbound` 嗅探规则覆盖） |
 | `block_quic` | `bool` | `'0'` | `'0'`, `'1'` | `'1'` 时在 `sing-box` 路由表注入 `protocol: quic -> action: reject` |
 | `lan_device_mode` | `enum` | `'all'` | `'all'`, `'bypass_listed'`, `'proxy_listed'` | 局域网设备控制：`all`=全部代理；`bypass_listed`=列表中 `bypass` 设备直连；`proxy_listed`=仅列表中 `proxy` 设备走代理 |
 
@@ -166,6 +167,7 @@ config proxy 'proxy'
 	option proxy_mark '0x1'
 	option route_table '100'
 	option port_filter_mode 'all'
+	option sniff '0'
 	option block_quic '0'
 	option lan_device_mode 'all'
 

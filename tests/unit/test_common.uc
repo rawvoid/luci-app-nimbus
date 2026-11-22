@@ -141,6 +141,7 @@ check(all_uci?.global?.proxy_mode == 'tproxy_redirect', 'uci_get_all reads globa
 check(all_uci?.global?.fail_open == '0', 'uci_get_all reads global.fail_open');
 check(all_uci?.proxy?.outbound_mark == '0xff', 'uci_get_all reads proxy.outbound_mark');
 check(all_uci?.proxy?.route_table == '100', 'uci_get_all reads proxy.route_table');
+check(all_uci?.proxy?.sniff == '0', 'uci_get_all reads proxy.sniff');
 check(all_uci?.custom_direct?.filename == 'custom_direct.txt', 'uci_get_all reads custom_direct');
 
 // 8. hex_u32_parse & format_hex_u32

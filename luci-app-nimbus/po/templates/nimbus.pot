@@ -1195,3 +1195,31 @@ msgstr ""
 
 msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
 msgstr ""
+
+
+msgid "Local DNS (\"local\") Handling"
+msgstr ""
+
+msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box to avoid DNS loops."
+msgstr ""
+
+msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
+msgstr ""
+
+msgid "Always Use Configured Direct DNS"
+msgstr ""
+
+msgid "Strict Reject (\"local\" Not Allowed)"
+msgstr ""
+
+msgid "Manual / Fallback Direct DNS"
+msgstr ""
+
+msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
+msgstr ""
+
+msgid "Direct DNS server IP is required when policy is set to always use fallback."
+msgstr ""
+
+msgid "Direct DNS server IP must not be a loopback or unspecified address."
+msgstr ""

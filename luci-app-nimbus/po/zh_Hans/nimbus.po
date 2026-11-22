@@ -1200,3 +1200,31 @@ msgstr "Nimbus 白名单管理"
 
 msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
 msgstr "管理直连绕行 IPv4/IPv6 CIDR 白名单。编辑本地列表或刷新远程源后，将通过 nftables 原子热更新生效，无需重启 sing-box。"
+
+
+msgid "Local DNS (\"local\") Handling"
+msgstr "local 类型 DNS 上游处理"
+
+msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box to avoid DNS loops."
+msgstr "当 dnsmasq 转发至 sing-box 时，如何改写配置中的 \"local\" 类型 DNS 上游以防止解析死循环。"
+
+msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
+msgstr "自动探测 WAN 上游 DNS（不可用时回退至直连 DNS）"
+
+msgid "Always Use Configured Direct DNS"
+msgstr "始终使用下方配置的直连 DNS"
+
+msgid "Strict Reject (\"local\" Not Allowed)"
+msgstr "严格拒绝（禁止包含 \"local\" 上游）"
+
+msgid "Manual / Fallback Direct DNS"
+msgstr "手工 / 兜底直连 DNS"
+
+msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
+msgstr "在指定模式或暂未检测到安全 WAN 上游 DNS 时，用于替换 \"local\" 的非回环直连 DNS IP；留空则强制要求必须存在可用 WAN DNS。"
+
+msgid "Direct DNS server IP is required when policy is set to always use fallback."
+msgstr "选择始终使用直连 DNS 时，必须填写合法的 DNS 服务器 IP。"
+
+msgid "Direct DNS server IP must not be a loopback or unspecified address."
+msgstr "直连 DNS 服务器 IP 不能为回环地址或未指定地址。"

@@ -300,6 +300,38 @@ return view.extend({
 			return true;
 		};
 
+		var oLocalPolicy = sDns.option(form.ListValue, 'local_dns_policy', _('Local DNS ("local") Handling'),
+			_('How to rewrite sing-box DNS servers of type "local" when dnsmasq forwards to sing-box to avoid DNS loops.'));
+		oLocalPolicy.value('auto', _('Auto-detect WAN DNS (Fallback to Direct DNS)'));
+		oLocalPolicy.value('fallback', _('Always Use Configured Direct DNS'));
+		oLocalPolicy.value('reject', _('Strict Reject ("local" Not Allowed)'));
+		oLocalPolicy.default = 'auto';
+		oLocalPolicy.depends('mode', 'singbox');
+
+		var oLocalFallback = sDns.option(form.Value, 'local_fallback_server', _('Manual / Fallback Direct DNS'),
+			_('Non-loopback direct DNS IP used when policy is "fallback", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS.'));
+		oLocalFallback.datatype = 'ipaddr';
+		oLocalFallback.placeholder = '223.5.5.5';
+		oLocalFallback.rmempty = true;
+		oLocalFallback.depends({ mode: 'singbox', local_dns_policy: 'auto' });
+		oLocalFallback.depends({ mode: 'singbox', local_dns_policy: 'fallback' });
+		oLocalFallback.validate = function(section_id, value) {
+			if (oDnsMode.formvalue(section_id) !== 'singbox')
+				return true;
+			var pol = oLocalPolicy.formvalue(section_id) || 'auto';
+			if (pol === 'reject')
+				return true;
+			var v = String(value || '').trim();
+			if (!v) {
+				if (pol === 'fallback')
+					return _('Direct DNS server IP is required when policy is set to always use fallback.');
+				return true;
+			}
+			if (/^(127\.|0\.0\.0\.0$|::1$|::$)/.test(v))
+				return _('Direct DNS server IP must not be a loopback or unspecified address.');
+			return true;
+		};
+
 		o = sDns.option(form.Flag, 'hijack_lan_dns', _('Hijack LAN External DNS (Port 53)'),
 			_('Redirect LAN TCP/UDP port 53 queries addressed to external IPs back to router port 53.'));
 		o.default = '0';

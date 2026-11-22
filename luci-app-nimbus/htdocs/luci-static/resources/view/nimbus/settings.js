@@ -241,8 +241,8 @@ return view.extend({
 		o.value('default_bypass', _('Bypass Unmatched Devices (Direct)'));
 		o.default = 'default_proxy';
 		o.rmempty = false;
-		o.cfgvalue = function(section_id) {
-			var val = this.super('cfgvalue', [ section_id ]);
+		o.load = function(section_id) {
+			var val = form.ListValue.prototype.load.call(this, section_id);
 			var v = String(val != null ? val : 'default_proxy').trim();
 			if (v === 'proxy_listed' || v === 'default_bypass')
 				return 'default_bypass';

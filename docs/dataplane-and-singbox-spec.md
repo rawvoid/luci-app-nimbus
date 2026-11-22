@@ -374,7 +374,14 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 1. 查找是否已有可通过 IPv4 回环访问（`listen` 为 `127.0.0.1` / `0.0.0.0` / `::`）、支持 UDP（未设 `network`、`network == "udp"` 或含 `"udp"`）且在 `route.rules` 中被 `action: "hijack-dns"` 引用的 `type == "direct"` 入站：
    - 若存在：复用其 `listen_port` 作为 `effective_dns_port`。
    - 若不存在：校验 `uci.dns.singbox_dns_port` 未与已有入站端口冲突后，追加 `{ "type": "direct", "tag": "nimbus-dns-in", "listen": "127.0.0.1", "listen_port": <uci.dns.singbox_dns_port> }`，并在 `cfg.route.rules` 最前端插入 `{ "inbound": ["nimbus-dns-in"], "action": "hijack-dns" }`。
-2. **DNS 死循环防护**：检查 `cfg.dns.servers` 是否存在且非空，并检查其中是否包含 `type == "local"` 上游：一旦 `dnsmasq` 以 `noresolv='1'` 转发给 `sing-box`，而 `sing-box` 又通过 `local` 查询 `/etc/resolv.conf`（`127.0.0.1`）将立即触发 DNS 死循环，必须中止合成并返回明确校验错误。
+2. **DNS 死循环防护与 `type: "local"` 自动适配**：
+   - 检查 `cfg.dns.servers` 是否存在且非空，并检查其中是否包含 `type == "local"`（或旧格式 `address == "local"`）条目：一旦 `dnsmasq` 以 `noresolv='1'` 转发给 `sing-box`，而 `sing-box` 又通过 `local` 查询 `/etc/resolv.conf`（`127.0.0.1`）将立即触发 DNS 死循环，因此绝不可保留原始 `local` 上游。
+   - 按 `uci.dns.local_dns_policy`（默认 `'auto'`）处理：
+     - **`'reject'`**：保持严格模式，直接中止合成并返回明确校验错误。
+     - **`'fallback'`**：直接使用 `uci.dns.local_fallback_server`（须为合法非回环单播 IP，若开启 IPv6 关闭则不可为 IPv6）运行期改写为 `{ "type": "udp", "server": <ip> }`（保留原 `tag`/`detour` 等字段，剥离 `prefer_go`/`address`）。
+     - **`'auto'`（默认）**：从 `ubus network.interface.dump`（`wan_interfaces` 及非环回 `up` 接口 `dns-server`）与 `/tmp/resolv.conf.d/resolv.conf.auto` 读取上游 DNS，严格过滤回环（`127.0.0.0/8`、`::1`）、未指定（`0.0.0.0`、`::`）、链路本地、路由器自身全部接口 IP 以及关闭 `ipv6_enable` 时的 IPv6 地址，优先选用首个安全 IPv4（否则安全 IPv6）：
+       - **旁路由风险提示**：当 `global.topology == 'side'` 且选中的上游 DNS 位于当前 LAN 子网内时，在 `warnings` 中提示存在主旁路由相互转发 DNS 死循环风险（若不适用可在 Settings 改为 `fallback` 并指定直连 DNS）。
+       - **兜底与错误边界**：若暂未检测到安全的非回环 WAN DNS，且 `uci.dns.local_fallback_server` 非空合法，则先使用该兜底 IP 改写并在 `warnings` 中标注（`hotplug` 在 WAN 上线/DNS 变更后自动热重载为最新 WAN DNS）；若 `local_fallback_server` 为空，则中止合成并返回明确校验错误。
 
 #### Step 5：现代路由动作注入（嗅探与 QUIC 拒绝）
 - **嗅探（Sniff）**：严禁向任何自动生成的入站写入已移除的入站级 `sniff` 字段。检查 `cfg.route.rules` 是否已存在无 `inbound` 限制的全局 `{ "action": "sniff" }` 规则：

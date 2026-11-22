@@ -27,6 +27,8 @@ config proxy 'proxy'
 config dns 'dns'
 	option mode 'none'
 	option singbox_dns_port '5353'
+	option local_dns_policy 'auto'
+	option local_fallback_server '223.5.5.5'
 	option hijack_lan_dns '0'
 
 config core 'core'

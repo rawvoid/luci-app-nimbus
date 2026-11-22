@@ -48,9 +48,12 @@ function get_runtime_paths() {
 		local_lists_dir: getenv('NIMBUS_LOCAL_LISTS_DIR') || null,
 		cache_lists_dir: getenv('NIMBUS_CACHE_LISTS_DIR') || null,
 		crontab_file: getenv('NIMBUS_CRONTAB_FILE') || null,
+		resolv_auto_path: getenv('NIMBUS_RESOLV_AUTO_PATH') || null,
+		init_script: getenv('NIMBUS_INIT_SCRIPT') || '/etc/init.d/nimbus',
 		nft_dry_run: (getenv('NIMBUS_NFT_DRY_RUN') == '1'),
 		nft_check_only: (getenv('NIMBUS_NFT_CHECK_ONLY') == '1'),
 		skip_routes: (getenv('NIMBUS_SKIP_ROUTES') == '1'),
+		skip_hotplug_reload: (getenv('NIMBUS_SKIP_HOTPLUG_RELOAD') == '1' || getenv('NIMBUS_SKIP_ROUTES') == '1'),
 		skip_dns_reload: (getenv('NIMBUS_SKIP_DNS_RELOAD') == '1' || getenv('NIMBUS_SKIP_ROUTES') == '1'),
 		skip_cron_sync: (getenv('NIMBUS_SKIP_CRON_SYNC') == '1' || (getenv('NIMBUS_SKIP_CRON_SYNC') != '0' && !getenv('NIMBUS_CRONTAB_FILE') && getenv('NIMBUS_SKIP_ROUTES') == '1'))
 	};
@@ -152,6 +155,8 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 			tun_iface: null,
 			dns_mode: d.mode || 'none',
 			dns_port: bctx.effective_dns_port ?? null,
+			local_dns_source: bctx.local_dns_source ?? prev?.effective?.local_dns_source ?? 'none',
+			local_dns_server: bctx.local_dns_server ?? prev?.effective?.local_dns_server ?? null,
 			inbound_sources: bctx.inbound_sources || { redirect: null, tproxy: null, tun: null },
 			fakeip: bctx.fakeip || { ipv4: [], ipv6: [] }
 		},
@@ -297,7 +302,10 @@ function cmd_prepare_start(paths, is_reload) {
 		bin_path: core_bin,
 		profile_path: paths.profile_path,
 		output_path: paths.config_file,
-		check_dir: paths.check_dir
+		check_dir: paths.check_dir,
+		resolv_auto_path: paths.resolv_auto_path,
+		ubus_dump: paths.ubus_dump,
+		wan_dns_servers: paths.wan_dns_servers
 	});
 
 	if (!bres.ok) {
@@ -472,7 +480,27 @@ function cmd_hotplug(paths) {
 		});
 	}
 
+	let need_dns_reload = false;
+	if (st.state == 'running' &&
+		uci_cfg?.dns?.mode == 'singbox' &&
+		(uci_cfg?.dns?.local_dns_policy || 'auto') == 'auto' &&
+		(st?.effective?.local_dns_source == 'wan' || st?.effective?.local_dns_source == 'fallback')) {
+		let wan_res = cb.resolve_wan_upstream_dns(uci_cfg, {
+			uci_confdir: paths.uci_confdir,
+			uci_savedir: paths.uci_savedir,
+			resolv_auto_path: paths.resolv_auto_path,
+			ubus_dump: paths.ubus_dump,
+			wan_dns_servers: paths.wan_dns_servers
+		});
+		if (wan_res.server && wan_res.server != st?.effective?.local_dns_server)
+			need_dns_reload = true;
+	}
+
 	common.release_lock(lock_fh);
+
+	if (need_dns_reload && !paths.skip_hotplug_reload && fs.access(paths.init_script, 'x'))
+		system([ paths.init_script, 'reload' ], 15000);
+
 	return 0;
 }
 

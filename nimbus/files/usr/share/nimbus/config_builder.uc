@@ -1,6 +1,7 @@
 'use strict';
 
 import * as fs from 'fs';
+import * as ubus from 'ubus';
 import * as common from 'common';
 
 const DEPRECATED_INBOUND_FIELDS = [
@@ -127,6 +128,258 @@ function is_ipv6_listen(addr) {
 
 function is_ipv4_loopback_reachable(addr) {
 	return (addr == '127.0.0.1' || addr == '0.0.0.0' || addr == '::');
+}
+
+function validate_upstream_ip(raw_ip, own_ips, ipv6_enable) {
+	if (type(raw_ip) != 'string')
+		return null;
+	let s = trim(raw_ip);
+	if (length(s) == 0 || index(s, '%') >= 0 || index(s, '/') >= 0 || match(s, /[ \t\r\n]/))
+		return null;
+
+	let bytes = iptoarr(s);
+	if (!bytes)
+		return null;
+
+	if (length(bytes) == 4) {
+		if (bytes[0] == 0 || bytes[0] == 127 || bytes[0] >= 224)
+			return null;
+		if (bytes[0] == 169 && bytes[1] == 254)
+			return null;
+		let canon = arrtoip(bytes);
+		if (own_ips && exists(own_ips, canon))
+			return null;
+		return { family: 4, ip: canon };
+	}
+
+	if (length(bytes) == 16) {
+		if (!ipv6_enable)
+			return null;
+		let all_zero = true;
+		for (let i = 0; i < 15; i++) {
+			if (bytes[i] != 0) {
+				all_zero = false;
+				break;
+			}
+		}
+		if (all_zero && (bytes[15] == 0 || bytes[15] == 1))
+			return null;
+		if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
+			return null;
+		if (bytes[0] == 0xff)
+			return null;
+		let canon = arrtoip(bytes);
+		if (own_ips && exists(own_ips, canon))
+			return null;
+		return { family: 6, ip: canon };
+	}
+
+	return null;
+}
+
+function parse_v4_cidr(cidr) {
+	if (type(cidr) != 'string')
+		return null;
+	let parts = split(trim(cidr), '/');
+	if (length(parts) != 2 || !match(parts[1], /^[0-9]+$/))
+		return null;
+	let bytes = iptoarr(parts[0]);
+	let prefix = int(parts[1], 10);
+	if (!bytes || length(bytes) != 4 || common.isnan(prefix) || prefix < 0 || prefix > 32)
+		return null;
+	return { bytes: bytes, prefix: prefix };
+}
+
+function ip_in_v4_cidr(ip_bytes, net_bytes, prefix) {
+	if (!ip_bytes || !net_bytes || length(ip_bytes) != 4 || length(net_bytes) != 4)
+		return false;
+	let full = int(prefix / 8);
+	let rem = prefix % 8;
+	for (let i = 0; i < full; i++) {
+		if (ip_bytes[i] != net_bytes[i])
+			return false;
+	}
+	if (rem > 0) {
+		let mask = (0xff << (8 - rem)) & 0xff;
+		if ((ip_bytes[full] & mask) != (net_bytes[full] & mask))
+			return false;
+	}
+	return true;
+}
+
+function to_name_list(val, fallback) {
+	if (type(val) == 'array') {
+		let out = [];
+		for (let item in val) {
+			let s = trim('' + (item ?? ''));
+			if (length(s) > 0)
+				push_unique(out, s);
+		}
+		return length(out) > 0 ? out : fallback;
+	}
+	if (type(val) == 'string' && length(trim(val)) > 0) {
+		let out = [];
+		for (let part in split(trim(val), /[ \t\r\n,]+/)) {
+			if (length(part) > 0)
+				push_unique(out, part);
+		}
+		return length(out) > 0 ? out : fallback;
+	}
+	return fallback;
+}
+
+function resolve_wan_upstream_dns(uci_cfg, opts) {
+	let options = opts || {};
+	let g = uci_cfg?.global || {};
+	let topology = (g.topology == 'side') ? 'side' : 'main';
+	let ipv6_enable = (g.ipv6_enable != '0' && options.ipv6_enable !== false);
+	let lan_names = to_name_list(g.lan_interfaces, [ 'lan' ]);
+	let wan_names = to_name_list(g.wan_interfaces, [ 'wan', 'wan6' ]);
+
+	let dump = options.ubus_dump;
+	if (dump == null && options.skip_ubus !== true) {
+		try {
+			let ub = ubus.connect();
+			if (ub) {
+				dump = ub.call('network.interface', 'dump');
+				ub.disconnect();
+			}
+		} catch (e) {
+			dump = null;
+		}
+	}
+
+	let own_ips = {};
+	let lan_v4_nets = [];
+	let ubus_ifaces = {};
+	if (type(dump?.interface) == 'array') {
+		for (let item in dump.interface) {
+			if (type(item) != 'object' || type(item.interface) != 'string')
+				continue;
+			ubus_ifaces[item.interface] = item;
+			let is_lan = (index(lan_names, item.interface) >= 0);
+
+			for (let k4 in [ 'ipv4-address' ]) {
+				if (type(item[k4]) != 'array')
+					continue;
+				for (let a4 in item[k4]) {
+					let ipb = iptoarr('' + (a4?.address ?? ''));
+					if (ipb && length(ipb) == 4) {
+						own_ips[arrtoip(ipb)] = true;
+						if (is_lan && a4?.mask != null) {
+							let p = parse_v4_cidr(sprintf('%s/%s', arrtoip(ipb), '' + a4.mask));
+							if (p)
+								push(lan_v4_nets, p);
+						}
+					}
+				}
+			}
+			for (let k6 in [ 'ipv6-address', 'ipv6-prefix-assignment' ]) {
+				if (type(item[k6]) != 'array')
+					continue;
+				for (let a6 in item[k6]) {
+					let ipb = iptoarr('' + (a6?.address ?? ''));
+					if (ipb && length(ipb) == 16)
+						own_ips[arrtoip(ipb)] = true;
+				}
+			}
+		}
+	}
+
+	if (options.skip_network_uci !== true) {
+		let net_uci = common.uci_get_all('network', options.uci_confdir, options.uci_savedir);
+		if (type(net_uci) == 'object') {
+			for (let ifname, sec in net_uci) {
+				if (type(sec) != 'object')
+					continue;
+				let is_lan = (index(lan_names, ifname) >= 0);
+				for (let raw in to_name_list(sec.ipaddr, [])) {
+					let p = parse_v4_cidr(raw);
+					if (p) {
+						own_ips[arrtoip(p.bytes)] = true;
+						if (is_lan)
+							push(lan_v4_nets, p);
+					} else {
+						let ipb = iptoarr(raw);
+						if (ipb && length(ipb) == 4)
+							own_ips[arrtoip(ipb)] = true;
+					}
+				}
+				for (let raw6 in to_name_list(sec.ip6addr, [])) {
+					let base6 = split(raw6, '/')[0];
+					let ipb6 = iptoarr(base6);
+					if (ipb6 && length(ipb6) == 16)
+						own_ips[arrtoip(ipb6)] = true;
+				}
+			}
+		}
+	}
+
+	let candidates = [];
+	if (type(options.wan_dns_servers) == 'array') {
+		for (let c in options.wan_dns_servers)
+			push_unique(candidates, '' + c);
+	} else {
+		for (let wname in wan_names) {
+			let uitem = ubus_ifaces[wname];
+			if (type(uitem?.['dns-server']) == 'array') {
+				for (let ds in uitem['dns-server'])
+					push_unique(candidates, '' + ds);
+			}
+		}
+		for (let ifname, uitem in ubus_ifaces) {
+			if (ifname == 'loopback' || index(wan_names, ifname) >= 0)
+				continue;
+			if (!(topology == 'side' && index(lan_names, ifname) >= 0) && uitem?.up !== true)
+				continue;
+			if (uitem?.up === true && type(uitem?.['dns-server']) == 'array') {
+				for (let ds in uitem['dns-server'])
+					push_unique(candidates, '' + ds);
+			}
+		}
+		let resolv_path = options.resolv_auto_path || '/tmp/resolv.conf.d/resolv.conf.auto';
+		let rtxt = fs.readfile(resolv_path);
+		if (type(rtxt) == 'string') {
+			for (let line in split(rtxt, '\n')) {
+				let m = match(trim(line), /^nameserver[ \t]+([^ \t\r\n#;]+)/);
+				if (m)
+					push_unique(candidates, m[1]);
+			}
+		}
+	}
+
+	let safe_v4 = [];
+	let safe_v6 = [];
+	for (let cand in candidates) {
+		let v = validate_upstream_ip(cand, own_ips, ipv6_enable);
+		if (!v)
+			continue;
+		if (v.family == 4)
+			push_unique(safe_v4, v.ip);
+		else
+			push_unique(safe_v6, v.ip);
+	}
+
+	let chosen = (length(safe_v4) > 0) ? safe_v4[0] : ((length(safe_v6) > 0) ? safe_v6[0] : null);
+	let side_lan_risk = false;
+	if (topology == 'side' && chosen) {
+		let cb = iptoarr(chosen);
+		if (cb && length(cb) == 4) {
+			for (let net in lan_v4_nets) {
+				if (ip_in_v4_cidr(cb, net.bytes, net.prefix)) {
+					side_lan_risk = true;
+					break;
+				}
+			}
+		}
+	}
+
+	return {
+		server: chosen,
+		candidates_v4: safe_v4,
+		candidates_v6: safe_v6,
+		side_lan_risk: side_lan_risk
+	};
 }
 
 function remove_tree(path) {
@@ -684,17 +937,81 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 
 	// Step 4: local DNS inbound & DNS loop prevention (when dns.mode == 'singbox')
 	let effective_dns_port = null;
+	let local_dns_source = 'none';
+	let local_dns_server = null;
 	let dns_mode = d.mode || 'none';
 	if (dns_mode == 'singbox') {
 		let dns_servers = cfg?.dns?.servers;
 		if (type(dns_servers) != 'array' || length(dns_servers) == 0)
 			return fail(common.ERR_VALIDATE_FAILED, 'dns.servers must be non-empty when dns.mode is "singbox"', warnings);
 
+		let local_servers = [];
 		for (let srv in dns_servers) {
-			if (type(srv) == 'object' && (srv.type == 'local' || srv.address == 'local')) {
+			if (type(srv) == 'object' && (srv.type == 'local' || srv.address == 'local'))
+				push(local_servers, srv);
+		}
+
+		if (length(local_servers) > 0) {
+			let local_policy = lc(trim('' + (d.local_dns_policy || 'auto')));
+			if (local_policy != 'auto' && local_policy != 'fallback' && local_policy != 'reject')
+				local_policy = 'auto';
+
+			if (local_policy == 'reject') {
 				let loop_msg = 'dns.servers contains type "local" upstream which causes a DNS loopback loop with dnsmasq when dns.mode="singbox"';
 				push(warnings, loop_msg);
 				return fail(common.ERR_VALIDATE_FAILED, loop_msg, warnings);
+			}
+
+			let raw_fb = exists(d, 'local_fallback_server') ? trim('' + (d.local_fallback_server ?? '')) : '223.5.5.5';
+			let fb_res = null;
+			if (length(raw_fb) > 0) {
+				fb_res = validate_upstream_ip(raw_fb, null, ipv6_enable);
+				if (!fb_res) {
+					return fail(common.ERR_VALIDATE_FAILED,
+						sprintf('dns.local_fallback_server "%s" is not a valid non-loopback unicast IP for current IPv4/IPv6 settings', raw_fb),
+						warnings);
+				}
+			}
+
+			if (local_policy == 'fallback') {
+				if (!fb_res)
+					return fail(common.ERR_VALIDATE_FAILED,
+						'dns.local_fallback_server is required when dns.local_dns_policy="fallback"',
+						warnings);
+				local_dns_server = fb_res.ip;
+				local_dns_source = 'fallback';
+				push(warnings, sprintf('rewrote "local" DNS server(s) to configured direct DNS "%s"', local_dns_server));
+			} else {
+				let wan_res = resolve_wan_upstream_dns(uci_cfg, options);
+				if (wan_res.server) {
+					local_dns_server = wan_res.server;
+					local_dns_source = 'wan';
+					push(warnings, sprintf('rewrote "local" DNS server(s) to detected WAN upstream "%s"', local_dns_server));
+					if (wan_res.side_lan_risk) {
+						push(warnings, sprintf(
+							'side-router mode uses LAN-subnet upstream DNS "%s"; ensure your main router DNS does not forward back to this device to avoid a DNS loop',
+							local_dns_server));
+					}
+				} else if (fb_res) {
+					local_dns_server = fb_res.ip;
+					local_dns_source = 'fallback';
+					push(warnings, sprintf(
+						'no safe non-loopback WAN DNS detected; using fallback DNS "%s" for "local" server(s)',
+						local_dns_server));
+				} else {
+					let loop_msg = 'dns.servers contains type "local" upstream, no safe non-loopback WAN DNS was found, and dns.local_fallback_server is empty';
+					push(warnings, loop_msg);
+					return fail(common.ERR_VALIDATE_FAILED, loop_msg, warnings);
+				}
+			}
+
+			for (let srv in local_servers) {
+				srv.type = 'udp';
+				srv.server = local_dns_server;
+				delete srv.address;
+				delete srv.prefer_go;
+				delete srv.address_resolver;
+				delete srv.strategy;
 			}
 		}
 
@@ -822,6 +1139,8 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			effective_tproxy_port: effective_tproxy_port,
 			effective_tun_iface: null,
 			effective_dns_port: effective_dns_port,
+			local_dns_source: local_dns_source,
+			local_dns_server: local_dns_server,
 			inbound_sources: inbound_sources,
 			fakeip: {
 				ipv4: fakeip_res.ipv4,
@@ -916,7 +1235,16 @@ function build_config(opts) {
 		}
 	}
 
-	let tr = transform_config(raw_cfg, uci_cfg, { core_version: core_version });
+	let tr = transform_config(raw_cfg, uci_cfg, {
+		core_version: core_version,
+		uci_confdir: options.uci_confdir,
+		uci_savedir: options.uci_savedir,
+		wan_dns_servers: options.wan_dns_servers,
+		resolv_auto_path: options.resolv_auto_path,
+		ubus_dump: options.ubus_dump,
+		skip_ubus: options.skip_ubus,
+		skip_network_uci: options.skip_network_uci
+	});
 	if (!tr.ok)
 		return tr;
 
@@ -973,6 +1301,7 @@ function build_config(opts) {
 
 export {
 	probe_core_version,
+	resolve_wan_upstream_dns,
 	extract_fakeip,
 	probe_apis,
 	extract_api_secrets,

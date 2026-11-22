@@ -19,9 +19,11 @@ function make_uci(overrides) {
 	let o = overrides || {};
 	return {
 		global: {
-			topology: 'main',
+			topology: o.topology ?? 'main',
 			proxy_mode: 'tproxy_redirect',
 			fail_open: '0',
+			lan_interfaces: o.lan_interfaces ?? [ 'lan' ],
+			wan_interfaces: o.wan_interfaces ?? [ 'wan', 'wan6' ],
 			ipv4_enable: o.ipv4_enable ?? '1',
 			ipv6_enable: o.ipv6_enable ?? '1',
 			log_level: o.log_level ?? 'warn',
@@ -38,7 +40,9 @@ function make_uci(overrides) {
 		},
 		dns: {
 			mode: o.dns_mode ?? 'none',
-			singbox_dns_port: o.singbox_dns_port ?? '5353'
+			singbox_dns_port: o.singbox_dns_port ?? '5353',
+			local_dns_policy: o.local_dns_policy ?? 'auto',
+			local_fallback_server: exists(o, 'local_fallback_server') ? o.local_fallback_server : '223.5.5.5'
 		},
 		core: {
 			bin_path: getenv('SINGBOX_BIN') || '/usr/local/bin/sing-box'
@@ -279,20 +283,124 @@ let uci_mark_coll = cb.transform_config({
 check(uci_mark_coll.ok === false && uci_mark_coll.code == common.ERR_VALIDATE_FAILED,
 	'rejects equal UCI outbound_mark and proxy_mark');
 
-// 8. DNS loop protection when dns.mode == 'singbox' and type == 'local'
+// 8. DNS loop protection & local DNS auto-adaptation when dns.mode == 'singbox'
 let local_dns_cfg = {
 	dns: {
 		servers: [
-			{ type: 'local', tag: 'dns-local' },
+			{ type: 'local', tag: 'dns-local', prefer_go: true, detour: 'direct' },
 			{ type: 'udp', tag: 'dns-remote', server: '8.8.8.8' }
 		]
 	},
 	outbounds: [ { type: 'direct', tag: 'direct' } ]
 };
-let local_dns_err = cb.transform_config(local_dns_cfg, make_uci({ dns_mode: 'singbox' }));
+let local_dns_err = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'singbox',
+	local_dns_policy: 'reject'
+}));
 check(local_dns_err.ok === false && local_dns_err.code == common.ERR_VALIDATE_FAILED &&
 	length(local_dns_err.warnings) > 0 && index(local_dns_err.error, 'local') >= 0,
-	'dns.mode=singbox rejects type=local DNS server and emits loopback warning');
+	'dns.mode=singbox + local_dns_policy=reject rejects type=local DNS server');
+
+let fake_resolv = work_dir + '/resolv.conf.auto';
+common.atomic_write(fake_resolv, '# comment\nnameserver 127.0.0.1\nnameserver ::1\nnameserver 10.11.1.1\nnameserver 223.6.6.6\n', 0644);
+let fake_dump_main = {
+	interface: [
+		{ interface: 'lan', up: true, 'ipv4-address': [ { address: '10.11.1.1', mask: 24 } ] },
+		{ interface: 'wan', up: true, 'ipv4-address': [ { address: '100.64.1.2', mask: 24 } ], 'dns-server': [ '223.6.6.6' ] }
+	]
+};
+let local_dns_wan = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'singbox',
+	local_dns_policy: 'auto'
+}), {
+	resolv_auto_path: fake_resolv,
+	ubus_dump: fake_dump_main,
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(local_dns_wan.ok === true &&
+	local_dns_wan.config.dns.servers[0].type == 'udp' &&
+	local_dns_wan.config.dns.servers[0].server == '223.6.6.6' &&
+	local_dns_wan.config.dns.servers[0].tag == 'dns-local' &&
+	local_dns_wan.config.dns.servers[0].detour == 'direct' &&
+	!exists(local_dns_wan.config.dns.servers[0], 'prefer_go') &&
+	local_dns_wan.context.local_dns_source == 'wan' &&
+	local_dns_wan.context.local_dns_server == '223.6.6.6',
+	'auto policy skips loopback/own IP and rewrites type=local to detected WAN DNS');
+
+let local_dns_fb = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'singbox',
+	local_dns_policy: 'auto',
+	local_fallback_server: '119.29.29.29'
+}), {
+	resolv_auto_path: work_dir + '/nonexistent.auto',
+	ubus_dump: { interface: [] },
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(local_dns_fb.ok === true &&
+	local_dns_fb.config.dns.servers[0].type == 'udp' &&
+	local_dns_fb.config.dns.servers[0].server == '119.29.29.29' &&
+	local_dns_fb.context.local_dns_source == 'fallback',
+	'auto policy uses configurable local_fallback_server when no WAN DNS is available');
+
+let local_dns_empty_fb = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'singbox',
+	local_dns_policy: 'auto',
+	local_fallback_server: ''
+}), {
+	resolv_auto_path: work_dir + '/nonexistent.auto',
+	ubus_dump: { interface: [] },
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(local_dns_empty_fb.ok === false && local_dns_empty_fb.code == common.ERR_VALIDATE_FAILED,
+	'auto policy fails clearly when WAN DNS is unavailable and local_fallback_server is empty');
+
+let local_dns_force_fb = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'singbox',
+	local_dns_policy: 'fallback',
+	local_fallback_server: '114.114.114.114'
+}), {
+	wan_dns_servers: [ '223.6.6.6' ],
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(local_dns_force_fb.ok === true &&
+	local_dns_force_fb.config.dns.servers[0].server == '114.114.114.114' &&
+	local_dns_force_fb.context.local_dns_source == 'fallback',
+	'fallback policy forces configured direct DNS even when WAN DNS exists');
+
+let side_dns_res = cb.transform_config(local_dns_cfg, make_uci({
+	topology: 'side',
+	dns_mode: 'singbox',
+	local_dns_policy: 'auto'
+}), {
+	wan_dns_servers: [ '10.11.1.1' ],
+	ubus_dump: {
+		interface: [
+			{ interface: 'lan', up: true, 'ipv4-address': [ { address: '10.11.1.2', mask: 24 } ] }
+		]
+	},
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(side_dns_res.ok === true &&
+	side_dns_res.config.dns.servers[0].server == '10.11.1.1' &&
+	length(filter(side_dns_res.context.warnings, (w) => index(w, 'side-router mode') >= 0)) > 0,
+	'side-router mode emits cross-device loop warning when upstream DNS is inside LAN subnet');
+
+let local_dns_build_chk = cb.build_config({
+	uci: make_uci({ dns_mode: 'singbox', local_dns_policy: 'fallback', local_fallback_server: '223.5.5.5' }),
+	raw_config: {
+		...local_dns_cfg,
+		route: { default_domain_resolver: 'dns-remote' }
+	},
+	bin_path: singbox_bin,
+	check_dir: work_dir + '/check_local_dns',
+	validate_only: true
+});
+check(local_dns_build_chk.ok === true, 'rewritten local DNS passes real sing-box check');
 
 let local_dns_none = cb.transform_config(local_dns_cfg, make_uci({ dns_mode: 'none' }));
 check(local_dns_none.ok === true, 'dns.mode=none allows type=local DNS server');

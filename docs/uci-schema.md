@@ -73,6 +73,8 @@
 | `mode` | `enum` | `'none'` | `'none'`, `'singbox'`, `'custom'` | `'none'`=不接管；`'singbox'`=转发至本机 `sing-box` DNS 入站；`'custom'`=转发至自定义上游 |
 | `singbox_dns_port` | `port` | `'5353'` | `1024`–`65535` | `mode='singbox'` 且配置中无本地 DNS 入站时自动补齐的端口 |
 | `custom_servers` | `list(string)` | `[]` | `dnsmasq` 上游格式（如 `'127.0.0.1#5335'`、`'192.168.1.2#5353'`） | `mode='custom'` 时写入 `dhcp.@dnsmasq[0].server` |
+| `local_dns_policy` | `enum` | `'auto'` | `'auto'`, `'fallback'`, `'reject'` | `mode='singbox'` 时对 `dns.servers` 中 `type='local'` 条目的防死循环处理：`auto`=自动探测 WAN 非回环 DNS 运行期改写为 `udp` 上游（取不到时回退至 `local_fallback_server`）；`fallback`=始终使用 `local_fallback_server`；`reject`=直接报错拒绝 |
+| `local_fallback_server` | `ipaddr` | `'223.5.5.5'` | 合法单播非回环 IPv4/IPv6 或空串 | 当 `local_dns_policy='fallback'` 时或 `'auto'` 暂未取到安全 WAN DNS 时，用于替换 `type='local'` 的直连 DNS；留空则无可用 WAN DNS 时报错 |
 | `hijack_lan_dns` | `bool` | `'0'` | `'0'`, `'1'` | 在 `table inet nimbus` 中将 LAN 发往外部的 `TCP/UDP 53` 重定向至路由器本机 `53` |
 
 ---
@@ -174,6 +176,8 @@ config proxy 'proxy'
 config dns 'dns'
 	option mode 'none'
 	option singbox_dns_port '5353'
+	option local_dns_policy 'auto'
+	option local_fallback_server '223.5.5.5'
 	option hijack_lan_dns '0'
 
 config core 'core'
@@ -219,7 +223,7 @@ config list_source 'custom_direct'
 1. **双栈至少启用一项**：`global.ipv4_enable` 与 `global.ipv6_enable` 不可同时为 `'0'`。
 2. **端口不冲突**：`proxy.redirect_port`、`proxy.tproxy_port`（以及 `dns.mode='singbox'` 时的 `dns.singbox_dns_port`）两两不可相同。
 3. **标记不冲突**：`proxy.outbound_mark` 与 `proxy.proxy_mark` 必须为不同的非零 32 位整数。
-4. **自定义 DNS 非空**：`dns.mode='custom'` 时，`dns.custom_servers` 至少包含 1 条合法上游。
+4. **自定义 DNS 非空**：`dns.mode='custom'` 时，`dns.custom_servers` 至少包含 1 条合法上游；`dns.mode='singbox'` 且 `dns.local_dns_policy='fallback'` 时，`dns.local_fallback_server` 须为合法非回环单播 IP。
 5. **白名单源完整性**：`list_source.type='url'` 时 `url` 必填；`type='local'` 时 `filename` 必填且各本地列表 `filename` 不可重复。
 6. **配置源完整性**：`profile.type='subscription'` 时 `url` 必填；各 `profile.filename` 不可重复。
 7. **设备条目完整**：启用的 `lan_device` 必须至少填写 `mac` 或 `ip` 之一。

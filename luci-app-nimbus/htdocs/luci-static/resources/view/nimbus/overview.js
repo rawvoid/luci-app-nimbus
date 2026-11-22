@@ -148,6 +148,8 @@ return view.extend({
 				actionPending = false;
 				if (!res || res.ok === false)
 					nimbusApi.notifyError(res);
+				else if ((action === 'start' || action === 'restart') && res && res.state === 'stopped')
+					ui.addNotification(null, E('p', _('Service did not start because it is disabled in Settings (global.enabled).')), 'warning');
 				else
 					nimbusApi.notifySuccess(_('Service action "%s" completed.').format(action));
 				return refreshStatus();
@@ -196,6 +198,13 @@ return view.extend({
 				nodes.push(E('div', { 'class': 'alert-message error' }, [
 					E('strong', {}, _('Last Error: ')),
 					E('span', {}, st.last_error)
+				]));
+			}
+
+			if (!st.enabled) {
+				nodes.push(E('div', { 'class': 'alert-message warning' }, [
+					E('span', {}, _('Nimbus service is currently disabled in Settings. ')),
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'settings') }, _('Go to Settings'))
 				]));
 			}
 

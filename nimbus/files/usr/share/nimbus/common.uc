@@ -9,6 +9,7 @@ const CONFIG_FILE = '/var/run/nimbus/config.json';
 const CONFIG_TMP_FILE = '/var/run/nimbus/config.json.tmp';
 const PID_FILE = '/var/run/nimbus/sing-box.pid';
 const LOCK_FILE = '/var/run/nimbus/nimbus.lock';
+const CORE_STAMP_FILE = '/var/run/nimbus/core.stamp';
 const RULES_NFT_FILE = '/var/run/nimbus/rules.nft';
 const BYPASS_SETS_NFT_FILE = '/var/run/nimbus/bypass_sets.nft';
 const WAN_SETS_NFT_FILE = '/var/run/nimbus/wan_sets.nft';
@@ -21,6 +22,7 @@ const LISTS_DIR = '/etc/nimbus/lists';
 const LOCAL_LISTS_DIR = '/etc/nimbus/lists/local';
 const CACHE_LISTS_DIR = '/etc/nimbus/lists/cache';
 const BIN_DIR = '/etc/nimbus/bin';
+const DEFAULT_CORE_PATH = '/etc/nimbus/bin/sing-box';
 const DNS_BACKUP_FILE = '/etc/nimbus/dns_backup.json';
 const CRONTABS_ROOT = '/etc/crontabs/root';
 
@@ -239,6 +241,30 @@ function release_lock(fh) {
 
 	fh.lock('u');
 	fh.close();
+}
+
+function resolve_lock_path(opts) {
+	let options = opts || {};
+	return options.lock_file ||
+		(options.state_file ? fs.dirname(options.state_file) + '/nimbus.lock' : LOCK_FILE);
+}
+
+function merge_meta_updates(existing_meta, updates) {
+	let merged = (type(existing_meta) == 'object') ? { ...existing_meta } : {};
+	for (let id, upd in (updates || {})) {
+		if (upd._merge) {
+			let prev = (type(merged[id]) == 'object') ? merged[id] : {};
+			merged[id] = {
+				...prev,
+				status: upd.status,
+				error: upd.error,
+				updated_at: upd.updated_at
+			};
+		} else {
+			merged[id] = upd;
+		}
+	}
+	return merged;
 }
 
 function strip_secrets_recursive(val) {
@@ -559,6 +585,7 @@ export {
 	CONFIG_TMP_FILE,
 	PID_FILE,
 	LOCK_FILE,
+	CORE_STAMP_FILE,
 	RULES_NFT_FILE,
 	BYPASS_SETS_NFT_FILE,
 	WAN_SETS_NFT_FILE,
@@ -570,6 +597,7 @@ export {
 	LOCAL_LISTS_DIR,
 	CACHE_LISTS_DIR,
 	BIN_DIR,
+	DEFAULT_CORE_PATH,
 	DNS_BACKUP_FILE,
 	CRONTABS_ROOT,
 	CHECK_DIR,
@@ -610,6 +638,8 @@ export {
 	write_json_atomic,
 	acquire_lock,
 	release_lock,
+	resolve_lock_path,
+	merge_meta_updates,
 	read_state,
 	write_state,
 	uci_get_all,

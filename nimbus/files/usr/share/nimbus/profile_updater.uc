@@ -227,9 +227,7 @@ function update_profiles(section_id, opts) {
 	common.ensure_dir(profiles_dir, 0755);
 
 	let state_path = options.state_file || common.STATE_FILE;
-	let st = common.read_state(state_path) || {};
-	if (type(st.sub_meta) != 'object')
-		st.sub_meta = {};
+	let sub_meta_updates = {};
 
 	let results = [];
 	let active_changed = false;
@@ -244,8 +242,8 @@ function update_profiles(section_id, opts) {
 		if (!common.is_valid_profile_filename(fname)) {
 			all_ok = false;
 			let err = sprintf('invalid profile filename: %s', '' + fname);
-			st.sub_meta[id] = {
-				...(st.sub_meta[id] || {}),
+			sub_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -264,8 +262,8 @@ function update_profiles(section_id, opts) {
 		if (!match(url, /^https?:\/\/.+/)) {
 			all_ok = false;
 			let err = 'invalid or empty subscription URL';
-			st.sub_meta[id] = {
-				...(st.sub_meta[id] || {}),
+			sub_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -291,8 +289,8 @@ function update_profiles(section_id, opts) {
 			fs.unlink(tmp_path);
 			all_ok = false;
 			let err = !dl.ok ? sprintf('subscription download failed (rc=%d)', dl.rc ?? -1) : 'downloaded subscription is empty';
-			st.sub_meta[id] = {
-				...(st.sub_meta[id] || {}),
+			sub_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -319,8 +317,8 @@ function update_profiles(section_id, opts) {
 			fs.unlink(tmp_path);
 			all_ok = false;
 			let err = 'downloaded subscription is not a valid JSON object';
-			st.sub_meta[id] = {
-				...(st.sub_meta[id] || {}),
+			sub_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -351,8 +349,8 @@ function update_profiles(section_id, opts) {
 			fs.unlink(tmp_path);
 			all_ok = false;
 			let err = bres.error || 'sing-box check validation failed';
-			st.sub_meta[id] = {
-				...(st.sub_meta[id] || {}),
+			sub_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -379,6 +377,12 @@ function update_profiles(section_id, opts) {
 			if (!common.atomic_write(target_path, raw, 0644)) {
 				all_ok = false;
 				let err = sprintf('failed to write profile file: %s', target_path);
+				sub_meta_updates[id] = {
+					_merge: true,
+					status: 'failed',
+					error: err,
+					updated_at: time()
+				};
 				push(results, {
 					id: id,
 					status: 'failed',
@@ -398,7 +402,7 @@ function update_profiles(section_id, opts) {
 		let size_b = st_file ? st_file.size : length(raw);
 		let mtime_v = st_file ? st_file.mtime : time();
 
-		st.sub_meta[id] = {
+		sub_meta_updates[id] = {
 			sha256: new_hash,
 			status: status_str,
 			changed: changed,
@@ -419,9 +423,31 @@ function update_profiles(section_id, opts) {
 		});
 	}
 
+	let lock_fh = null;
+	if (options.skip_lock !== true) {
+		lock_fh = common.acquire_lock(options.lock_timeout_ms ?? 5000, common.resolve_lock_path(options));
+		if (!lock_fh) {
+			return {
+				ok: false,
+				code: common.ERR_LOCKED,
+				error: 'failed to acquire nimbus lock',
+				reloaded: false,
+				results: results
+			};
+		}
+	}
+
+	let st = common.read_state(state_path) || {};
+	st.sub_meta = common.merge_meta_updates(st.sub_meta, sub_meta_updates);
 	common.write_state(st, state_path);
 
 	let is_running = (options.service_running === true) || (st.state == 'running');
+
+	if (lock_fh) {
+		common.release_lock(lock_fh);
+		lock_fh = null;
+	}
+
 	let reloaded = false;
 	if (active_changed && is_running) {
 		reloaded = trigger_service_reload(options);

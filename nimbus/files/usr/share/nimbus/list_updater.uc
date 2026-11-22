@@ -575,10 +575,31 @@ function download_url_to_tmp(url, tmp_path, sec, opts, cache_path) {
 
 function reload_whitelist_sets(uci_cfg, opts) {
 	let options = opts || {};
+	let state_path = options.state_file || common.STATE_FILE;
+	let lock_fh = null;
+	if (options.skip_lock !== true) {
+		lock_fh = common.acquire_lock(options.lock_timeout_ms ?? 5000, common.resolve_lock_path(options));
+		if (!lock_fh) {
+			return {
+				ok: false,
+				code: common.ERR_LOCKED,
+				error: 'failed to acquire nimbus lock'
+			};
+		}
+	}
+
 	let uci_data = uci_cfg || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
 	let active = collect_active_lists(uci_data, options);
-	let state_path = options.state_file || common.STATE_FILE;
 	let st = common.read_state(state_path) || {};
+
+	if (type(st) == 'object' && (fs.stat(state_path) != null || options.state_file != null)) {
+		st.whitelist = {
+			enabled: active.whitelist_enabled,
+			v4_count: active.v4_count,
+			v6_count: active.v6_count
+		};
+		common.write_state(st, state_path);
+	}
 
 	let service_active = (options.force_reload === true) ||
 		(st.state == 'running' || st.state == 'lockdown');
@@ -597,14 +618,8 @@ function reload_whitelist_sets(uci_cfg, opts) {
 		hot_reloaded = (nres.ok === true);
 	}
 
-	if (type(st) == 'object' && (fs.stat(state_path) != null || options.state_file != null)) {
-		st.whitelist = {
-			enabled: active.whitelist_enabled,
-			v4_count: active.v4_count,
-			v6_count: active.v6_count
-		};
-		common.write_state(st, state_path);
-	}
+	if (lock_fh)
+		common.release_lock(lock_fh);
 
 	return {
 		ok: true,
@@ -650,6 +665,9 @@ function save_local_list(filename, content, opts) {
 	}
 
 	let rl = reload_whitelist_sets(options.uci, options);
+	if (!rl.ok)
+		return rl;
+
 	return {
 		ok: true,
 		filename: filename,
@@ -704,9 +722,7 @@ function update_lists(section_id, opts) {
 	common.ensure_dir(tmp_dir, 0755);
 
 	let state_path = options.state_file || common.STATE_FILE;
-	let st = common.read_state(state_path) || {};
-	if (type(st.list_meta) != 'object')
-		st.list_meta = {};
+	let list_meta_updates = {};
 
 	let results = [];
 	let any_changed = false;
@@ -720,8 +736,8 @@ function update_lists(section_id, opts) {
 		if (!match(url, /^https?:\/\/.+/)) {
 			all_ok = false;
 			let err = 'invalid or empty URL';
-			st.list_meta[id] = {
-				...(st.list_meta[id] || {}),
+			list_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -750,7 +766,7 @@ function update_lists(section_id, opts) {
 			});
 			let cached_hash = common.sha256_file(target_path);
 			let st_cached = fs.stat(target_path);
-			st.list_meta[id] = {
+			list_meta_updates[id] = {
 				sha256: cached_hash,
 				status: 'unchanged',
 				changed: false,
@@ -779,8 +795,8 @@ function update_lists(section_id, opts) {
 			fs.unlink(tmp_path);
 			all_ok = false;
 			let err = !dl.ok ? sprintf('download failed (rc=%d)', dl.rc ?? -1) : 'downloaded file is empty';
-			st.list_meta[id] = {
-				...(st.list_meta[id] || {}),
+			list_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -806,8 +822,8 @@ function update_lists(section_id, opts) {
 			fs.unlink(tmp_path);
 			all_ok = false;
 			let err = parsed.error || 'downloaded list contains no valid entries';
-			st.list_meta[id] = {
-				...(st.list_meta[id] || {}),
+			list_meta_updates[id] = {
+				_merge: true,
 				status: 'failed',
 				error: err,
 				updated_at: time()
@@ -836,6 +852,12 @@ function update_lists(section_id, opts) {
 			if (!common.atomic_write(target_path, payload, 0644)) {
 				all_ok = false;
 				let err = sprintf('failed to write cache file: %s', target_path);
+				list_meta_updates[id] = {
+					_merge: true,
+					status: 'failed',
+					error: err,
+					updated_at: time()
+				};
 				push(results, {
 					id: id,
 					status: 'failed',
@@ -851,7 +873,7 @@ function update_lists(section_id, opts) {
 
 		let st_file = fs.stat(target_path);
 		let status_str = changed ? 'updated' : 'unchanged';
-		st.list_meta[id] = {
+		list_meta_updates[id] = {
 			sha256: new_hash,
 			status: status_str,
 			changed: changed,
@@ -874,7 +896,23 @@ function update_lists(section_id, opts) {
 		});
 	}
 
-	let active = collect_active_lists(uci_data, options);
+	let lock_fh = null;
+	if (options.skip_lock !== true) {
+		lock_fh = common.acquire_lock(options.lock_timeout_ms ?? 5000, common.resolve_lock_path(options));
+		if (!lock_fh) {
+			return {
+				ok: false,
+				code: common.ERR_LOCKED,
+				error: 'failed to acquire nimbus lock',
+				results: results
+			};
+		}
+	}
+
+	let fresh_uci = options.uci || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
+	let active = collect_active_lists(fresh_uci, options);
+	let st = common.read_state(state_path) || {};
+	st.list_meta = common.merge_meta_updates(st.list_meta, list_meta_updates);
 	st.whitelist = {
 		enabled: active.whitelist_enabled,
 		v4_count: active.v4_count,
@@ -898,6 +936,9 @@ function update_lists(section_id, opts) {
 		});
 		hot_reloaded = (nres.ok === true);
 	}
+
+	if (lock_fh)
+		common.release_lock(lock_fh);
 
 	return {
 		ok: all_ok || (length(results) > 0 && type(section_id) != 'string'),

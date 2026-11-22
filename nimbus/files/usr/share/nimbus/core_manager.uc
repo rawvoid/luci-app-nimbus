@@ -1007,8 +1007,8 @@ function install_core(opts) {
 	cleanup_all();
 
 	let state_path = options.state_file || common.STATE_FILE;
-	let st = common.read_state(state_path) || {};
-	let was_running = (options.service_running === true) || (st.state == 'running');
+	let initial_st = common.read_state(state_path);
+	let was_running = (options.service_running === true) || (initial_st?.state == 'running');
 	let reloaded = false;
 
 	if (was_running && options.skip_reload !== true) {
@@ -1020,12 +1020,24 @@ function install_core(opts) {
 		}
 	}
 
-	if (type(st) == 'object' && (fs.stat(state_path) != null || options.state_file != null)) {
-		st.core = {
-			bin_path: bin_path,
-			version: ver.version
-		};
-		common.write_state(st, state_path);
+	let lock_fh = null;
+	if (options.skip_lock !== true) {
+		lock_fh = common.acquire_lock(options.lock_timeout_ms ?? 5000, common.resolve_lock_path(options));
+	}
+
+	if (options.skip_lock === true || lock_fh) {
+		let latest_st = common.read_state(state_path);
+		if (type(latest_st) == 'object') {
+			let prev_core = (type(latest_st.core) == 'object') ? latest_st.core : {};
+			latest_st.core = {
+				...prev_core,
+				bin_path: bin_path,
+				version: ver.version
+			};
+			common.write_state(latest_st, state_path);
+		}
+		if (lock_fh)
+			common.release_lock(lock_fh);
 	}
 
 	write_task_state('done', 100, sprintf('Installed sing-box %s', ver.version), ver.version, null, options);

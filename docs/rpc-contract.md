@@ -249,7 +249,7 @@
   1. 校验 JSON 语法；
   2. 当 `validate != false` 且 `sing-box` 二进制存在时，走 `config_builder.uc` 临时合成并在独立临时工作目录 `-D /tmp/nimbus-check-dir` 执行 `sing-box check`，失败时拒绝落盘并返回详细报错；
   3. 原子写入 `/etc/nimbus/profiles/<filename>`（若 `from_upload=true`，完成后清理临时上传文件）；
-  4. 若该文件正是当前激活配置且服务处于 `running` 态，返回 `reload_required: true`（由前端或调用方按需触发重载）。
+  4. 若该文件正是当前激活配置（或 Composer 模式下被启用的源配置）且服务处于 `running` 或 `lockdown` 态，返回 `reload_required: true`（由前端或调用方按需触发重载）。
 - **响应**：
 ```json
 {
@@ -367,13 +367,12 @@
 ```json
 {
   "profile_id": "main_sub",
-  "composer": null,
   "composer_json": "",
   "include_regex": "HK|香港",
   "exclude_regex": "倍率|过期"
 }
 ```
-> `profile_id` 省略或为空时汇总全部启用源；传入临时 `composer` 对象或 `composer_json` 字符串（上限 `256KB`，优先使用 `composer_json` 以确保 `override` / `node_override` 中的 RFC 7396 `null` 删除标记完整穿透 OpenWrt `rpcd` `blobmsg`）可实时预览未保存的提取策略效果；传入 `include_regex`/`exclude_regex` 时按组筛选语义再过滤一遍。
+> `profile_id` 省略或为空时汇总全部启用源；传入临时 `composer` 对象或 `composer_json` 字符串（上限 `256KB`，优先使用 `composer_json` 以确保 `override` / `node_override` 中的 RFC 7396 `null` 删除标记完整穿透 OpenWrt `rpcd` `blobmsg`）可实时预览未保存的提取策略效果；当通过 `ubus` 传入 `composer_json` 时，调用方应省略 `"composer"` 键（严禁发送 `"composer": null`）；传入 `include_regex`/`exclude_regex` 时按组筛选语义再过滤一遍。
 - **响应**：
 ```json
 {

@@ -1332,18 +1332,34 @@ function query_nodes(uci_cfg, opts) {
 			existing_tags_map[o.tag] = true;
 	}
 
+	let profiles_dir = options.profiles_dir || common.PROFILES_DIR;
 	let ordered = get_ordered_profiles(uci_cfg);
 	let want_id = trim('' + (options.profile_id ?? ''));
 	let targets = [];
 	if (length(want_id) > 0 && want_id != '*') {
-		for (let p in ordered) {
-			if (p.id == want_id) {
-				push(targets, p);
+		let target_idx = -1;
+		for (let i = 0; i < length(ordered); i++) {
+			if (ordered[i].id == want_id) {
+				target_idx = i;
 				break;
 			}
 		}
-		if (length(targets) == 0)
+		if (target_idx < 0)
 			return fail(common.ERR_NOT_FOUND, sprintf('profile "%s" not found', want_id));
+
+		let want_enabled = (comp.sources[want_id]?.enabled === true);
+		for (let i = 0; i < length(ordered); i++) {
+			if (want_enabled && i >= target_idx)
+				break;
+			let p = ordered[i];
+			if (p.id == want_id || comp.sources[p.id]?.enabled !== true)
+				continue;
+			let pre_doc = load_source_doc(p.id, p.section, options, profiles_dir);
+			if (pre_doc != null)
+				extract_source_nodes(pre_doc, comp.sources[p.id], existing_tags_map);
+		}
+
+		push(targets, ordered[target_idx]);
 	} else {
 		for (let p in ordered) {
 			if (comp.sources[p.id]?.enabled === true)
@@ -1351,7 +1367,6 @@ function query_nodes(uci_cfg, opts) {
 		}
 	}
 
-	let profiles_dir = options.profiles_dir || common.PROFILES_DIR;
 	let nodes = [];
 	let per_source_counts = {};
 	let warnings = [];
@@ -1397,6 +1412,57 @@ function query_nodes(uci_cfg, opts) {
 		per_source_counts: per_source_counts,
 		warnings: warnings
 	};
+}
+
+function sanitize_imported_rule(rule, auto_tags, rule_path, warnings) {
+	if (type(rule) != 'object')
+		return null;
+
+	let rc = deep_clone(rule);
+	if (type(rc.inbound) == 'string') {
+		let itag = trim(rc.inbound);
+		if (index(auto_tags, itag) >= 0) {
+			push(warnings, sprintf('excluded %s targeting auto-injected inbound "%s"', rule_path, itag));
+			return null;
+		}
+	} else if (type(rc.inbound) == 'array') {
+		let kept = [];
+		let removed = [];
+		for (let item in rc.inbound) {
+			let itag = (type(item) == 'string') ? trim(item) : '';
+			if (length(itag) > 0 && index(auto_tags, itag) >= 0)
+				push(removed, itag);
+			else
+				push(kept, item);
+		}
+		if (length(removed) > 0) {
+			if (length(kept) == 0) {
+				push(warnings, sprintf('excluded %s targeting auto-injected inbound(s) only: %s',
+					rule_path, join(', ', removed)));
+				return null;
+			}
+			rc.inbound = kept;
+			push(warnings, sprintf('stripped auto-injected inbound(s) (%s) from %s',
+				join(', ', removed), rule_path));
+		}
+	}
+
+	if (type(rc.rules) == 'array') {
+		let had_sub = (length(rc.rules) > 0);
+		let new_subs = [];
+		for (let i = 0; i < length(rc.rules); i++) {
+			let sub = sanitize_imported_rule(rc.rules[i], auto_tags, sprintf('%s.rules[%d]', rule_path, i), warnings);
+			if (sub != null)
+				push(new_subs, sub);
+		}
+		if (had_sub && length(new_subs) == 0) {
+			push(warnings, sprintf('excluded empty logical %s after stripping auto-injected inbound sub-rules', rule_path));
+			return null;
+		}
+		rc.rules = new_subs;
+	}
+
+	return rc;
 }
 
 function import_from_singbox(raw_cfg) {
@@ -1564,10 +1630,9 @@ function import_from_singbox(raw_cfg) {
 
 		if (type(d.rules) == 'array') {
 			for (let i = 0; i < length(d.rules); i++) {
-				let r = d.rules[i];
-				if (type(r) != 'object')
+				let rc = sanitize_imported_rule(d.rules[i], auto_tags, sprintf('dns.rules[%d]', i), warnings);
+				if (!rc)
 					continue;
-				let rc = deep_clone(r);
 				let act = (type(rc.action) == 'string') ? trim(rc.action) : '';
 				let srv = (type(rc.server) == 'string') ? trim(rc.server) : '';
 				delete rc.action;
@@ -1629,10 +1694,9 @@ function import_from_singbox(raw_cfg) {
 
 		if (type(rt.rules) == 'array') {
 			for (let i = 0; i < length(rt.rules); i++) {
-				let r = rt.rules[i];
-				if (type(r) != 'object')
+				let rc = sanitize_imported_rule(rt.rules[i], auto_tags, sprintf('route.rules[%d]', i), warnings);
+				if (!rc)
 					continue;
-				let rc = deep_clone(r);
 				let act = (type(rc.action) == 'string') ? trim(rc.action) : '';
 				let outb = (type(rc.outbound) == 'string') ? trim(rc.outbound) : '';
 				delete rc.action;

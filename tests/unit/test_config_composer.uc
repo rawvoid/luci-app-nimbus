@@ -793,6 +793,131 @@ check(build_dual.ok === true &&
 	index(build_dual.context.fakeip?.ipv4 || [], '198.18.0.0/15') >= 0,
 	'dual_api_v115 imported draft preserves dual APIs, passes Stage A compose + Stage B build_config, and passes real sing-box 1.14.4 check');
 
+// 13. Regression: query_nodes tag consistency for single profile_id (enabled & disabled)
+let coll_comp = cc.deep_clone(custom_comp);
+coll_comp.sources = {
+	sub_a: { enabled: true, tag_prefix: '[A] ', include_regex: '', exclude_regex: 'Expired' },
+	sub_b: { enabled: true, tag_prefix: '[A] ', include_regex: '', exclude_regex: '' }
+};
+let coll_compose = cc.compose(uci_unset_mode, { composer: coll_comp, profiles_dir: profiles_dir });
+let coll_q_enabled = cc.query_nodes(uci_unset_mode, {
+	composer: coll_comp,
+	profiles_dir: profiles_dir,
+	profile_id: 'sub_b'
+});
+check(coll_compose.ok === true && coll_q_enabled.ok === true &&
+	length(coll_q_enabled.nodes) == 2 &&
+	!exists(coll_q_enabled.per_source_counts, 'sub_a') &&
+	coll_q_enabled.per_source_counts.sub_b == 2 &&
+	coll_q_enabled.nodes[0].profile_id == 'sub_b' &&
+	coll_q_enabled.nodes[0].tag == '[A] HK-01 #2' &&
+	coll_q_enabled.nodes[1].tag == '[A] JP-01',
+	'query_nodes({ profile_id: "sub_b" }) preserves #2 deduplication against preceding enabled sub_a');
+
+let coll_comp_dis = cc.deep_clone(coll_comp);
+coll_comp_dis.sources.sub_b.enabled = false;
+let coll_q_disabled = cc.query_nodes(uci_unset_mode, {
+	composer: coll_comp_dis,
+	profiles_dir: profiles_dir,
+	profile_id: 'sub_b'
+});
+check(coll_q_disabled.ok === true &&
+	length(coll_q_disabled.nodes) == 2 &&
+	coll_q_disabled.nodes[0].tag == '[A] HK-01 #2',
+	'query_nodes({ profile_id: "sub_b" }) reserves tags from enabled sources when sub_b is disabled');
+
+// 14. Regression: import_from_singbox strips auto_tags inbound rules (including logical) & re-composes with dns.mode='none'
+let uci_dns_sb = make_composer_uci('composer');
+uci_dns_sb.dns.mode = 'singbox';
+let uci_dns_none = make_composer_uci('composer');
+uci_dns_none.dns.mode = 'none';
+
+let auto_rules_comp = cc.deep_clone(custom_comp);
+auto_rules_comp.inbounds = [
+	{ id: 'in_mix', enabled: true, type: 'mixed', tag: 'mixed-in', remark: '', config: { listen: '127.0.0.1', listen_port: 17890 } }
+];
+auto_rules_comp.route.rules = [
+	{ id: 'rr_dns', enabled: true, remark: '', action: 'hijack-dns', outbound: '', config: { protocol: 'dns' } },
+	{ id: 'rr_priv', enabled: true, remark: '', action: 'route', outbound: 'direct', config: { ip_is_private: true } }
+];
+let auto_rules_build = cb.build_config({
+	uci: uci_dns_sb,
+	composer: auto_rules_comp,
+	profiles_dir: profiles_dir,
+	bin_path: singbox_bin,
+	check_dir: check_dir,
+	validate_only: true
+});
+check(auto_rules_build.ok === true, 'build effective config with auto-injected dns & sniff inbound rules');
+
+let imp_auto = cc.import_from_singbox(auto_rules_build.config);
+let imp_auto_recompose = cb.build_config({
+	uci: uci_dns_none,
+	composer: imp_auto.composer,
+	profiles_dir: profiles_dir,
+	bin_path: singbox_bin,
+	check_dir: check_dir,
+	validate_only: true
+});
+check(imp_auto.ok === true &&
+	imp_auto_recompose.ok === true &&
+	length(filter(imp_auto.warnings, (w) => index(w, 'nimbus-dns-in') >= 0)) >= 2 &&
+	length(filter(imp_auto.warnings, (w) => index(w, 'nimbus-redirect-in') >= 0)) >= 2,
+	'import_from_singbox strips auto-injected nimbus-dns-in/nimbus-redirect-in rules so re-compose with dns.mode=none passes sing-box check');
+
+let eff_with_mixed = cc.deep_clone(auto_rules_build.config);
+push(eff_with_mixed.dns.rules, { inbound: [ 'nimbus-dns-in' ], action: 'route', server: 'dns-direct' });
+push(eff_with_mixed.dns.rules, { inbound: [ 'mixed-in', 'nimbus-dns-in' ], domain_suffix: [ 'test.local' ], action: 'route', server: 'dns-direct' });
+push(eff_with_mixed.route.rules, { inbound: [ 'mixed-in', 'nimbus-redirect-in' ], action: 'sniff' });
+push(eff_with_mixed.route.rules, {
+	type: 'logical',
+	mode: 'and',
+	rules: [
+		{ inbound: [ 'nimbus-tproxy-in' ], network: [ 'udp' ] },
+		{ domain_suffix: [ 'example.org' ] }
+	],
+	action: 'route',
+	outbound: 'direct'
+});
+push(eff_with_mixed.route.rules, {
+	type: 'logical',
+	mode: 'or',
+	rules: [
+		{ inbound: 'nimbus-dns-in' },
+		{ inbound: [ 'nimbus-redirect-in' ] }
+	],
+	action: 'reject'
+});
+
+let imp_stripped = cc.import_from_singbox(eff_with_mixed);
+let imp_mixed_rr = filter(imp_stripped.composer.route.rules, (r) => r.action == 'sniff');
+let imp_logical_rr = filter(imp_stripped.composer.route.rules, (r) => r.config?.type == 'logical');
+let imp_mixed_dr = filter(imp_stripped.composer.dns.rules, (r) => length(r.config?.domain_suffix || []) == 1 && r.config.domain_suffix[0] == 'test.local');
+check(imp_stripped.ok === true &&
+	length(imp_mixed_rr) == 1 &&
+	length(imp_mixed_rr[0].config?.inbound || []) == 1 &&
+	imp_mixed_rr[0].config.inbound[0] == 'mixed-in' &&
+	length(imp_logical_rr) == 1 &&
+	length(imp_logical_rr[0].config?.rules || []) == 1 &&
+	imp_logical_rr[0].config.rules[0].domain_suffix[0] == 'example.org' &&
+	length(imp_mixed_dr) == 1 &&
+	length(imp_mixed_dr[0].config?.inbound || []) == 1 &&
+	imp_mixed_dr[0].config.inbound[0] == 'mixed-in' &&
+	length(filter(imp_stripped.composer.route.rules, (r) => index(r.config?.inbound || [], 'nimbus-dns-in') >= 0 || index(r.config?.inbound || [], 'nimbus-redirect-in') >= 0)) == 0 &&
+	length(filter(imp_stripped.composer.dns.rules, (r) => index(r.config?.inbound || [], 'nimbus-dns-in') >= 0)) == 0,
+	'import_from_singbox recursively strips auto_tags from route/dns/logical rules while preserving mixed non-auto inbound rules');
+
+let recompose_none = cb.build_config({
+	uci: uci_dns_none,
+	composer: imp_stripped.composer,
+	profiles_dir: profiles_dir,
+	bin_path: singbox_bin,
+	check_dir: check_dir,
+	validate_only: true
+});
+check(recompose_none.ok === true,
+	're-composing stripped imported draft with dns.mode=none passes real sing-box 1.14.4 check');
+
 // Verify all fixture files remained strictly read-only
 for (let name in fixture_names) {
 	check(common.sha256_file(fixtures_dir + '/' + name) == fixture_hashes[name],

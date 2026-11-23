@@ -447,4 +447,30 @@ let st_dead = common.read_state(state_file);
 check(st_dead.state == 'error' && index(st_dead.last_error || '', 'CRITICAL') >= 0,
 	'Fail Handler refuses to claim state=lockdown when both primary and emergency lockdown fail');
 
+// 8. P1 regression test: live --hotplug self-heals table inet nimbus + bypass_sets.nft when flushed externally
+check(write_uci_nimbus('0', 'none'), 'reset uci for live hotplug self-heal test');
+let bypass_sets_file = run_dir + '/bypass_sets.nft';
+let wan_sets_file = run_dir + '/wan_sets.nft';
+let live_hotplug_env = {
+	NIMBUS_NFT_CHECK_ONLY: '0',
+	NIMBUS_BYPASS_SETS_FILE: bypass_sets_file,
+	NIMBUS_WAN_SETS_FILE: wan_sets_file
+};
+check(run_sup_cmd('--prepare-start', live_hotplug_env) == 0, 'live --prepare-start loads table inet nimbus');
+check(common.atomic_write(bypass_sets_file,
+	'flush set inet nimbus bypass_v4\nadd element inet nimbus bypass_v4 { 9.9.9.0/24 }\n', 0600),
+	'seed newer bypass_sets.nft');
+check(system([ '/usr/sbin/nft', '-f', bypass_sets_file ]) == 0, 'apply bypass_sets.nft to live table');
+check(system([ '/usr/sbin/nft', 'delete', 'table', 'inet', 'nimbus' ]) == 0,
+	'externally delete table inet nimbus to simulate external flush');
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft list table inet nimbus >/dev/null 2>&1' ]) != 0,
+	'confirm table inet nimbus is absent before hotplug');
+check(run_sup_cmd('--hotplug', live_hotplug_env) == 0, 'live --hotplug self-heals missing table inet nimbus');
+let healed_v4_out = work_dir + '/healed_bypass_v4.json';
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft -j list set inet nimbus bypass_v4 > "' + healed_v4_out + '"' ]) == 0,
+	'query healed bypass_v4 set after hotplug');
+check(index(fs.readfile(healed_v4_out) || '', '9.9.9.0') >= 0,
+	'hotplug self-heal replayed both rules.nft and newer bypass_sets.nft');
+check(run_sup_cmd('--stop', live_hotplug_env) == 0, 'clean up live table via --stop');
+
 printf('test_supervisor.uc: %d assertions passed\n', passed);

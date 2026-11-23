@@ -1128,10 +1128,45 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 		});
 	}
 
-	// Step 6: extract Fake-IP ranges
+	// Step 6: extract Fake-IP ranges & emit Fake-IP interaction warnings
 	let fakeip_res = extract_fakeip(cfg);
 	if (!fakeip_res.ok)
 		return fail(common.ERR_VALIDATE_FAILED, fakeip_res.error, warnings);
+
+	let has_active_fakeip = (ipv4_enable && length(fakeip_res.ipv4) > 0) ||
+		(ipv6_enable && length(fakeip_res.ipv6) > 0);
+	if (has_active_fakeip) {
+		let port_mode = trim('' + (p.port_filter_mode || 'all'));
+		if (port_mode == 'include' || port_mode == 'exclude') {
+			push(warnings, sprintf(
+				'Fake-IP is enabled with proxy.port_filter_mode="%s": Fake-IP domain connections must enter sing-box to resolve virtual IPs; kernel port filtering applies only to real-IP traffic',
+				port_mode
+			));
+		}
+
+		if (dns_mode == 'singbox') {
+			let raw_lm = lc(trim('' + (p.lan_device_mode ?? p.lan_proxy_mode ?? g.lan_device_mode ?? g.lan_proxy_mode ?? 'default_proxy')));
+			let has_bypass_dev = (raw_lm == 'default_bypass' || raw_lm == 'proxy_listed');
+			if (!has_bypass_dev) {
+				for (let k, sec in uci_cfg) {
+					if (type(sec) != 'object' || sec['.type'] != 'lan_device')
+						continue;
+					if (sec.enabled == '0' || sec.enabled === false)
+						continue;
+					let pol = lc(trim('' + (sec.policy ?? 'bypass')));
+					if (pol == '' || pol == 'bypass') {
+						has_bypass_dev = true;
+						break;
+					}
+				}
+			}
+			if (has_bypass_dev) {
+				push(warnings,
+					'Fake-IP is active with dns.mode="singbox" and direct-bypass LAN device policy: bypassed devices querying router DNS will receive non-routable Fake-IPs unless assigned a real upstream DNS or excluded via sing-box dns.rules'
+				);
+			}
+		}
+	}
 
 	// Step 7: dual API & dashboard probe
 	let apis = probe_apis(cfg);

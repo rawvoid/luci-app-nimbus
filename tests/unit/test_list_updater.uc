@@ -347,4 +347,27 @@ check(rel_locked.ok === false && rel_locked.code == common.ERR_LOCKED,
 	'reload_whitelist_sets returns E_LOCKED when nimbus.lock is held');
 common.release_lock(held_fh);
 
+// 9. P1 regression tests: reload_whitelist_sets surfaces nft -f failure, and live auto-merge set count differs from parsed source count
+check(common.write_state({ state: 'running', whitelist: { enabled: true, v4_count: 99, v6_count: 88 } }, state_file),
+	'seed running state before nft reload failure test');
+let rel_fail = lu.reload_whitelist_sets(null, {
+	...list_opts,
+	nft_dry_run: false,
+	nft_runner: () => ({ rc: 1, output: 'simulated nft set syntax failure' })
+});
+check(rel_fail.ok === false && rel_fail.code == common.ERR_INTERNAL &&
+	index(rel_fail.error, 'simulated nft set syntax failure') >= 0,
+	'reload_whitelist_sets propagates nft.reload_sets failure instead of swallowing it');
+check(common.read_state(state_file)?.whitelist?.v4_count == 99,
+	'reload_whitelist_sets preserves previous state.json whitelist count on nft failure');
+
+check(common.write_state({ state: 'stopped', whitelist: { enabled: true, v4_count: 99, v6_count: 88 } }, state_file),
+	'seed stopped state for get_list_status test');
+let st_stopped_list = lu.get_list_status(null, list_opts);
+check(st_stopped_list.ok === true &&
+	st_stopped_list.nft_loaded.v4_count == 0 &&
+	st_stopped_list.nft_loaded.v6_count == 0 &&
+	st_stopped_list.sources[0].v4_count > 0,
+	'get_list_status reports nft_loaded=0 when service is stopped while preserving per-source parsed counts');
+
 printf('test_list_updater.uc: %d assertions passed\n', passed);

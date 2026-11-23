@@ -8,6 +8,7 @@ const DEFAULT_NFT_BIN = '/usr/sbin/nft';
 const NFT_TIMEOUT_MS = 10000;
 
 const RELOADABLE_SETS = [
+	'lan_ifaces',
 	'bypass_v4',
 	'bypass_v6',
 	'lan_v4',
@@ -556,6 +557,11 @@ function build_lockdown_tail_lines(ipv4_enable, ipv6_enable) {
 function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_ports, redirect_port) {
 	let lines = [];
 
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+
 	if (port_mode == 'include') {
 		if (length(filter_tcp_ports) == 0)
 			push(lines, '\t\treturn');
@@ -564,11 +570,6 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 	} else if (port_mode == 'exclude' && length(filter_tcp_ports) > 0) {
 		push(lines, '\t\ttcp dport @filter_tcp_ports return');
 	}
-
-	if (ipv4_enable)
-		push(lines, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
-	if (ipv6_enable)
-		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
 
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
 
@@ -583,26 +584,26 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port) {
 	let lines = [];
 
+	if (ipv4_enable)
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+	if (ipv6_enable)
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+
 	if (port_mode == 'include') {
 		if (length(filter_udp_ports) == 0)
-			push(lines, '\t\tct mark set ct mark | 0x10 return');
+			push(lines, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return');
 		else
-			push(lines, '\t\tudp dport != @filter_udp_ports ct mark set ct mark | 0x10 return');
+			push(lines, '\t\tudp dport != @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return');
 	} else if (port_mode == 'exclude' && length(filter_udp_ports) > 0) {
-		push(lines, '\t\tudp dport @filter_udp_ports ct mark set ct mark | 0x10 return');
+		push(lines, '\t\tudp dport @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return');
 	}
 
-	if (ipv4_enable)
-		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
-	if (ipv6_enable)
-		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
-
-	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'ct mark set ct mark | 0x10 return');
+	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'ct mark set ct mark & 0xffffffcf | 0x10 return');
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 
 	return lines;
 }
@@ -865,17 +866,19 @@ function generate_rules(opts) {
 		push(out, '\t\tudp dport 53 return');
 
 	push(out, '\t\tct mark & 0x30 == 0x10 return');
-	if (ipv4_enable)
-		push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
-	if (ipv6_enable)
-		push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+	if (!short_circuit_bypass) {
+		if (ipv4_enable)
+			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		if (ipv6_enable)
+			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+	}
 
 	if (short_circuit_bypass) {
-		push(out, '\t\tct mark set ct mark | 0x10 return');
+		push(out, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return');
 	} else {
 		append_device_filter_rules(
 			out, dev_rules, lan_mode, ipv4_enable, ipv6_enable,
-			'ct mark set ct mark | 0x10 return', use_proxy_subchain ? 'prerouting_udp_proxy' : null
+			'ct mark set ct mark & 0xffffffcf | 0x10 return', use_proxy_subchain ? 'prerouting_udp_proxy' : null
 		);
 		if (!use_proxy_subchain) {
 			for (let line in udp_tail)
@@ -994,6 +997,96 @@ function get_nft_bin(opts) {
 	return opts?.nft_bin || getenv('NFT_BIN') || DEFAULT_NFT_BIN;
 }
 
+function parse_set_elem_count(raw_input, expected_name) {
+	let parsed = null;
+	if (type(raw_input) == 'string') {
+		if (length(trim(raw_input)) == 0)
+			return { ok: false, count: null };
+		try {
+			parsed = json(raw_input);
+		} catch (e) {
+			return { ok: false, count: null };
+		}
+	} else if (type(raw_input) == 'object') {
+		parsed = raw_input;
+	} else {
+		return { ok: false, count: null };
+	}
+
+	let entries = parsed?.nftables;
+	if (type(entries) != 'array')
+		return { ok: false, count: null };
+
+	for (let entry in entries) {
+		let s = entry?.set;
+		if (type(s) != 'object')
+			continue;
+		if (s.table != null && s.table != 'nimbus')
+			continue;
+		if (expected_name != null && s.name != expected_name)
+			continue;
+		let count = (type(s.elem) == 'array') ? length(s.elem) : 0;
+		return { ok: true, count: count };
+	}
+
+	return { ok: false, count: null };
+}
+
+function get_bypass_set_counts(opts) {
+	let options = opts || {};
+	let nft_bin = get_nft_bin(options);
+
+	let r4 = run_nft_cmd([ nft_bin, '-j', 'list', 'set', 'inet', 'nimbus', 'bypass_v4' ], options);
+	if (r4.rc != 0)
+		return { ok: false, v4_count: null, v6_count: null };
+	let p4 = parse_set_elem_count(r4.output, 'bypass_v4');
+	if (!p4.ok)
+		return { ok: false, v4_count: null, v6_count: null };
+
+	let r6 = run_nft_cmd([ nft_bin, '-j', 'list', 'set', 'inet', 'nimbus', 'bypass_v6' ], options);
+	if (r6.rc != 0)
+		return { ok: false, v4_count: null, v6_count: null };
+	let p6 = parse_set_elem_count(r6.output, 'bypass_v6');
+	if (!p6.ok)
+		return { ok: false, v4_count: null, v6_count: null };
+
+	return {
+		ok: true,
+		v4_count: p4.count,
+		v6_count: p6.count
+	};
+}
+
+function replay_rules_file(file_path, opts) {
+	let options = opts || {};
+	if (type(file_path) != 'string' || length(file_path) == 0 || !fs.stat(file_path)) {
+		return {
+			ok: false,
+			code: common.ERR_NOT_FOUND,
+			error: sprintf('nftables rules file not found: %s', '' + file_path)
+		};
+	}
+
+	if (options.dry_run === true)
+		return { ok: true, output_path: file_path };
+
+	let nft_bin = get_nft_bin(options);
+	let argv = options.check_only
+		? [ nft_bin, '-c', '-f', file_path ]
+		: [ nft_bin, '-f', file_path ];
+	let res = run_nft_cmd(argv, options);
+	if (res.rc != 0) {
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: length(res.output) > 0 ? res.output : sprintf('nft replay exited with code %d', res.rc),
+			output_path: file_path
+		};
+	}
+
+	return { ok: true, output_path: file_path };
+}
+
 function apply_rules(opts) {
 	let options = opts || {};
 	let script = generate_rules(options);
@@ -1008,7 +1101,7 @@ function apply_rules(opts) {
 	}
 
 	if (options.dry_run === true)
-		return { ok: true, rules: script, output_path: out_path };
+		return { ok: true, rules: script, output_path: out_path, loaded_counts: null };
 
 	let nft_bin = get_nft_bin(options);
 	let argv = options.check_only
@@ -1025,7 +1118,14 @@ function apply_rules(opts) {
 		};
 	}
 
-	return { ok: true, rules: script, output_path: out_path };
+	let loaded_counts = null;
+	if (!options.check_only && type(options.runner) != 'function') {
+		let cnt = get_bypass_set_counts(options);
+		if (cnt.ok)
+			loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+	}
+
+	return { ok: true, rules: script, output_path: out_path, loaded_counts: loaded_counts };
 }
 
 function build_emergency_lockdown_rules() {
@@ -1094,12 +1194,37 @@ function delete_table(opts) {
 	if (options.dry_run === true)
 		return { ok: true };
 
+	let tmp_dir = getenv('TMPDIR') || '/tmp';
+	common.ensure_dir(tmp_dir, 0755);
+	_nft_seq++;
+	let pid = fs.readlink('/proc/self') || '0';
+	let del_path = sprintf('%s/nimbus-del.%s.%d.nft', tmp_dir, pid, _nft_seq);
+	if (!common.atomic_write(del_path, 'table inet nimbus\ndelete table inet nimbus\n', 0600)) {
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: sprintf('failed to stage delete script at %s', del_path)
+		};
+	}
+
 	let nft_bin = get_nft_bin(options);
-	run_nft_cmd([ nft_bin, 'delete', 'table', 'inet', 'nimbus' ], options);
+	let res = run_nft_cmd([ nft_bin, '-f', del_path ], options);
+	fs.unlink(del_path);
+
+	if (res.rc != 0) {
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: length(res.output) > 0 ? res.output : sprintf('nft delete table exited with code %d', res.rc)
+		};
+	}
+
 	return { ok: true };
 }
 
 function sanitize_set_elements(set_name, raw_list) {
+	if (set_name == 'lan_ifaces')
+		return filter_ifname_list(raw_list);
 	if (match(set_name, /_v4$/))
 		return filter_ip_list(raw_list, 4);
 	if (match(set_name, /_v6$/))
@@ -1131,8 +1256,13 @@ function build_set_reload_script(sets_map) {
 	for (let sname in target_names) {
 		push(lines, sprintf('flush set inet nimbus %s', sname));
 		let elems = sanitize_set_elements(sname, input[sname]);
-		if (length(elems) > 0)
-			push(lines, sprintf('add element inet nimbus %s { %s }', sname, join(', ', elems)));
+		if (length(elems) > 0) {
+			let formatted = [];
+			let quote = (sname == 'lan_ifaces');
+			for (let el in elems)
+				push(formatted, quote ? sprintf('"%s"', el) : ('' + el));
+			push(lines, sprintf('add element inet nimbus %s { %s }', sname, join(', ', formatted)));
+		}
 	}
 
 	return join('\n', lines) + '\n';
@@ -1142,10 +1272,13 @@ function reload_sets(sets_map, opts) {
 	let options = opts || {};
 	let script = build_set_reload_script(sets_map);
 
+	let has_bypass_sets = (type(sets_map) == 'object') &&
+		(exists(sets_map, 'bypass_v4') || exists(sets_map, 'bypass_v6') ||
+		 exists(sets_map, 'v4') || exists(sets_map, 'v6'));
+
 	let is_wan_only = (type(sets_map) == 'object') &&
-		!exists(sets_map, 'bypass_v4') && !exists(sets_map, 'bypass_v6') &&
-		!exists(sets_map, 'v4') && !exists(sets_map, 'v6') &&
-		(exists(sets_map, 'lan_v4') || exists(sets_map, 'lan_v6') ||
+		!has_bypass_sets &&
+		(exists(sets_map, 'lan_ifaces') || exists(sets_map, 'lan_v4') || exists(sets_map, 'lan_v6') ||
 		 exists(sets_map, 'wan_v4') || exists(sets_map, 'wan_v6'));
 
 	let out_path = options.output_path ||
@@ -1160,7 +1293,7 @@ function reload_sets(sets_map, opts) {
 	}
 
 	if (options.dry_run === true)
-		return { ok: true, script: script, output_path: out_path };
+		return { ok: true, script: script, output_path: out_path, loaded_counts: null };
 
 	let nft_bin = get_nft_bin(options);
 	let argv = options.check_only
@@ -1177,7 +1310,14 @@ function reload_sets(sets_map, opts) {
 		};
 	}
 
-	return { ok: true, script: script, output_path: out_path };
+	let loaded_counts = null;
+	if (has_bypass_sets && !options.check_only && type(options.runner) != 'function') {
+		let cnt = get_bypass_set_counts(options);
+		if (cnt.ok)
+			loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+	}
+
+	return { ok: true, script: script, output_path: out_path, loaded_counts: loaded_counts };
 }
 
 function reload_iface_sets(uci_cfg, opts) {
@@ -1185,6 +1325,7 @@ function reload_iface_sets(uci_cfg, opts) {
 	let uci_data = uci_cfg || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
 	let net_ctx = resolve_network_context(uci_data, options);
 	let sets_map = {
+		lan_ifaces: net_ctx.lan_ifaces,
 		lan_v4: net_ctx.lan_v4,
 		lan_v6: net_ctx.lan_v6
 	};
@@ -1394,10 +1535,13 @@ export {
 	apply_rules,
 	apply_lockdown,
 	apply_emergency_lockdown,
+	replay_rules_file,
 	delete_table,
 	build_set_reload_script,
 	reload_sets,
 	reload_iface_sets,
+	parse_set_elem_count,
+	get_bypass_set_counts,
 	parse_counters,
 	get_counters,
 	check_fw4_lan_input

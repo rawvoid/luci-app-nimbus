@@ -42,6 +42,8 @@ function get_runtime_paths() {
 		state_file: getenv('NIMBUS_STATE_FILE') || common.STATE_FILE,
 		lock_file: getenv('NIMBUS_LOCK_FILE') || common.LOCK_FILE,
 		rules_file: getenv('NIMBUS_RULES_FILE') || common.RULES_NFT_FILE,
+		bypass_sets_file: getenv('NIMBUS_BYPASS_SETS_FILE') || (runtime_dir + '/bypass_sets.nft'),
+		wan_sets_file: getenv('NIMBUS_WAN_SETS_FILE') || (runtime_dir + '/wan_sets.nft'),
 		log_file: getenv('NIMBUS_LOG_FILE') || common.LOG_FILE,
 		check_dir: getenv('NIMBUS_CHECK_DIR') || common.CHECK_DIR,
 		dns_backup_file: getenv('NIMBUS_DNS_BACKUP_FILE') || common.DNS_BACKUP_FILE,
@@ -261,14 +263,16 @@ function execute_fail_handler(reason, paths, existing_lock) {
 				push(warnings, dns_warn);
 		}
 
+		let lock_v4 = lock_res?.loaded_counts?.bypass_v4 ?? wl?.v4_count ?? old_state?.whitelist?.v4_count ?? 0;
+		let lock_v6 = lock_res?.loaded_counts?.bypass_v6 ?? wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0;
 		let next_state = {
 			...old_state,
 			state: lockdown_ok ? 'lockdown' : 'error',
 			fail_open: false,
 			whitelist: {
 				enabled: (w.enabled != '0'),
-				v4_count: wl?.v4_count ?? old_state?.whitelist?.v4_count ?? 0,
-				v6_count: wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0
+				v4_count: lock_v4,
+				v6_count: lock_v6
 			},
 			warnings: warnings,
 			last_error: final_error,
@@ -276,9 +280,16 @@ function execute_fail_handler(reason, paths, existing_lock) {
 		};
 		common.write_state(next_state, paths.state_file);
 	} else {
-		nft.delete_table({
+		let del_res = nft.delete_table({
+			nft_bin: paths.nft_bin,
 			dry_run: paths.nft_dry_run
 		});
+		if (!del_res.ok) {
+			let del_warn = sprintf('failed to delete table inet nimbus during fail-open recovery: %s', del_res.error || 'nft error');
+			common.log_msg('error', del_warn, paths.log_file);
+			if (index(warnings, del_warn) < 0)
+				push(warnings, del_warn);
+		}
 
 		if (!paths.skip_routes) {
 			route.cleanup_routes({
@@ -429,7 +440,12 @@ function cmd_prepare_start(paths, is_reload) {
 		core_version: ver_str,
 		bin_sha256: new_bin_sha
 	};
-	let running_state = build_state_payload('running', uci_cfg, state_ctx, new_hash, warnings, null, wl, old_state);
+	let wl_for_state = {
+		...wl,
+		v4_count: nft_res.loaded_counts?.bypass_v4 ?? wl.v4_count,
+		v6_count: nft_res.loaded_counts?.bypass_v6 ?? wl.v6_count
+	};
+	let running_state = build_state_payload('running', uci_cfg, state_ctx, new_hash, warnings, null, wl_for_state, old_state);
 	common.write_state(running_state, paths.state_file);
 
 	let old_bin_path = old_state?.core?.bin_path;
@@ -458,7 +474,12 @@ function cmd_stop(paths) {
 	let old_state = common.read_state(paths.state_file) || {};
 
 	fs.unlink(paths.pid_file);
-	nft.delete_table({ dry_run: paths.nft_dry_run });
+	let del_res = nft.delete_table({
+		nft_bin: paths.nft_bin,
+		dry_run: paths.nft_dry_run
+	});
+	if (!del_res.ok)
+		common.log_msg('error', sprintf('failed to delete table inet nimbus on stop: %s', del_res.error || 'nft error'), paths.log_file);
 
 	if (!paths.skip_routes) {
 		route.cleanup_routes({
@@ -500,12 +521,32 @@ function cmd_hotplug(paths) {
 	}
 
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
-	nft.reload_iface_sets(uci_cfg, {
+	let iface_res = nft.reload_iface_sets(uci_cfg, {
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
+		output_path: paths.wan_sets_file,
+		nft_bin: paths.nft_bin,
 		dry_run: paths.nft_dry_run,
 		check_only: paths.nft_check_only
 	});
+	if (!iface_res.ok && !paths.nft_dry_run && !paths.nft_check_only) {
+		let st_rules = fs.stat(paths.rules_file);
+		if (st_rules && st_rules.type == 'file') {
+			common.log_msg('warn', 'hotplug set reload failed; replaying rules.nft to self-heal table inet nimbus', paths.log_file);
+			let heal_res = nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
+			if (heal_res.ok) {
+				let st_byp = fs.stat(paths.bypass_sets_file);
+				if (st_byp && st_byp.type == 'file' && st_byp.mtime >= st_rules.mtime)
+					nft.replay_rules_file(paths.bypass_sets_file, { nft_bin: paths.nft_bin });
+				nft.reload_iface_sets(uci_cfg, {
+					uci_confdir: paths.uci_confdir,
+					uci_savedir: paths.uci_savedir,
+					output_path: paths.wan_sets_file,
+					nft_bin: paths.nft_bin
+				});
+			}
+		}
+	}
 
 	if (st.state == 'running' && !paths.skip_routes) {
 		route.ensure_routes({

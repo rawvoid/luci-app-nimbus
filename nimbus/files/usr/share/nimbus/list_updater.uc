@@ -497,6 +497,20 @@ function get_list_status(uci_cfg, opts) {
 	let w = uci_data?.whitelist || {};
 	let active = collect_active_lists(uci_data, options);
 
+	let state_path = options.state_file || common.STATE_FILE;
+	let st = common.read_state(state_path);
+	let nft_v4 = active.v4_count;
+	let nft_v6 = active.v6_count;
+	if (type(st) == 'object') {
+		if (st.state == 'running' || st.state == 'lockdown') {
+			nft_v4 = st.whitelist?.v4_count ?? active.v4_count;
+			nft_v6 = st.whitelist?.v6_count ?? active.v6_count;
+		} else {
+			nft_v4 = 0;
+			nft_v6 = 0;
+		}
+	}
+
 	return {
 		ok: true,
 		whitelist: {
@@ -505,8 +519,8 @@ function get_list_status(uci_cfg, opts) {
 			update_cron: w.update_cron || DEFAULT_CRON_EXPR
 		},
 		nft_loaded: {
-			v4_count: active.v4_count,
-			v6_count: active.v6_count
+			v4_count: nft_v4,
+			v6_count: nft_v6
 		},
 		sources: active.sources
 	};
@@ -592,30 +606,48 @@ function reload_whitelist_sets(uci_cfg, opts) {
 	let active = collect_active_lists(uci_data, options);
 	let st = common.read_state(state_path) || {};
 
-	if (type(st) == 'object' && (fs.stat(state_path) != null || options.state_file != null)) {
-		st.whitelist = {
-			enabled: active.whitelist_enabled,
-			v4_count: active.v4_count,
-			v6_count: active.v6_count
-		};
-		common.write_state(st, state_path);
-	}
-
 	let service_active = (options.force_reload === true) ||
 		(st.state == 'running' || st.state == 'lockdown');
 
 	let hot_reloaded = false;
+	let loaded_v4 = active.v4_count;
+	let loaded_v6 = active.v6_count;
+
 	if (service_active) {
 		let nres = nft.reload_sets({
 			bypass_v4: active.v4,
 			bypass_v6: active.v6
 		}, {
 			output_path: options.bypass_nft_path || common.BYPASS_SETS_NFT_FILE,
+			nft_bin: options.nft_bin,
 			dry_run: options.nft_dry_run,
 			check_only: options.nft_check_only,
 			runner: options.nft_runner
 		});
-		hot_reloaded = (nres.ok === true);
+		if (!nres.ok) {
+			if (lock_fh)
+				common.release_lock(lock_fh);
+			return {
+				ok: false,
+				code: nres.code || common.ERR_INTERNAL,
+				error: nres.error || 'failed to reload whitelist nftables sets',
+				hot_reloaded: false
+			};
+		}
+		hot_reloaded = true;
+		if (type(nres.loaded_counts) == 'object') {
+			loaded_v4 = nres.loaded_counts.bypass_v4 ?? loaded_v4;
+			loaded_v6 = nres.loaded_counts.bypass_v6 ?? loaded_v6;
+		}
+	}
+
+	if (type(st) == 'object' && (fs.stat(state_path) != null || options.state_file != null)) {
+		st.whitelist = {
+			enabled: active.whitelist_enabled,
+			v4_count: loaded_v4,
+			v6_count: loaded_v6
+		};
+		common.write_state(st, state_path);
 	}
 
 	if (lock_fh)
@@ -625,8 +657,8 @@ function reload_whitelist_sets(uci_cfg, opts) {
 		ok: true,
 		hot_reloaded: hot_reloaded,
 		nft_loaded: {
-			v4_count: active.v4_count,
-			v6_count: active.v6_count
+			v4_count: loaded_v4,
+			v6_count: loaded_v6
 		}
 	};
 }
@@ -913,16 +945,12 @@ function update_lists(section_id, opts) {
 	let active = collect_active_lists(fresh_uci, options);
 	let st = common.read_state(state_path) || {};
 	st.list_meta = common.merge_meta_updates(st.list_meta, list_meta_updates);
-	st.whitelist = {
-		enabled: active.whitelist_enabled,
-		v4_count: active.v4_count,
-		v6_count: active.v6_count
-	};
-	common.write_state(st, state_path);
 
 	let service_active = (options.force_reload === true) ||
 		(st.state == 'running' || st.state == 'lockdown');
 	let hot_reloaded = false;
+	let loaded_v4 = active.v4_count;
+	let loaded_v6 = active.v6_count;
 
 	if (service_active && (any_changed || options.force_reload === true)) {
 		let nres = nft.reload_sets({
@@ -930,12 +958,44 @@ function update_lists(section_id, opts) {
 			bypass_v6: active.v6
 		}, {
 			output_path: options.bypass_nft_path || common.BYPASS_SETS_NFT_FILE,
+			nft_bin: options.nft_bin,
 			dry_run: options.nft_dry_run,
 			check_only: options.nft_check_only,
 			runner: options.nft_runner
 		});
-		hot_reloaded = (nres.ok === true);
+		if (!nres.ok) {
+			common.write_state(st, state_path);
+			if (lock_fh)
+				common.release_lock(lock_fh);
+			return {
+				ok: false,
+				code: nres.code || common.ERR_INTERNAL,
+				error: nres.error || 'failed to reload whitelist nftables sets',
+				all_succeeded: false,
+				hot_reloaded: false,
+				nft_loaded: {
+					v4_count: st.whitelist?.v4_count ?? loaded_v4,
+					v6_count: st.whitelist?.v6_count ?? loaded_v6
+				},
+				results: results
+			};
+		}
+		hot_reloaded = true;
+		if (type(nres.loaded_counts) == 'object') {
+			loaded_v4 = nres.loaded_counts.bypass_v4 ?? loaded_v4;
+			loaded_v6 = nres.loaded_counts.bypass_v6 ?? loaded_v6;
+		}
+	} else if (service_active && type(st.whitelist) == 'object' && !any_changed) {
+		loaded_v4 = st.whitelist.v4_count ?? loaded_v4;
+		loaded_v6 = st.whitelist.v6_count ?? loaded_v6;
 	}
+
+	st.whitelist = {
+		enabled: active.whitelist_enabled,
+		v4_count: loaded_v4,
+		v6_count: loaded_v6
+	};
+	common.write_state(st, state_path);
 
 	if (lock_fh)
 		common.release_lock(lock_fh);
@@ -945,8 +1005,8 @@ function update_lists(section_id, opts) {
 		all_succeeded: all_ok,
 		hot_reloaded: hot_reloaded,
 		nft_loaded: {
-			v4_count: active.v4_count,
-			v6_count: active.v6_count
+			v4_count: loaded_v4,
+			v6_count: loaded_v6
 		},
 		results: results
 	};

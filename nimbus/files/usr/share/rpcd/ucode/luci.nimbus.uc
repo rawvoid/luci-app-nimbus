@@ -1283,7 +1283,8 @@ const methods = {
 				uci_confdir: cfg.uci_confdir,
 				uci_savedir: cfg.uci_savedir,
 				local_dir: cfg.local_lists_dir,
-				cache_dir: cfg.cache_lists_dir
+				cache_dir: cfg.cache_lists_dir,
+				state_file: cfg.state_file
 			});
 		}
 	},

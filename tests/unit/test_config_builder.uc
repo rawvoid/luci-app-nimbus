@@ -445,6 +445,23 @@ let fakeip_zero_prefix = cb.transform_config({
 check(fakeip_zero_prefix.ok === false && fakeip_zero_prefix.code == common.ERR_VALIDATE_FAILED,
 	'extract_fakeip rejects /0 Fake-IP range');
 
+let fakeip_warn_uci = make_uci({ dns_mode: 'singbox' });
+fakeip_warn_uci.proxy.port_filter_mode = 'include';
+fakeip_warn_uci.proxy.lan_device_mode = 'default_bypass';
+let fakeip_warn_res = cb.transform_config({
+	dns: {
+		servers: [
+			{ type: 'fakeip', tag: 'f', inet4_range: '198.18.0.0/15' },
+			{ type: 'udp', tag: 'r', server: '8.8.8.8' }
+		]
+	},
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, fakeip_warn_uci);
+check(fakeip_warn_res.ok === true &&
+	length(filter(fakeip_warn_res.context.warnings, (w) => index(w, 'port_filter_mode="include"') >= 0)) == 1 &&
+	length(filter(fakeip_warn_res.context.warnings, (w) => index(w, 'direct-bypass LAN device policy') >= 0)) == 1,
+	'emits diagnostic warnings when Fake-IP coexists with port_filter_mode or direct-bypass LAN devices');
+
 let empty_dns_err = cb.transform_config({
 	dns: { servers: [] },
 	outbounds: [ { type: 'direct', tag: 'direct' } ]

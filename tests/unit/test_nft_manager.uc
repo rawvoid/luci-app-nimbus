@@ -71,8 +71,9 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 		check(index(rules, 'ct status dnat return') >= 0 && index(rules, 'fib daddr type local return') >= 0,
 			'prerouting chains protect dnat and local destinations: ' + combo_desc);
 		check(index(rules, 'ct mark & 0x30 == 0x10 return') >= 0 &&
-			index(rules, 'ct mark & 0x30 == 0x20') >= 0,
-			'prerouting_udp has ct mark 0x10/0x20 fast path: ' + combo_desc);
+			index(rules, 'ct mark & 0x30 == 0x20') >= 0 &&
+			index(rules, 'ct mark set ct mark | ') < 0,
+			'prerouting_udp has ct mark 0x10/0x20 fast path and clears 0x30 mask before setting: ' + combo_desc);
 	}
 }
 
@@ -146,14 +147,14 @@ for (let topo in topologies) {
 					let is_default_bypass = (lm == 'default_bypass' || lm == 'proxy_listed');
 					if (mode == 'tproxy_redirect') {
 						check(index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 return') >= 0 &&
-							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 ct mark set ct mark | 0x10 return') >= 0 &&
+							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0 &&
 							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:02 goto prerouting_tcp_proxy') >= 0 &&
 							index(res.rules, 'ether saddr aa:bb:cc:dd:ee:02 goto prerouting_udp_proxy') >= 0,
 							'device rules apply prior to default policy in tproxy_redirect: ' + desc);
 
 						if (is_default_bypass) {
 							check(index(res.rules, 'ip saddr 192.168.1.60 goto prerouting_tcp_proxy\n\t\treturn\n\t}') >= 0 &&
-								index(res.rules, 'ip saddr 192.168.1.60 goto prerouting_udp_proxy\n\t\tct mark set ct mark | 0x10 return\n\t}') >= 0,
+								index(res.rules, 'ip saddr 192.168.1.60 goto prerouting_udp_proxy\n\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t}') >= 0,
 								'default_bypass emits direct return fallbacks at TCP/UDP chain tails: ' + desc);
 						} else {
 							check(index(res.rules, 'ip saddr 192.168.1.60 goto prerouting_tcp_proxy\n\t\tgoto prerouting_tcp_proxy\n\t}') >= 0 &&
@@ -176,17 +177,17 @@ for (let topo in topologies) {
 						if (pm == 'empty-include') {
 							check(index(res.rules, 'tcp dport != @filter_tcp_ports') < 0 &&
 								index(res.rules, 'udp dport != @filter_udp_ports') < 0 &&
-								index(res.rules, '\t\treturn\n\t\tip daddr @fakeip_v4') >= 0 &&
-								index(res.rules, '\t\tct mark set ct mark | 0x10 return\n\t\tip daddr @fakeip_v4') >= 0,
-								'empty-include short-circuits TCP and UDP before fakeip/redirect: ' + desc);
+								index(res.rules, 'ip daddr @fakeip_v4') < index(res.rules, '\t\treturn\n\t\tip daddr @reserved_v4') &&
+								index(res.rules, 'ip6 daddr @fakeip_v6') < index(res.rules, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t\tip daddr @reserved_v4'),
+								'empty-include places Fake-IP priority before short-circuiting non-Fake-IP TCP and UDP: ' + desc);
 						} else if (pm == 'include') {
-							check(index(res.rules, 'tcp dport != @filter_tcp_ports return') >= 0 &&
-								index(res.rules, 'udp dport != @filter_udp_ports ct mark set ct mark | 0x10 return') >= 0,
-								'include mode filters against @filter_tcp_ports and @filter_udp_ports: ' + desc);
+							check(index(res.rules, 'ip6 daddr @fakeip_v6') < index(res.rules, 'tcp dport != @filter_tcp_ports return') &&
+								index(res.rules, 'udp dport != @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0,
+								'include mode places Fake-IP before @filter_tcp_ports and @filter_udp_ports: ' + desc);
 						} else if (pm == 'exclude') {
-							check(index(res.rules, 'tcp dport @filter_tcp_ports return') >= 0 &&
-								index(res.rules, 'udp dport @filter_udp_ports ct mark set ct mark | 0x10 return') >= 0,
-								'exclude mode returns on @filter_tcp_ports and @filter_udp_ports: ' + desc);
+							check(index(res.rules, 'ip6 daddr @fakeip_v6') < index(res.rules, 'tcp dport @filter_tcp_ports return') &&
+								index(res.rules, 'udp dport @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0,
+								'exclude mode places Fake-IP before @filter_tcp_ports and @filter_udp_ports: ' + desc);
 						}
 					} else {
 						check(index(res.rules, 'ether saddr aa:bb:cc:dd:ee:01 return') >= 0 &&
@@ -223,8 +224,8 @@ let all_with_bypass = nft.apply_rules({
 check(all_with_bypass.ok === true &&
 	index(all_with_bypass.rules, 'ether saddr 78:2e:03:53:00:2f return') >= 0 &&
 	index(all_with_bypass.rules, 'ip saddr 10.11.1.115 return') >= 0 &&
-	index(all_with_bypass.rules, 'ether saddr 78:2e:03:53:00:2f ct mark set ct mark | 0x10 return') >= 0 &&
-	index(all_with_bypass.rules, 'ip saddr 10.11.1.115 ct mark set ct mark | 0x10 return') >= 0 &&
+	index(all_with_bypass.rules, 'ether saddr 78:2e:03:53:00:2f ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0 &&
+	index(all_with_bypass.rules, 'ip saddr 10.11.1.115 ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0 &&
 	index(all_with_bypass.rules, 'prerouting_tcp_proxy') < 0 &&
 	index(all_with_bypass.rules, 'aa:bb:cc:dd:ee:99') < 0,
 	'default_proxy / legacy all applies enabled bypass rule, skips disabled rows, and avoids subchains');
@@ -246,7 +247,7 @@ check(index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto pre
 	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.0/24 return') &&
 	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_udp_proxy') >= 0 &&
 	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.50 goto prerouting_udp_proxy') <
-	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.0/24 ct mark set ct mark | 0x10 return'),
+	index(host_proxy_before_subnet_bypass.rules, 'ip saddr 10.11.1.0/24 ct mark set ct mark & 0xffffffcf | 0x10 return'),
 	'first-match order puts host proxy before subnet bypass in TCP and UDP');
 
 let subnet_bypass_before_host_proxy = nft.apply_rules({
@@ -280,11 +281,12 @@ let empty_proxy_tproxy = nft.apply_rules({
 check(empty_proxy_tproxy.ok === true &&
 	index(empty_proxy_tproxy.rules, 'prerouting_tcp_proxy') < 0 &&
 	index(empty_proxy_tproxy.rules, 'prerouting_udp_proxy') < 0 &&
+	index(empty_proxy_tproxy.rules, 'ct mark & 0x30 == 0x20') < 0 &&
 	index(empty_proxy_tproxy.rules, '78:2e:03:53:00:2f') < 0 &&
 	index(empty_proxy_tproxy.rules, 'ip daddr @fakeip_v4') < 0 &&
 	index(empty_proxy_tproxy.rules, '\t\tfib daddr type local return\n\t\treturn\n\t}') >= 0 &&
-	index(empty_proxy_tproxy.rules, '\t\tct mark set ct mark | 0x10 return\n\t}') >= 0,
-	'default_bypass / proxy_listed without active proxy rules prunes dead tail and short-circuits');
+	index(empty_proxy_tproxy.rules, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t}') >= 0,
+	'default_bypass / proxy_listed without active proxy rules omits 0x20 fast-path, prunes dead tail, and short-circuits');
 
 let empty_proxy_lockdown = nft.apply_rules({
 	nft_bin: nft_bin,
@@ -336,9 +338,9 @@ let empty_pol_fallback = nft.apply_rules({
 });
 check(empty_pol_fallback.ok === true &&
 	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.88 return') >= 0 &&
-	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.88 ct mark set ct mark | 0x10 return') >= 0 &&
+	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.88 ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0 &&
 	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.89 return') >= 0 &&
-	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.89 ct mark set ct mark | 0x10 return') >= 0,
+	index(empty_pol_fallback.rules, 'ip saddr 10.11.1.89 ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0,
 	'empty or omitted device policy defaults cleanly to bypass');
 
 let partial_idx_rules = nft.parse_device_rules({
@@ -600,16 +602,18 @@ let live_apply = nft.apply_rules({
 check(live_apply.ok === true, 'live nft -f apply_rules succeeds in container');
 
 let reload_nonempty = nft.reload_sets({
-	bypass_v4: [ '1.1.1.0/24', '8.8.8.0/24' ],
+	bypass_v4: [ '1.0.1.0/24', '1.0.2.0/24', '1.0.3.0/24', '8.8.8.0/24' ],
 	bypass_v6: [ '2400:3200::/32' ]
 }, {
 	nft_bin: nft_bin,
 	output_path: work_dir + '/bypass_sets.nft'
 });
 check(reload_nonempty.ok === true &&
-	index(reload_nonempty.script, 'flush set inet nimbus bypass_v4\nadd element inet nimbus bypass_v4 { 1.1.1.0/24, 8.8.8.0/24 }\n') >= 0 &&
-	index(reload_nonempty.script, 'flush set inet nimbus bypass_v6\nadd element inet nimbus bypass_v6 { 2400:3200::/32 }\n') >= 0,
-	'reload_sets atomically flushes and adds bypass_v4 and bypass_v6 in live table');
+	index(reload_nonempty.script, 'flush set inet nimbus bypass_v4\nadd element inet nimbus bypass_v4 { 1.0.1.0/24, 1.0.2.0/24, 1.0.3.0/24, 8.8.8.0/24 }\n') >= 0 &&
+	index(reload_nonempty.script, 'flush set inet nimbus bypass_v6\nadd element inet nimbus bypass_v6 { 2400:3200::/32 }\n') >= 0 &&
+	reload_nonempty.loaded_counts?.bypass_v4 == 2 &&
+	reload_nonempty.loaded_counts?.bypass_v6 == 1,
+	'reload_sets atomically reloads sets and reads auto-merged element count (4 CIDRs -> 2 intervals) via nft -j');
 
 let reload_empty = nft.reload_sets({
 	bypass_v4: [],
@@ -620,8 +624,10 @@ let reload_empty = nft.reload_sets({
 });
 check(reload_empty.ok === true &&
 	reload_empty.script == 'flush set inet nimbus bypass_v4\nflush set inet nimbus bypass_v6\n' &&
-	index(reload_empty.script, 'add element') < 0,
-	'reload_sets omits add element when set arrays are empty');
+	index(reload_empty.script, 'add element') < 0 &&
+	reload_empty.loaded_counts?.bypass_v4 == 0 &&
+	reload_empty.loaded_counts?.bypass_v6 == 0,
+	'reload_sets omits add element when set arrays are empty and reports 0 loaded elements');
 
 let iface_reload = nft.reload_iface_sets({
 	global: {
@@ -655,11 +661,12 @@ let iface_reload = nft.reload_iface_sets({
 	}
 });
 check(iface_reload.ok === true &&
+	index(iface_reload.script, 'flush set inet nimbus lan_ifaces\nadd element inet nimbus lan_ifaces { "br-lan" }\n') >= 0 &&
 	index(iface_reload.script, '192.168.10.1/24') >= 0 &&
 	index(iface_reload.script, '198.51.100.42') >= 0 &&
 	index(iface_reload.script, '2001:db8:99::2') >= 0 &&
 	index(iface_reload.script, '2001:db8:100::/56') >= 0,
-	'reload_iface_sets extracts dynamic LAN/WAN addresses from ubus dump and applies atomically');
+	'reload_iface_sets refreshes lan_ifaces alongside LAN/WAN IP sets atomically');
 
 let live_ctrs = nft.get_counters({ nft_bin: nft_bin });
 check(live_ctrs.ok === true &&
@@ -703,6 +710,9 @@ let live_apply_dns_subchain = nft.apply_rules({
 check(live_apply_dns_subchain.ok === true, 'live nft -f hijack_lan_dns with ordered goto subchain succeeds in container');
 
 check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'delete_table cleans up live table');
+check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'delete_table is idempotent when table does not exist');
+check(nft.delete_table({ nft_bin: '/nonexistent/nft-bin' }).ok === false,
+	'delete_table surfaces real execution failure instead of swallowing it');
 
 // 4. get_counters JSON parsing tests (both `nft -j list counters` and `nft -j list table` formats)
 let sample_list_counters_json = sprintf('%J', {

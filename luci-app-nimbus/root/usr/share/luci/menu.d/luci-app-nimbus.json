@@ -27,7 +27,7 @@
 		}
 	},
 	"admin/services/nimbus/profiles": {
-		"title": "Profiles",
+		"title": "Config",
 		"order": 30,
 		"action": {
 			"type": "view",

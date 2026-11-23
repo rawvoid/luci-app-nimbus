@@ -3,6 +3,7 @@
 'require dom';
 'require ui';
 'require nimbus.api as nimbusApi';
+'require nimbus.composer as composerView';
 
 function isValidProfileFilename(name) {
 	if (typeof name !== 'string' || !/^[A-Za-z0-9._-]+\.json$/.test(name))
@@ -27,22 +28,66 @@ return view.extend({
 	handleReset: null,
 
 	load: function() {
-		return nimbusApi.profileList();
+		return Promise.all([
+			nimbusApi.profileList(),
+			nimbusApi.composerGet()
+		]);
 	},
 
 	render: function(initialData) {
-		var listData = initialData || { active_profile: '', profiles: [] };
+		var rawList = (initialData && initialData[0]) ? initialData[0] : null;
+		var rawComposer = (initialData && initialData[1]) ? initialData[1] : null;
+		if (rawList && rawList.ok === false)
+			nimbusApi.notifyError(rawList);
+		if (rawComposer && rawComposer.ok === false)
+			nimbusApi.notifyError(rawComposer);
+
+		var listData = (rawList && rawList.ok !== false)
+			? rawList
+			: { active_profile: '', profiles: [] };
+		var composerData = (rawComposer && rawComposer.ok !== false)
+			? rawComposer
+			: { config_mode: 'composer', composer: {}, profiles: [] };
+		var configMode = (composerData.config_mode === 'profile') ? 'profile' : 'composer';
+		var composerCtrl = null;
+
+		var modeBarContainer = E('div', { 'class': 'cbi-section' });
+		var workspaceContainer = E('div', {});
 		var tableContainer = E('div', { 'class': 'cbi-section' });
 		var busy = false;
+		var modeSwitching = false;
 
-		function refreshList() {
-			return nimbusApi.profileList().then(function(res) {
-				if (!res || res.ok === false) {
-					nimbusApi.notifyError(res);
+		function refreshAll() {
+			return Promise.all([
+				nimbusApi.profileList(),
+				nimbusApi.composerGet()
+			]).then(function(results) {
+				var pRes = results[0];
+				var cRes = results[1];
+				if (!pRes || pRes.ok === false) {
+					nimbusApi.notifyError(pRes);
 					return;
 				}
-				listData = res;
-				renderTable();
+				listData = pRes;
+				var prevMode = configMode;
+				if (cRes && cRes.ok !== false) {
+					composerData = cRes;
+					configMode = (cRes.config_mode === 'profile') ? 'profile' : 'composer';
+				} else if (cRes && cRes.ok === false) {
+					nimbusApi.notifyError(cRes);
+				}
+
+				renderModeBar();
+				if (prevMode !== configMode) {
+					renderWorkspace();
+				} else if (configMode === 'composer') {
+					if (composerCtrl && typeof composerCtrl.updateData === 'function')
+						composerCtrl.updateData(listData, composerData);
+					else
+						renderWorkspace();
+				} else {
+					renderTable();
+				}
 			}).catch(function(err) {
 				nimbusApi.notifyError(err);
 			});
@@ -51,9 +96,12 @@ return view.extend({
 		function maybeReloadActive(res) {
 			if (!res || !res.reload_required)
 				return Promise.resolve();
+			var msg = (configMode === 'composer')
+				? _('An active Composer source was updated and validated. Reload Nimbus service now to apply changes?')
+				: _('The active profile was updated and validated. Reload Nimbus service now to apply changes?');
 			return nimbusApi.confirmAction(
 				_('Reload Service'),
-				_('The active profile was updated and validated. Reload Nimbus service now to apply changes?')
+				msg
 			).then(function(yes) {
 				if (!yes)
 					return;
@@ -67,11 +115,11 @@ return view.extend({
 		}
 
 		function handleUploadJson(filename, validate, btn, onDone) {
-			nimbusApi.uploadProfileFile(btn).then(function() {
+			return nimbusApi.uploadProfileFile(btn).then(function() {
 				return nimbusApi.profileSave({
 					filename: filename,
 					from_upload: true,
-					validate: validate
+					validate: validate !== false
 				});
 			}).then(function(res) {
 				if (!res || res.ok === false) {
@@ -81,7 +129,7 @@ return view.extend({
 				nimbusApi.notifySuccess(res.checked
 					? _('Profile "%s" uploaded and validated with sing-box.').format(filename)
 					: _('Profile "%s" uploaded (JSON syntax checked).').format(filename));
-				return refreshList().then(function() {
+				return refreshAll().then(function() {
 					return maybeReloadActive(res);
 				}).then(function() {
 					if (onDone)
@@ -94,7 +142,7 @@ return view.extend({
 		}
 
 		function openJsonEditor(profile) {
-			nimbusApi.profileRead(profile.filename).then(function(res) {
+			return nimbusApi.profileRead(profile.filename).then(function(res) {
 				var content = '{\n}\n';
 				if (res && res.ok)
 					content = res.content || '';
@@ -142,9 +190,16 @@ return view.extend({
 					}
 					try {
 						var parsed = JSON.parse(raw);
-						if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-							showModalErr(_('Profile JSON must be a top-level object.'));
-							return;
+						if (configMode === 'composer') {
+							if (!parsed || typeof parsed !== 'object' || (Array.isArray(parsed) && parsed.length === 0)) {
+								showModalErr(_('Source JSON must be a top-level object or a non-empty array.'));
+								return;
+							}
+						} else {
+							if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+								showModalErr(_('Profile JSON must be a top-level object.'));
+								return;
+							}
 						}
 					} catch (e) {
 						showModalErr(_('Invalid JSON syntax: %s').format(e.message));
@@ -167,7 +222,7 @@ return view.extend({
 						nimbusApi.notifySuccess(sres.checked
 							? _('Profile "%s" saved and validated with sing-box.').format(profile.filename)
 							: _('Profile "%s" saved (JSON syntax checked).').format(profile.filename));
-						return refreshList().then(function() {
+						return refreshAll().then(function() {
 							return maybeReloadActive(sres);
 						});
 					}).catch(function(err) {
@@ -346,7 +401,7 @@ return view.extend({
 					}
 					ui.hideModal();
 					nimbusApi.notifySuccess(isEdit ? _('Profile metadata updated.') : _('Profile created.'));
-					return refreshList();
+					return refreshAll();
 				}).catch(function(err) {
 					saveBtn.disabled = false;
 					showFormErr(nimbusApi.formatError(err));
@@ -381,11 +436,12 @@ return view.extend({
 
 		function runProfileUpdate(sectionId) {
 			if (busy)
-				return;
+				return Promise.resolve();
 			busy = true;
-			renderTable();
+			if (configMode === 'profile')
+				renderTable();
 
-			nimbusApi.profileUpdate(sectionId || '').then(function(res) {
+			return nimbusApi.profileUpdate(sectionId || '').then(function(res) {
 				busy = false;
 				var results = (res && Array.isArray(res.results)) ? res.results : [];
 				var updated = 0, unchanged = 0, failed = 0;
@@ -413,21 +469,21 @@ return view.extend({
 						? _('Subscription update finished: %d updated, %d unchanged, service reloaded.').format(updated, unchanged)
 						: _('Subscription update finished: %d updated, %d unchanged.').format(updated, unchanged));
 				}
-				return refreshList();
+				return refreshAll();
 			}).catch(function(err) {
 				busy = false;
 				nimbusApi.notifyError(err);
-				return refreshList();
+				return refreshAll();
 			});
 		}
 
 		function activateProfile(profile) {
 			if (busy)
-				return;
+				return Promise.resolve();
 			busy = true;
 			renderTable();
 
-			nimbusApi.profileActivate(profile.id, true).then(function(res) {
+			return nimbusApi.profileActivate(profile.id, true).then(function(res) {
 				busy = false;
 				if (!res || res.ok === false) {
 					nimbusApi.notifyError(res);
@@ -436,16 +492,16 @@ return view.extend({
 						? _('Activated profile "%s" and reloaded service.').format(profile.name || profile.id)
 						: _('Activated profile "%s".').format(profile.name || profile.id));
 				}
-				return refreshList();
+				return refreshAll();
 			}).catch(function(err) {
 				busy = false;
 				nimbusApi.notifyError(err);
-				return refreshList();
+				return refreshAll();
 			});
 		}
 
 		function deleteProfile(profile) {
-			nimbusApi.confirmAction(
+			return nimbusApi.confirmAction(
 				_('Delete Profile'),
 				_('Delete profile "%s" (%s) and its configuration file?').format(profile.name || profile.id, profile.filename)
 			).then(function(yes) {
@@ -456,7 +512,7 @@ return view.extend({
 						nimbusApi.notifyError(res);
 					else
 						nimbusApi.notifySuccess(_('Profile "%s" deleted.').format(profile.name || profile.id));
-					return refreshList();
+					return refreshAll();
 				});
 			}).catch(function(err) {
 				nimbusApi.notifyError(err);
@@ -485,7 +541,7 @@ return view.extend({
 						'type': 'button',
 						'class': 'btn cbi-button',
 						'disabled': busy ? 'disabled' : null,
-						'click': refreshList
+						'click': refreshAll
 					}, _('Refresh'))
 				]),
 				busy ? E('span', { 'class': 'spinning' }, _('Processing...')) : ''
@@ -597,13 +653,179 @@ return view.extend({
 			]);
 		}
 
-		renderTable();
+		function renderWorkspace() {
+			if (composerCtrl && typeof composerCtrl.destroy === 'function') {
+				composerCtrl.destroy();
+				composerCtrl = null;
+			}
+
+			if (configMode === 'profile') {
+				dom.content(workspaceContainer, tableContainer);
+				renderTable();
+				return;
+			}
+
+			composerCtrl = null;
+			var ws = composerView.renderWorkspace({
+				initialComposerData: composerData,
+				initialProfileList: listData,
+				sharedProfileActions: {
+					openMetaModal: openMetaModal,
+					openJsonEditor: openJsonEditor,
+					handleUploadJson: handleUploadJson,
+					runProfileUpdate: runProfileUpdate,
+					deleteProfile: deleteProfile
+				},
+				onController: function(ctrl) {
+					composerCtrl = ctrl;
+				},
+				onSaved: function() {
+					return refreshAll();
+				}
+			});
+			dom.content(workspaceContainer, ws);
+		}
+
+		function switchMode(nextMode) {
+			if (modeSwitching || busy || nextMode === configMode)
+				return;
+
+			var confirmStep = (configMode === 'composer' && composerCtrl && typeof composerCtrl.isDirty === 'function' && composerCtrl.isDirty())
+				? nimbusApi.confirmAction(
+					_('Unsaved Changes'),
+					_('You have unsaved changes in Composer Mode. Discard them and switch to Raw Profile Mode?')
+				)
+				: Promise.resolve(true);
+
+			confirmStep.then(function(proceed) {
+				if (!proceed)
+					return;
+				modeSwitching = true;
+				renderModeBar();
+
+				return nimbusApi.composerModeSet(nextMode, false).then(function(res) {
+					modeSwitching = false;
+					if (!res || res.ok === false) {
+						nimbusApi.notifyError(res);
+						renderModeBar();
+						return;
+					}
+
+					var resolvedMode = (res.config_mode === 'profile') ? 'profile' : 'composer';
+					if (resolvedMode !== 'composer' && composerCtrl && typeof composerCtrl.destroy === 'function') {
+						composerCtrl.destroy();
+						composerCtrl = null;
+					}
+					configMode = resolvedMode;
+					composerData.config_mode = resolvedMode;
+
+					nimbusApi.notifySuccess(resolvedMode === 'composer'
+						? _('Switched to Composer Mode.')
+						: _('Switched to Raw Profile Mode.'));
+
+					renderModeBar();
+					renderWorkspace();
+
+					if (res.reload_required) {
+						return nimbusApi.confirmAction(
+							_('Reload Service'),
+							_('Configuration mode changed while Nimbus is active. Reload service now to apply?')
+						).then(function(yes) {
+							if (!yes)
+								return;
+							return nimbusApi.serviceAction('reload').then(function(r) {
+								if (!r || r.ok === false)
+									nimbusApi.notifyError(r);
+								else
+									nimbusApi.notifySuccess(_('Service reloaded successfully.'));
+							});
+						});
+					}
+				});
+			}).catch(function(err) {
+				modeSwitching = false;
+				nimbusApi.notifyError(err);
+				renderModeBar();
+			});
+		}
+
+		function renderModeBar() {
+			var modes = [
+				{
+					id: 'composer',
+					title: _('Composer Mode'),
+					hint: _('Manage structured inbounds, outbounds, DNS, routing rules, and multi-subscription node extraction.')
+				},
+				{
+					id: 'profile',
+					title: _('Raw Profile Mode'),
+					hint: _('Select a single complete sing-box JSON profile or subscription.')
+				}
+			];
+
+			var cards = modes.map(function(m) {
+				var active = (configMode === m.id);
+				var cardStyle = [
+					'flex:1 1 280px',
+					'display:flex',
+					'flex-direction:column',
+					'gap:4px',
+					'padding:12px 14px',
+					'border-radius:6px',
+					'text-align:left',
+					'white-space:normal',
+					'line-height:1.45',
+					'font:inherit',
+					'color:inherit',
+					'appearance:none',
+					'-webkit-appearance:none',
+					'cursor:' + ((modeSwitching || active) ? 'default' : 'pointer'),
+					active
+						? 'border:2px solid #0069d9;background:rgba(0,105,217,0.08);'
+						: 'border:1px solid rgba(128,128,128,0.35);background:transparent;opacity:0.9;'
+				].join(';');
+
+				return E('button', {
+					'type': 'button',
+					'aria-pressed': active ? 'true' : 'false',
+					'disabled': (modeSwitching || busy) ? 'disabled' : null,
+					'style': cardStyle,
+					'click': function() {
+						if (!active)
+							switchMode(m.id);
+					}
+				}, [
+					E('div', { 'style': 'display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;' }, [
+						E('div', { 'style': 'display:flex;align-items:center;gap:8px;' }, [
+							E('span', {
+								'style': 'font-size:110%;line-height:1;color:' + (active ? '#0069d9' : '#888') + ';'
+							}, active ? '\u25cf' : '\u25cb'),
+							E('strong', {}, m.title)
+						]),
+						active ? makeBadge(_('Active'), '#e6f4ea', '#137333') : ''
+					]),
+					E('div', { 'style': 'font-size:90%;opacity:0.85;' }, m.hint)
+				]);
+			});
+
+			dom.content(modeBarContainer, [
+				E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;' }, [
+					E('strong', {}, _('Configuration Mode')),
+					modeSwitching ? E('span', { 'class': 'spinning' }, _('Switching mode...')) : ''
+				]),
+				E('div', { 'style': 'display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;' }, cards)
+			]);
+		}
+
+		renderModeBar();
+		renderWorkspace();
 
 		return E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, _('Nimbus Profiles')),
+			E('h2', {}, _('Nimbus Configuration')),
 			E('div', { 'class': 'cbi-map-descr' },
-				_('Manage sing-box JSON configurations and remote subscriptions. Source files in /etc/nimbus/profiles/ remain read-only; Nimbus generates runtime config in memory.')),
-			tableContainer
+				_('Choose between structured Composer Mode and single-file Raw Profile Mode. Shared JSON files and subscriptions in /etc/nimbus/profiles/ remain read-only.')),
+			modeBarContainer,
+			workspaceContainer
 		]);
 	}
 });

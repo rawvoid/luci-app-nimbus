@@ -157,6 +157,52 @@ var callCoreTaskStatus = rpc.declare({
 	method: 'core_task_status'
 });
 
+var callComposerGet = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_get'
+});
+
+var callComposerNodes = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_nodes',
+	params: [ 'profile_id', 'composer_json', 'include_regex', 'exclude_regex' ]
+});
+
+var callComposerPreview = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_preview',
+	params: [ 'composer_json', 'validate' ]
+});
+
+var callComposerSave = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_save',
+	params: [ 'composer_json', 'validate', 'reload' ]
+});
+
+var callComposerModeSet = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_mode_set',
+	params: [ 'mode', 'reload' ]
+});
+
+var callComposerImport = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_import',
+	params: [ 'source', 'profile_id', 'content' ]
+});
+
+function resolveComposerJson(opts) {
+	var o = opts || {};
+	if (typeof o.composer_json === 'string' && o.composer_json.length > 0)
+		return o.composer_json;
+	if (o.composer && typeof o.composer === 'object')
+		return JSON.stringify(o.composer);
+	if (o.composer_json != null)
+		return String(o.composer_json);
+	return '';
+}
+
 var callNetworkInterfaceDump = rpc.declare({
 	object: 'network.interface',
 	method: 'dump',
@@ -310,6 +356,50 @@ return baseclass.extend({
 
 	coreTaskStatus: function() {
 		return callCoreTaskStatus();
+	},
+
+	composerGet: function() {
+		return callComposerGet();
+	},
+
+	composerNodes: function(opts) {
+		var o = opts || {};
+		return callComposerNodes(
+			o.profile_id || '',
+			resolveComposerJson(o),
+			o.include_regex || '',
+			o.exclude_regex || ''
+		);
+	},
+
+	composerPreview: function(opts) {
+		var o = opts || {};
+		return callComposerPreview(
+			resolveComposerJson(o),
+			o.validate !== false
+		);
+	},
+
+	composerSave: function(opts) {
+		var o = opts || {};
+		return callComposerSave(
+			resolveComposerJson(o),
+			o.validate !== false,
+			o.reload === true
+		);
+	},
+
+	composerModeSet: function(mode, reload) {
+		return callComposerModeSet(mode || 'composer', reload === true);
+	},
+
+	composerImport: function(opts) {
+		var o = opts || {};
+		return callComposerImport(
+			o.source || 'json',
+			o.profile_id || '',
+			o.content != null ? String(o.content) : ''
+		);
 	},
 
 	getNetworkInterfaces: function() {

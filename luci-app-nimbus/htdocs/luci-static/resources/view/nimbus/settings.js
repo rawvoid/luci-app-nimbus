@@ -82,11 +82,18 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
-		o = sGlobal.option(form.ListValue, 'active_profile', _('Active Profile'));
-		o.value('', _('-- Select Profile --'));
+		o = sGlobal.option(form.ListValue, 'config_mode', _('Configuration Mode'));
+		o.value('composer', _('Composer Mode'));
+		o.value('profile', _('Raw Profile Mode'));
+		o.default = 'composer';
+		o.rmempty = false;
+
+		var oActiveProfile = sGlobal.option(form.ListValue, 'active_profile', _('Active Profile'));
+		oActiveProfile.depends('config_mode', 'profile');
+		oActiveProfile.value('', _('-- Select Profile --'));
 		uci.sections('nimbus', 'profile', function(sec) {
 			var label = sec.name ? '%s (%s)'.format(sec.name, sec['.name']) : sec['.name'];
-			o.value(sec['.name'], label);
+			oActiveProfile.value(sec['.name'], label);
 		});
 
 		o = sGlobal.option(form.ListValue, 'topology', _('Network Topology'));

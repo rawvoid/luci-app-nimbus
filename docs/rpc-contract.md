@@ -349,6 +349,7 @@
     "route": {},
     "override": {}
   },
+  "composer_json": "{ ... }",
   "profiles": [],
   "auto_inbounds": {
     "proxy_mode": "tproxy_redirect",
@@ -438,6 +439,7 @@
   "mtime": 1795192000,
   "reload_required": true,
   "reloaded": false,
+  "composer": { ... },
   "composer_json": "{ ... }",
   "warnings": []
 }
@@ -454,7 +456,7 @@
 
 - **请求**：`{ "source": "profile", "profile_id": "main_sub", "content": "" }`
 > `source` 枚举：`"profile"` | `"json"`。
-- **响应**：`{ "ok": true, "composer": { ... }, "warnings": [] }`
+- **响应**：`{ "ok": true, "composer": { ... }, "composer_json": "{ ... }", "warnings": [] }`
 
 ---
 

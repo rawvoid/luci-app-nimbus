@@ -244,6 +244,11 @@ function renderWorkspace(opts) {
 	var headerBox = E('div', { 'class': 'cbi-section' });
 	var tabMenu = E('ul', { 'class': 'cbi-tabmenu' });
 	var tabPanel = E('div', { 'class': 'cbi-section' });
+	var rootEl = E('div', { 'class': 'nimbus-composer-workspace' }, [
+		headerBox,
+		tabMenu,
+		tabPanel
+	]);
 
 	var TABS = [
 		{ id: 'sources', label: _('Sources') },
@@ -255,8 +260,10 @@ function renderWorkspace(opts) {
 	];
 
 	function handleBeforeUnload(ev) {
-		if (!dirty)
+		if (destroyed || !dirty || !rootEl || rootEl.isConnected === false) {
+			setBeforeUnload(false);
 			return;
+		}
 		ev.preventDefault();
 		ev.returnValue = '';
 		return '';
@@ -382,12 +389,12 @@ function renderWorkspace(opts) {
 			switchTab('override');
 			return false;
 		}
-		var jsonStr = JSON.stringify(draft);
-		if (nimbusApi.utf8ByteLength(jsonStr) > nimbusApi.MAX_DIRECT_TEXT_BYTES) {
+		var prettyStr = JSON.stringify(draft, null, 2) + '\n';
+		if (nimbusApi.utf8ByteLength(prettyStr) > nimbusApi.MAX_DIRECT_TEXT_BYTES) {
 			nimbusApi.notifyError(_('Composer configuration exceeds the 256 KiB inline transfer limit.'));
 			return false;
 		}
-		return jsonStr;
+		return JSON.stringify(draft);
 	}
 
 	function refreshProfilesOnly() {
@@ -3017,11 +3024,7 @@ function renderWorkspace(opts) {
 		});
 	}
 
-	return E('div', { 'class': 'nimbus-composer-workspace' }, [
-		headerBox,
-		tabMenu,
-		tabPanel
-	]);
+	return rootEl;
 }
 
 return baseclass.extend({

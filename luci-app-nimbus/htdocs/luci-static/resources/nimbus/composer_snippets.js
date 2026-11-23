@@ -457,7 +457,8 @@ var OVERRIDE_SNIPPETS = [
 					users: [
 						{
 							name: 'user1',
-							password: 'secret'
+							token: 'secret',
+							max_realms: 4
 						}
 					]
 				}
@@ -922,9 +923,9 @@ function summarizeOutbound(item) {
 	if (ep)
 		parts.push(ep);
 	if (c.detour)
-		parts.push('via %s'.format(c.detour));
+		parts.push(_('via %s').format(c.detour));
 	if (c.bind_interface)
-		parts.push('dev:%s'.format(c.bind_interface));
+		parts.push(_('dev:%s').format(c.bind_interface));
 	if (parts.length === 0) {
 		var keys = Object.keys(c);
 		if (keys.length === 0)
@@ -945,9 +946,9 @@ function summarizeDnsServer(item) {
 	if (ep)
 		parts.push(ep + (c.path ? String(c.path) : ''));
 	if (c.detour)
-		parts.push('via %s'.format(c.detour));
+		parts.push(_('via %s').format(c.detour));
 	if (c.interface)
-		parts.push('dev:%s'.format(c.interface));
+		parts.push(_('dev:%s').format(c.interface));
 	if (parts.length === 0) {
 		var keys = Object.keys(c);
 		if (keys.length === 0)
@@ -1000,7 +1001,7 @@ function summarizeRuleSet(item) {
 	if (c.url)
 		parts.push(String(c.url));
 	if (c.http_client && c.http_client.detour)
-		parts.push('via %s'.format(c.http_client.detour));
+		parts.push(_('via %s').format(c.http_client.detour));
 	if (c.update_interval)
 		parts.push(String(c.update_interval));
 	return parts.length ? parts.join(' · ') : '-';

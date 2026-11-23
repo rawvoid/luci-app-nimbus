@@ -21,8 +21,8 @@
 - 顶层及双包目录与构建文件：
   - `nimbus/Makefile`（`PKGARCH:=all`，声明完整运行时含 `+ucode-mod-uloop`、`+ip-full`、`+nftables-json` 与内核模块 `+kmod-nft-core`、`+kmod-nft-fib`、`+kmod-nft-nat`、`+kmod-nft-tproxy` 依赖，提供 `Package/nimbus/prerm` 卸载还原钩子）
   - `luci-app-nimbus/Makefile`（`PKGARCH:=all`，通过 `include $(TOPDIR)/feeds/luci/luci.mk` 构建，依赖 `+nimbus +luci-base`，自动生成 `luci-i18n-nimbus-zh-cn`）
-- 软件源公钥（严禁提交私钥进仓库）：
-  - `keys/nimbus-usign.pub` 与 `keys/nimbus-apk.pem`
+- 软件源签名密钥策略（严禁提交私钥进仓库）：
+  - 仓库不保存 `keys/` 目录；CI 构建时直接从 GitHub Secrets（`USIGN_PRIVATE_KEY` / `APK_PRIVATE_KEY`）实时派生公钥 `nimbus-usign.pub` 与 `nimbus-apk.pem` 并随 GitHub Pages 发布
 - 基础系统文件：
   - `nimbus/files/etc/config/nimbus`（与 `docs/uci-schema.md` 第 3 节完全一致）
   - `nimbus/files/etc/uci-defaults/99-nimbus`（初始化 `/etc/nimbus/{profiles,lists/local,lists/cache,bin}` 目录与默认 `custom_direct.txt`）

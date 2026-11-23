@@ -99,6 +99,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Derive usign public key from USIGN_PRIVATE_KEY (when secret configured)
+        env:
+          USIGN_PRIVATE_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: |
+          set -eu
+          mkdir -p "${{ github.workspace }}/out-opkg/all"
+          if [ -n "${USIGN_PRIVATE_KEY:-}" ]; then
+            python3 - "${{ github.workspace }}/out-opkg/nimbus-usign.pub" <<'PY'
+          import base64
+          import os
+          import sys
+
+          raw_text = os.environ["USIGN_PRIVATE_KEY"].strip()
+          lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+          if len(lines) < 2:
+              sys.exit("Error: USIGN_PRIVATE_KEY must contain a comment line and a base64 key line")
+
+          try:
+              kraw = base64.b64decode(lines[1], validate=True)
+          except Exception as exc:
+              sys.exit(f"Error: USIGN_PRIVATE_KEY contains invalid base64: {exc}")
+
+          if len(kraw) != 104 or kraw[0:2] != b"Ed":
+              sys.exit(f"Error: USIGN_PRIVATE_KEY is not a valid usign Ed25519 secret key (len={len(kraw)})")
+
+          praw = kraw[0:2] + kraw[32:40] + kraw[72:104]
+          comment = lines[0] if lines[0].startswith("untrusted comment:") else "untrusted comment: luci-app-nimbus package signing key"
+
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              fh.write(f"{comment}\n{base64.b64encode(praw).decode('ascii')}\n")
+
+          print(f"Derived nimbus-usign.pub from USIGN_PRIVATE_KEY (Key ID: {kraw[32:40].hex()})")
+          PY
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
+            echo "Error: USIGN_PRIVATE_KEY secret is required for tag releases and live Pages deploys" >&2
+            exit 1
+          fi
+
       - name: Build and sign opkg (.ipk) packages with OpenWrt 24.10 SDK
         env:
           USIGN_PRIVATE_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
@@ -169,7 +209,7 @@ jobs:
             chmod 0600 /tmp/nimbus-usign.key
             /builder/staging_dir/host/bin/usign -S -m Packages -s /tmp/nimbus-usign.key -x Packages.sig
             rm -f /tmp/nimbus-usign.key
-            /builder/staging_dir/host/bin/usign -V -m Packages -p /src/keys/nimbus-usign.pub -x Packages.sig
+            /builder/staging_dir/host/bin/usign -V -m Packages -p /out/nimbus-usign.pub -x Packages.sig
           elif [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
             echo "Error: USIGN_PRIVATE_KEY secret is required for tag releases and live Pages deploys" >&2
             exit 1
@@ -217,22 +257,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify APK private/public key match (when secret configured)
+      - name: Derive EC P-256 public key from APK_PRIVATE_KEY (when secret configured)
         env:
           APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
         run: |
           set -eu
+          mkdir -p "${{ github.workspace }}/out-apk/all"
           if [ -n "${APK_PRIVATE_KEY:-}" ]; then
-            derived_pub=$(printf '%s\n' "$APK_PRIVATE_KEY" | openssl pkey -pubout 2>/dev/null) || {
+            printf '%s\n' "$APK_PRIVATE_KEY" | openssl pkey -pubout -out "${{ github.workspace }}/out-apk/nimbus-apk.pem" 2>/dev/null || {
               echo "Error: APK_PRIVATE_KEY secret is not a valid PEM private key" >&2
               exit 1
             }
-            repo_pub=$(openssl pkey -pubin -in keys/nimbus-apk.pem -pubout 2>/dev/null)
-            if [ "$derived_pub" != "$repo_pub" ]; then
-              echo "Error: APK_PRIVATE_KEY secret does not match keys/nimbus-apk.pem" >&2
+            openssl pkey -pubin -in "${{ github.workspace }}/out-apk/nimbus-apk.pem" -text -noout | grep -q "prime256v1" || {
+              echo "Error: APK_PRIVATE_KEY must be an EC P-256 (prime256v1) private key" >&2
               exit 1
-            fi
-            echo "Verified APK_PRIVATE_KEY matches keys/nimbus-apk.pem"
+            }
+            echo "Derived EC P-256 public key nimbus-apk.pem from APK_PRIVATE_KEY"
+          elif [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
+            echo "Error: APK_PRIVATE_KEY secret is required for tag releases and live Pages deploys" >&2
+            exit 1
           fi
 
       - name: Build and sign apk (.apk) packages with OpenWrt 25.12 SDK
@@ -296,14 +341,16 @@ jobs:
 
           APK_BIN="/builder/staging_dir/host/bin/apk"
           SDK_ROOT="$PWD"
+          mkdir -p /tmp/keys
           cd /out/all
 
           if [ -n "${APK_PRIVATE_KEY:-}" ]; then
+            cp -f /out/nimbus-apk.pem /tmp/keys/nimbus-apk.pem
             printf '%s\n' "$APK_PRIVATE_KEY" > /tmp/nimbus-apk.pem
             chmod 0600 /tmp/nimbus-apk.pem
             "$APK_BIN" mkndx \
               --root "$SDK_ROOT" \
-              --keys-dir /src/keys \
+              --keys-dir /tmp/keys \
               --allow-untrusted \
               --sign /tmp/nimbus-apk.pem \
               --output packages.adb \
@@ -316,7 +363,7 @@ jobs:
             echo "::warning::APK_PRIVATE_KEY secret not set; generating unsigned packages.adb in dry_run"
             "$APK_BIN" mkndx \
               --root "$SDK_ROOT" \
-              --keys-dir /src/keys \
+              --keys-dir /tmp/keys \
               --allow-untrusted \
               --output packages.adb \
               *.apk
@@ -337,9 +384,6 @@ jobs:
     needs: [resolve-version, build-opkg, build-apk]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Download opkg artifacts
         uses: actions/download-artifact@v4
         with:
@@ -355,18 +399,36 @@ jobs:
       - name: Assemble dual-format repo, checksums, and index.html
         env:
           RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+          IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
         run: |
           set -eu
           mkdir -p repo/keys
-          cp -f keys/nimbus-usign.pub repo/keys/nimbus-usign.pub
-          cp -f keys/nimbus-apk.pem repo/keys/nimbus-apk.pem
+          if [ -f repo/opkg/nimbus-usign.pub ]; then
+            mv -f repo/opkg/nimbus-usign.pub repo/keys/nimbus-usign.pub
+            chmod 0644 repo/keys/nimbus-usign.pub
+          fi
+          if [ -f repo/apk/nimbus-apk.pem ]; then
+            mv -f repo/apk/nimbus-apk.pem repo/keys/nimbus-apk.pem
+            chmod 0644 repo/keys/nimbus-apk.pem
+          fi
 
-          USIGN_KEY_ID=$(python3 -c '
+          if [ "${IS_TAG_PUSH:-false}" = "true" ] || [ "${DRY_RUN:-true}" = "false" ]; then
+            [ -s repo/keys/nimbus-usign.pub ] || { echo "Error: missing derived repo/keys/nimbus-usign.pub" >&2; exit 1; }
+            [ -s repo/keys/nimbus-apk.pem ] || { echo "Error: missing derived repo/keys/nimbus-apk.pem" >&2; exit 1; }
+          fi
+
+          if [ -s repo/keys/nimbus-usign.pub ]; then
+            USIGN_KEY_ID=$(python3 -c '
           import base64
-          lines = open("keys/nimbus-usign.pub").read().strip().splitlines()
+          lines = open("repo/keys/nimbus-usign.pub", encoding="utf-8").read().strip().splitlines()
           raw = base64.b64decode(lines[1])
           print(raw[2:10].hex())
           ')
+          else
+            echo "::warning::nimbus-usign.pub unavailable (unsigned dry_run); using placeholder Key ID in index.html"
+            USIGN_KEY_ID="UNSIGNED_DRY_RUN"
+          fi
 
           REPO_OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"

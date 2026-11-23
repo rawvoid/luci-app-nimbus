@@ -33,7 +33,8 @@
 ### OpenWrt 23.05 / 24.10（`opkg`）
 
 ```sh
-wget -O /etc/opkg/keys/e5ac1fed5e81c6bc https://rawvoid.github.io/luci-app-nimbus/keys/nimbus-usign.pub
+wget -O /tmp/nimbus-usign.pub https://rawvoid.github.io/luci-app-nimbus/keys/nimbus-usign.pub
+mv /tmp/nimbus-usign.pub "/etc/opkg/keys/$(usign -F -p /tmp/nimbus-usign.pub)"
 grep -qxF 'src/gz nimbus https://rawvoid.github.io/luci-app-nimbus/opkg/all' /etc/opkg/customfeeds.conf || \
   echo 'src/gz nimbus https://rawvoid.github.io/luci-app-nimbus/opkg/all' >> /etc/opkg/customfeeds.conf
 opkg update

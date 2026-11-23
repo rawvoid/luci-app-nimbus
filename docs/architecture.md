@@ -229,15 +229,15 @@ Stage 2: Dual-Format SDK Build Matrix (打 Tag 或 workflow_dispatch dry_run 触
   │     ├── 若为按需初始化镜像先执行 `[ ! -d ./scripts ] && ./setup.sh`
   │     ├── 挂载仓库为本地 feed: `src-link nimbus $GITHUB_WORKSPACE`，执行 `feeds update luci nimbus && feeds install -a -p luci -p nimbus`（`luci-app-nimbus` 通过 `include $(TOPDIR)/feeds/luci/luci.mk` 构建）
   │     ├── 编译 nimbus + luci-app-nimbus + luci-i18n-nimbus-zh-cn -> *_all.ipk（三包版本统一）
-  │     └── 使用仓库 Secrets 中的 `USIGN_PRIVATE_KEY` 生成签名索引 Packages / Packages.gz / Packages.sig
+  │     └── 使用仓库 Secrets 中的 `USIGN_PRIVATE_KEY` 实时派生公钥 `nimbus-usign.pub`、生成签名索引 Packages / Packages.gz / Packages.sig 并自验签
   └── Job B [apk]:  openwrt/sdk:x86-64-openwrt-25.12
         ├── 同方式初始化并挂载本地 feed 编译产出 *.apk（三包版本统一）
-        └── 使用仓库 Secrets 中的 `APK_PRIVATE_KEY`（EC P-256）通过 `apk mkndx` 生成内嵌签名索引 packages.adb
+        └── 使用仓库 Secrets 中的 `APK_PRIVATE_KEY`（EC P-256）实时派生公钥 `nimbus-apk.pem`，并通过 `apk mkndx` 生成内嵌签名索引 packages.adb
        │
        ▼
 Stage 3: Release & GitHub Pages Deploy (仅非 dry_run 的正式 Tag 触发)
   ├── 发布 GitHub Release（附带全部 .ipk / .apk 与 SHA256SUMS；预发布 Tag 自动附加 `--prerelease`）
-  └── 合并 opkg/ 与 apk/ 产物目录并部署至 GitHub Pages（`index.html` 中 `apk` 安装指引须提示将 `/etc/apk/keys/nimbus-apk.pem` 单文件路径追加至 `/etc/sysupgrade.conf`，切勿保留整个 `/etc/apk/keys/` 目录）
+  └── 合并 opkg/、apk/ 与 CI 派生的 keys/ 公钥目录并部署至 GitHub Pages（仓库本体不存放 `keys/` 目录；`index.html` 中 `apk` 安装指引须提示将 `/etc/apk/keys/nimbus-apk.pem` 单文件路径追加至 `/etc/sysupgrade.conf`，切勿保留整个 `/etc/apk/keys/` 目录）
 ```
 
 ### 7.2 GitHub Pages 软件源目录结构

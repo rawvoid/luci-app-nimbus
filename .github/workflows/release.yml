@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: true
+      version_tag:
+        description: 'Optional SemVer tag to simulate during manual run (e.g. v0.1.0-beta.1)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -18,7 +23,77 @@ permissions:
   id-token: write
 
 jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.parse.outputs.tag }}
+      opkg_pkg_version: ${{ steps.parse.outputs.opkg_pkg_version }}
+      apk_pkg_version: ${{ steps.parse.outputs.apk_pkg_version }}
+      pkg_release: ${{ steps.parse.outputs.pkg_release }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+    steps:
+      - name: Resolve package version and prerelease metadata
+        id: parse
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.version_tag }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          event = os.environ.get("EVENT_NAME", "")
+          raw_tag = os.environ.get("REF_NAME", "").strip() if event == "push" else os.environ.get("INPUT_TAG", "").strip()
+
+          out_path = os.environ["GITHUB_OUTPUT"]
+          if not raw_tag:
+              values = {
+                  "tag": "",
+                  "opkg_pkg_version": "",
+                  "apk_pkg_version": "",
+                  "pkg_release": "",
+                  "is_prerelease": "false",
+              }
+          else:
+              m = re.match(r"^v([0-9]+\.[0-9]+\.[0-9]+)(?:-(alpha|beta|pre|rc)(?:\.?([0-9]+))?)?(?:-r([0-9]+))?$", raw_tag)
+              if not m:
+                  print(
+                      f"Error: unsupported version tag '{raw_tag}'. "
+                      "Expected vX.Y.Z or vX.Y.Z-(alpha|beta|pre|rc)[.N] (optional -rN).",
+                      file=sys.stderr,
+                  )
+                  sys.exit(1)
+
+              base, pre_kind, pre_num, pkg_rel = m.groups()
+              pkg_rel = pkg_rel or "1"
+              if pre_kind:
+                  suffix = f"{pre_kind}{pre_num or ''}"
+                  opkg_ver = f"{base}~{suffix}"
+                  apk_ver = f"{base}_{suffix}"
+                  is_pre = "true"
+              else:
+                  opkg_ver = base
+                  apk_ver = base
+                  is_pre = "false"
+
+              values = {
+                  "tag": raw_tag,
+                  "opkg_pkg_version": opkg_ver,
+                  "apk_pkg_version": apk_ver,
+                  "pkg_release": pkg_rel,
+                  "is_prerelease": is_pre,
+              }
+
+          with open(out_path, "a", encoding="utf-8") as fh:
+              for k, v in values.items():
+                  fh.write(f"{k}={v}\n")
+                  print(f"{k}={v}")
+          PY
+
   build-opkg:
+    needs: resolve-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -29,6 +104,8 @@ jobs:
           USIGN_PRIVATE_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
           IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+          NIMBUS_PKG_VERSION: ${{ needs.resolve-version.outputs.opkg_pkg_version }}
+          NIMBUS_PKG_RELEASE: ${{ needs.resolve-version.outputs.pkg_release }}
         run: |
           set -eu
           mkdir -p "${{ github.workspace }}/out-opkg/all"
@@ -39,6 +116,8 @@ jobs:
             -e USIGN_PRIVATE_KEY \
             -e IS_TAG_PUSH \
             -e DRY_RUN \
+            -e NIMBUS_PKG_VERSION \
+            -e NIMBUS_PKG_RELEASE \
             -v "${{ github.workspace }}:/src:ro" \
             -v "${{ github.workspace }}/out-opkg:/out" \
             openwrt/sdk:x86-64-openwrt-24.10 \
@@ -68,6 +147,14 @@ jobs:
             [ -n "$found" ] || { echo "Error: missing expected ipk matching $pat" >&2; exit 1; }
             cp -f "$found" /out/all/
           done
+
+          if [ -n "${NIMBUS_PKG_VERSION:-}" ]; then
+            expected_ver="${NIMBUS_PKG_VERSION}-r${NIMBUS_PKG_RELEASE:-1}"
+            for pkg in nimbus luci-app-nimbus luci-i18n-nimbus-zh-cn; do
+              expected_file="/out/all/${pkg}_${expected_ver}_all.ipk"
+              [ -f "$expected_file" ] || { echo "Error: expected versioned ipk not found: $expected_file" >&2; exit 1; }
+            done
+          fi
 
           ls -la /out/all/
 
@@ -105,7 +192,7 @@ jobs:
             tar -tzf "$tmp_inspect/pkg/data.tar.gz"
             if [ -f "$tmp_inspect/pkg/control.tar.gz" ]; then
               ctrl_list=$(tar -tzf "$tmp_inspect/pkg/control.tar.gz")
-              for name in prerm prerm-pkg; do
+              for name in prerm prerm-pkg postinst postinst-pkg; do
                 entry=$(printf '%s\n' "$ctrl_list" | grep -E "^(\./)?${name}$" | head -n 1 || true)
                 if [ -n "$entry" ]; then
                   echo "--- ${name} ---"
@@ -124,16 +211,37 @@ jobs:
           retention-days: 7
 
   build-apk:
+    needs: resolve-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify APK private/public key match (when secret configured)
+        env:
+          APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
+        run: |
+          set -eu
+          if [ -n "${APK_PRIVATE_KEY:-}" ]; then
+            derived_pub=$(printf '%s\n' "$APK_PRIVATE_KEY" | openssl pkey -pubout 2>/dev/null) || {
+              echo "Error: APK_PRIVATE_KEY secret is not a valid PEM private key" >&2
+              exit 1
+            }
+            repo_pub=$(openssl pkey -pubin -in keys/nimbus-apk.pem -pubout 2>/dev/null)
+            if [ "$derived_pub" != "$repo_pub" ]; then
+              echo "Error: APK_PRIVATE_KEY secret does not match keys/nimbus-apk.pem" >&2
+              exit 1
+            fi
+            echo "Verified APK_PRIVATE_KEY matches keys/nimbus-apk.pem"
+          fi
 
       - name: Build and sign apk (.apk) packages with OpenWrt 25.12 SDK
         env:
           APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
           IS_TAG_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+          NIMBUS_PKG_VERSION: ${{ needs.resolve-version.outputs.apk_pkg_version }}
+          NIMBUS_PKG_RELEASE: ${{ needs.resolve-version.outputs.pkg_release }}
         run: |
           set -eu
           mkdir -p "${{ github.workspace }}/out-apk/all"
@@ -144,6 +252,8 @@ jobs:
             -e APK_PRIVATE_KEY \
             -e IS_TAG_PUSH \
             -e DRY_RUN \
+            -e NIMBUS_PKG_VERSION \
+            -e NIMBUS_PKG_RELEASE \
             -v "${{ github.workspace }}:/src:ro" \
             -v "${{ github.workspace }}/out-apk:/out" \
             openwrt/sdk:x86-64-openwrt-25.12 \
@@ -173,6 +283,14 @@ jobs:
             [ -n "$found" ] || { echo "Error: missing expected apk matching $pat" >&2; exit 1; }
             cp -f "$found" /out/all/
           done
+
+          if [ -n "${NIMBUS_PKG_VERSION:-}" ]; then
+            expected_ver="${NIMBUS_PKG_VERSION}-r${NIMBUS_PKG_RELEASE:-1}"
+            for pkg in nimbus luci-app-nimbus luci-i18n-nimbus-zh-cn; do
+              expected_file="/out/all/${pkg}-${expected_ver}.apk"
+              [ -f "$expected_file" ] || { echo "Error: expected versioned apk not found: $expected_file" >&2; exit 1; }
+            done
+          fi
 
           ls -la /out/all/
 
@@ -216,7 +334,7 @@ jobs:
           retention-days: 7
 
   assemble-repo:
-    needs: [build-opkg, build-apk]
+    needs: [resolve-version, build-opkg, build-apk]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -235,6 +353,8 @@ jobs:
           path: repo/apk
 
       - name: Assemble dual-format repo, checksums, and index.html
+        env:
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
         run: |
           set -eu
           mkdir -p repo/keys
@@ -251,6 +371,10 @@ jobs:
           REPO_OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           PAGES_URL="https://${REPO_OWNER}.github.io/${REPO_NAME}"
+          VERSION_LINE=""
+          if [ -n "${RELEASE_TAG:-}" ]; then
+            VERSION_LINE="<p>Published release: <code>${RELEASE_TAG}</code></p>"
+          fi
 
           (
             cd repo
@@ -274,6 +398,7 @@ jobs:
           <body>
             <h1>luci-app-nimbus OpenWrt Repository</h1>
             <p>Architecture-independent (<code>all</code>) dual-format feed for OpenWrt 23.05+ (<code>opkg</code>) and OpenWrt 25.12+ (<code>apk</code>).</p>
+            ${VERSION_LINE}
 
             <h2>OpenWrt 23.05 / 24.10 (<code>opkg</code>)</h2>
             <pre><code>wget -O /etc/opkg/keys/${USIGN_KEY_ID} ${PAGES_URL}/keys/nimbus-usign.pub
@@ -308,7 +433,7 @@ jobs:
           retention-days: 14
 
   publish-release:
-    needs: assemble-repo
+    needs: [resolve-version, assemble-repo]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -321,11 +446,16 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ needs.resolve-version.outputs.is_prerelease }}
         run: |
           set -eu
           tag="${GITHUB_REF_NAME}"
           set -- repo/opkg/all/*.ipk repo/apk/all/*.apk repo/SHA256SUMS
-          gh release create "$tag" "$@" --title "$tag" --generate-notes
+          if [ "${IS_PRERELEASE:-false}" = "true" ]; then
+            gh release create "$tag" "$@" --title "$tag" --generate-notes --prerelease
+          else
+            gh release create "$tag" "$@" --title "$tag" --generate-notes
+          fi
 
   deploy-pages:
     needs: assemble-repo

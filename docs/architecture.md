@@ -62,6 +62,7 @@
   - **运行时依赖**：`ucode`、`ucode-mod-fs`、`ucode-mod-uci`、`ucode-mod-ubus`、`ucode-mod-uloop`、`rpcd-mod-ucode`、`nftables-json`（强依赖，用于 `nft -j`；不兼容 `nftables-nojson`）、`ip-full`（通过 OpenWrt `ALTERNATIVES` 优先级 `300` 与 `ip-tiny` 无冲突共存，规避 OpenWrt 25.12 `apk` 虚拟 `+ip` 解析歧义）、`ca-bundle`、`curl`。
   - **内核模块依赖**：`kmod-nft-core`、`kmod-nft-fib`（支持 `fib daddr type local`）、`kmod-nft-nat`、`kmod-nft-tproxy`。
 - **卸载清理钩子（`Package/nimbus/prerm`）**：包卸载/移除前停止 `nimbus` 服务，删除 `table inet nimbus`、清空策略路由、从快照无损还原 `dnsmasq`，并移除 `/etc/crontabs/root` 中所有 `nimbus` 定时任务。
+- **安装/升级钩子（`Package/nimbus/postinst`）**：在真实路由环境（非 `IPKG_INSTROOT` 镜像构建）下通过 `/etc/init.d/rpcd reload` 无损刷新 `rpcd-mod-ucode` 插件；在 OpenWrt 25.12+ `apk` 升级场景（不触发 `prerm`）下，若 `nimbus.global.enabled='1'` 则执行 `/etc/init.d/nimbus restart` 确保监督器加载新版 `ucode` 模块。
 
 ### 2.2 `luci-app-nimbus`（前端交互包）
 - **职责**：LuCI 客户端 JS 视图、菜单路由（`menu.d`）、最小权限 ACL（`acl.d`）及多语言包（`luci-i18n-nimbus-zh-cn` 等）。
@@ -223,18 +224,19 @@ Stage 1: Lint & Unit Tests (每次提交运行: .github/workflows/ci.yml，M1 �
        │
        ▼
 Stage 2: Dual-Format SDK Build Matrix (打 Tag 或 workflow_dispatch dry_run 触发: .github/workflows/release.yml，M1 交付骨架并于 M6 终验)
+  ├── Job 0 [resolve-version]: 解析 Git Tag（支持 SemVer `vX.Y.Z` 及预发布 `vX.Y.Z-(alpha|beta|pre|rc)[.N]`），按包管理器规则分别映射 `opkg` (`~beta1`) 与 `apk` (`_beta1`) 的 `NIMBUS_PKG_VERSION` 并标记 `is_prerelease`
   ├── Job A [opkg]: openwrt/sdk:x86-64-openwrt-24.10
   │     ├── 若为按需初始化镜像先执行 `[ ! -d ./scripts ] && ./setup.sh`
   │     ├── 挂载仓库为本地 feed: `src-link nimbus $GITHUB_WORKSPACE`，执行 `feeds update luci nimbus && feeds install -a -p luci -p nimbus`（`luci-app-nimbus` 通过 `include $(TOPDIR)/feeds/luci/luci.mk` 构建）
-  │     ├── 编译 nimbus + luci-app-nimbus + luci-i18n-nimbus-zh-cn -> *_all.ipk
+  │     ├── 编译 nimbus + luci-app-nimbus + luci-i18n-nimbus-zh-cn -> *_all.ipk（三包版本统一）
   │     └── 使用仓库 Secrets 中的 `USIGN_PRIVATE_KEY` 生成签名索引 Packages / Packages.gz / Packages.sig
   └── Job B [apk]:  openwrt/sdk:x86-64-openwrt-25.12
-        ├── 同方式初始化并挂载本地 feed 编译产出 *.apk
+        ├── 同方式初始化并挂载本地 feed 编译产出 *.apk（三包版本统一）
         └── 使用仓库 Secrets 中的 `APK_PRIVATE_KEY`（EC P-256）通过 `apk mkndx` 生成内嵌签名索引 packages.adb
        │
        ▼
 Stage 3: Release & GitHub Pages Deploy (仅非 dry_run 的正式 Tag 触发)
-  ├── 发布 GitHub Release（附带全部 .ipk / .apk 与 SHA256SUMS）
+  ├── 发布 GitHub Release（附带全部 .ipk / .apk 与 SHA256SUMS；预发布 Tag 自动附加 `--prerelease`）
   └── 合并 opkg/ 与 apk/ 产物目录并部署至 GitHub Pages（`index.html` 中 `apk` 安装指引须提示将 `/etc/apk/keys/nimbus-apk.pem` 单文件路径追加至 `/etc/sysupgrade.conf`，切勿保留整个 `/etc/apk/keys/` 目录）
 ```
 

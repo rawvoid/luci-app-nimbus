@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nimbus
-PKG_VERSION:=0.1.0
-PKG_RELEASE:=1
+PKG_VERSION:=$(if $(NIMBUS_PKG_VERSION),$(NIMBUS_PKG_VERSION),0.1.0)
+PKG_RELEASE:=$(if $(NIMBUS_PKG_RELEASE),$(NIMBUS_PKG_RELEASE),1)
 
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_MAINTAINER:=nimbus
@@ -71,6 +71,24 @@ if [ "$$is_upgrade" -eq 0 ] && [ -f /etc/crontabs/root ] && grep -q '# nimbus-' 
 		else
 			rm -f "$$tmp_cron"
 		fi
+	fi
+fi
+
+exit 0
+endef
+
+define Package/nimbus/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+if [ -x /etc/init.d/rpcd ]; then
+	/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+fi
+
+if [ "$${PKG_UPGRADE:-0}" = "1" ] && [ -f /lib/apk/packages/nimbus.list ] && [ -x /etc/init.d/nimbus ]; then
+	enabled=$$(uci -q get nimbus.global.enabled 2>/dev/null || echo 0)
+	if [ "$$enabled" = "1" ]; then
+		/etc/init.d/nimbus restart >/dev/null 2>&1 || true
 	fi
 fi
 

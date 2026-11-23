@@ -368,11 +368,12 @@
 {
   "profile_id": "main_sub",
   "composer": null,
+  "composer_json": "",
   "include_regex": "HK|香港",
   "exclude_regex": "倍率|过期"
 }
 ```
-> `profile_id` 省略或为空时汇总全部启用源；传入临时 `composer` 草稿可实时预览未保存的提取策略效果；传入 `include_regex`/`exclude_regex` 时按组筛选语义再过滤一遍。
+> `profile_id` 省略或为空时汇总全部启用源；传入临时 `composer` 对象或 `composer_json` 字符串（上限 `256KB`，优先使用 `composer_json` 以确保 `override` / `node_override` 中的 RFC 7396 `null` 删除标记完整穿透 OpenWrt `rpcd` `blobmsg`）可实时预览未保存的提取策略效果；传入 `include_regex`/`exclude_regex` 时按组筛选语义再过滤一遍。
 - **响应**：
 ```json
 {
@@ -395,15 +396,18 @@
 ```
 
 ### 3.10 `composer_preview`（只读，异步非阻塞派发）
-通过 `uloop.process` 对当前已保存或请求传入的 `composer` 草稿执行 Stage A 编排与 Stage B 数据面合成，并在 `validate != false` 且内核存在时执行隔离目录 `sing-box check`，不写正式配置。
+通过 `uloop.process` 对当前已保存或请求传入的 `composer` / `composer_json` 草稿执行 Stage A 编排与 Stage B 数据面合成，并在 `validate != false` 且内核存在时执行隔离目录 `sing-box check`，不写正式配置。
 
-- **请求**：`{ "composer": { ... }, "validate": true }`
+- **请求**：`{ "composer": { ... }, "composer_json": "", "validate": true }`
+> 支持以 `composer_json`（JSON 字符串，上限 `256KB`）传入草稿，确保 RFC 7396 `null` 键在 `rpcd` `blobmsg` 传输中不被丢失；响应除对象 `composed` / `effective` 外，亦会同步返回对应 JSON 字符串 `composed_json` / `effective_json`。
 - **响应**：
 ```json
 {
   "ok": true,
   "composed": { ... },
   "effective": { ... },
+  "composed_json": "{ ... }",
+  "effective_json": "{ ... }",
   "warnings": [],
   "checked": true,
   "check_ok": true,
@@ -424,7 +428,8 @@
 ### 3.11 `composer_save`（写，异步非阻塞派发）
 校验并原子保存 `/etc/nimbus/composer.json`（权限 `0600`，`composer` 序列化后体积上限 `256KB`）；当 `validate != false` 且内核存在时先走 Stage A + Stage B 与 `sing-box check`；`SHA256` 一致时不写盘；可选触发平滑重载。
 
-- **请求**：`{ "composer": { ... }, "validate": true, "reload": false }`
+- **请求**：`{ "composer": { ... }, "composer_json": "", "validate": true, "reload": false }`
+> 请求支持传入 `composer` 对象或 `composer_json`（JSON 字符串，上限 `256KB`）；优先解析 `composer_json`，确保 RFC 7396 `null` 字段完整穿透 OpenWrt `rpcd` `blobmsg`；响应亦按需附带规范化后的 `composer_json` 字符串。
 - **响应**：
 ```json
 {
@@ -434,6 +439,7 @@
   "mtime": 1795192000,
   "reload_required": true,
   "reloaded": false,
+  "composer_json": "{ ... }",
   "warnings": []
 }
 ```

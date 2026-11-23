@@ -1,0 +1,82 @@
+{
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Auto-Select",
+      "outbounds": [
+        "Auto",
+        "HK-01",
+        "JP-01",
+        "US-Relay",
+        "direct"
+      ],
+      "default": "Auto"
+    },
+    {
+      "type": "urltest",
+      "tag": "Auto",
+      "outbounds": [
+        "HK-01",
+        "JP-01"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "5m",
+      "tolerance": 50
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    },
+    {
+      "type": "vless",
+      "tag": "HK-01",
+      "server": "198.51.100.10",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "flow": "xtls-rprx-vision",
+      "domain_resolver": "airport-dns",
+      "routing_mark": 999,
+      "tls": {
+        "enabled": true,
+        "server_name": "hk01.example.com"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "JP-01",
+      "server": "198.51.100.11",
+      "server_port": 443,
+      "up_mbps": 100,
+      "down_mbps": 500,
+      "password": "hy2-password-01",
+      "tls": {
+        "enabled": true,
+        "server_name": "jp01.example.com"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "US-Relay",
+      "server": "198.51.100.12",
+      "server_port": 443,
+      "password": "trojan-password-01",
+      "detour": "HK-01",
+      "tls": {
+        "enabled": true,
+        "server_name": "us-relay.example.com"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "剩余流量: 100GB",
+      "server": "198.51.100.99",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "info-node-password"
+    }
+  ]
+}

@@ -54,6 +54,7 @@ let mock_curl = work_dir + '/mock-curl.sh';
 let uci_seed =
 	"config main 'global'\n" +
 	"\toption enabled '1'\n" +
+	"\toption config_mode 'profile'\n" +
 	"\toption active_profile ''\n" +
 	"\toption topology 'main'\n" +
 	"\toption proxy_mode 'tproxy_redirect'\n" +

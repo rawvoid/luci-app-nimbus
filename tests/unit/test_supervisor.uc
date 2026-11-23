@@ -415,4 +415,36 @@ let makefile_text = fs.readfile(repo_root + '/nimbus/Makefile') || '';
 check(index(makefile_text, '$(INSTALL_BIN) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus') >= 0,
 	'nimbus/Makefile installs 90-nimbus with $(INSTALL_BIN) (0755)');
 
+// 7. P0 regression test: Fail Handler falls back to static emergency lockdown if primary lockdown fails, and marks error if nft is completely broken
+check(write_uci_nimbus('0', 'none'), 'reset uci fail_open=0 for emergency lockdown fallback test');
+let mock_nft_flaky = work_dir + '/mock-nft-flaky.sh';
+let nft_call_file = work_dir + '/nft_calls.txt';
+check(common.atomic_write(nft_call_file, '0\n', 0644), 'init nft_call_file');
+check(common.atomic_write(mock_nft_flaky, sprintf(
+	'#!/bin/sh\n' +
+	'n=$(cat "%s" 2>/dev/null || echo 0)\n' +
+	'n=$((n + 1))\n' +
+	'printf "%%s\\n" "$n" > "%s"\n' +
+	'if [ "$n" -eq 1 ]; then\n' +
+	'\techo "simulated primary lockdown failure" >&2\n' +
+	'\texit 1\n' +
+	'fi\n' +
+	'exec /usr/sbin/nft "$@"\n',
+	nft_call_file, nft_call_file
+), 0755), 'write mock_nft_flaky');
+
+check(run_sup_cmd('--fail-handler', { NFT_BIN: mock_nft_flaky }) == 0, '--fail-handler runs with flaky nft');
+let st_emg = common.read_state(state_file);
+check(st_emg.state == 'lockdown' &&
+	trim(fs.readfile(nft_call_file) || '') == '2' &&
+	length(filter(st_emg.warnings || [], (w) => index(w, 'emergency static fail-closed') >= 0)) == 1,
+	'Fail Handler falls back to static emergency lockdown and validates with real nft when primary lockdown fails');
+
+let mock_nft_dead = work_dir + '/mock-nft-dead.sh';
+check(common.atomic_write(mock_nft_dead, '#!/bin/sh\necho "nft totally broken" >&2\nexit 1\n', 0755), 'write mock_nft_dead');
+check(run_sup_cmd('--fail-handler', { NFT_BIN: mock_nft_dead }) == 0, '--fail-handler runs with dead nft');
+let st_dead = common.read_state(state_file);
+check(st_dead.state == 'error' && index(st_dead.last_error || '', 'CRITICAL') >= 0,
+	'Fail Handler refuses to claim state=lockdown when both primary and emergency lockdown fail');
+
 printf('test_supervisor.uc: %d assertions passed\n', passed);

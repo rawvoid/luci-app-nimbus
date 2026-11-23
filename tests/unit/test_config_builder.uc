@@ -26,6 +26,7 @@ function make_uci(overrides) {
 			wan_interfaces: o.wan_interfaces ?? [ 'wan', 'wan6' ],
 			ipv4_enable: o.ipv4_enable ?? '1',
 			ipv6_enable: o.ipv6_enable ?? '1',
+			proxy_local: o.proxy_local ?? '0',
 			log_level: o.log_level ?? 'warn',
 			active_profile: 'test_prof'
 		},
@@ -403,7 +404,46 @@ let local_dns_build_chk = cb.build_config({
 check(local_dns_build_chk.ok === true, 'rewritten local DNS passes real sing-box check');
 
 let local_dns_none = cb.transform_config(local_dns_cfg, make_uci({ dns_mode: 'none' }));
-check(local_dns_none.ok === true, 'dns.mode=none allows type=local DNS server');
+check(local_dns_none.ok === true && local_dns_none.config.dns.servers[0].type == 'local',
+	'dns.mode=none with proxy_local=0 preserves type=local DNS server');
+
+let local_dns_proxy_local = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'none',
+	proxy_local: '1',
+	local_dns_policy: 'auto'
+}), {
+	resolv_auto_path: fake_resolv,
+	ubus_dump: fake_dump_main,
+	skip_ubus: true,
+	skip_network_uci: true
+});
+check(local_dns_proxy_local.ok === true &&
+	local_dns_proxy_local.config.dns.servers[0].type == 'udp' &&
+	local_dns_proxy_local.config.dns.servers[0].server == '223.6.6.6' &&
+	local_dns_proxy_local.context.local_dns_source == 'wan' &&
+	local_dns_proxy_local.context.effective_dns_port == null,
+	'dns.mode=none + proxy_local=1 rewrites type=local to safe WAN DNS without injecting direct DNS inbound');
+
+let local_dns_proxy_local_reject = cb.transform_config(local_dns_cfg, make_uci({
+	dns_mode: 'none',
+	proxy_local: '1',
+	local_dns_policy: 'reject'
+}));
+check(local_dns_proxy_local_reject.ok === false && local_dns_proxy_local_reject.code == common.ERR_VALIDATE_FAILED,
+	'dns.mode=none + proxy_local=1 + local_dns_policy=reject rejects type=local bootstrap loop');
+
+let no_dns_proxy_local = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ dns_mode: 'none', proxy_local: '1' }));
+check(no_dns_proxy_local.ok === true,
+	'dns.mode=none + proxy_local=1 allows pure-IP configs without dns.servers');
+
+let fakeip_zero_prefix = cb.transform_config({
+	dns: { servers: [ { type: 'fakeip', tag: 'f', inet4_range: '0.0.0.0/0' } ] },
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci());
+check(fakeip_zero_prefix.ok === false && fakeip_zero_prefix.code == common.ERR_VALIDATE_FAILED,
+	'extract_fakeip rejects /0 Fake-IP range');
 
 let empty_dns_err = cb.transform_config({
 	dns: { servers: [] },

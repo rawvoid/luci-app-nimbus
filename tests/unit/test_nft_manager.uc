@@ -471,13 +471,124 @@ let v6_only = nft.apply_rules({
 	output_path: work_dir + '/v6_only.nft',
 	ipv4_enable: '0',
 	ipv6_enable: '1',
-	router_proxy: '1'
+	router_proxy: '1',
+	hijack_lan_dns: '1'
 });
 check(v6_only.ok === true &&
 	index(v6_only.rules, 'tproxy ip to') < 0 &&
 	index(v6_only.rules, 'meta nfproto ipv4') < 0 &&
+	index(v6_only.rules, 'meta nfproto != ipv6 return') >= 0 &&
 	index(v6_only.rules, 'tproxy ip6 to') >= 0,
-	'ipv4_enable=0 passes nft -c -f and omits IPv4 rules');
+	'ipv4_enable=0 passes nft -c -f, injects meta nfproto != ipv6 guard, and omits IPv4 rules');
+
+// P0 regression tests: single-stack default_proxy lockdown, lan_ifaces validation/@alias deref, inbound UDP reply/DNAT & DHCPv4/v6 bypass, /0 rejection, emergency lockdown
+let v4_only_lockdown = nft.apply_lockdown({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/v4_only_lockdown.nft',
+	ipv4_enable: '1',
+	ipv6_enable: '0',
+	lan_device_mode: 'default_proxy'
+});
+check(v4_only_lockdown.ok === true &&
+	index(v4_only_lockdown.rules, 'meta nfproto != ipv4 return') >= 0 &&
+	index(v4_only_lockdown.rules, 'meta l4proto icmpv6') < 0 &&
+	index(v4_only_lockdown.rules, 'ct status dnat return') >= 0 &&
+	index(v4_only_lockdown.rules, 'ct direction reply return') >= 0 &&
+	index(v4_only_lockdown.rules, 'ip daddr @reserved_v4 return') >= 0 &&
+	index(v4_only_lockdown.rules, 'ip6 daddr') < 0,
+	'single-stack ipv6_enable=0 default_proxy lockdown guards unmanaged IPv6 from reject');
+
+let v6_only_lockdown = nft.apply_lockdown({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/v6_only_lockdown.nft',
+	ipv4_enable: '0',
+	ipv6_enable: '1',
+	lan_device_mode: 'default_proxy'
+});
+check(v6_only_lockdown.ok === true &&
+	index(v6_only_lockdown.rules, 'meta nfproto != ipv6 return') >= 0 &&
+	index(v6_only_lockdown.rules, 'ip6 daddr @reserved_v6 return') >= 0 &&
+	index(v6_only_lockdown.rules, 'ip daddr') < 0,
+	'single-stack ipv4_enable=0 default_proxy lockdown guards unmanaged IPv4 from reject');
+
+check(index(v4_only.rules, 'chain prerouting_dns {\n\t\ttype nat hook prerouting priority dstnat + 1; policy accept;\n\t\tiifname != @lan_ifaces return\n\t\tmeta nfproto != ipv4 return') >= 0 &&
+	index(v4_only.rules, 'ct status dnat return\n\t\tct direction reply return') >= 0 &&
+	index(v4_only.rules, 'meta nfproto ipv4 udp sport 68 udp dport 67 return') >= 0 &&
+	index(v4_only.rules, 'udp sport 546') < 0 &&
+	index(v6_only.rules, 'meta nfproto ipv6 udp sport 546 udp dport 547 return') >= 0 &&
+	index(v6_only.rules, 'udp sport 68') < 0,
+	'single-stack guards, ct dnat/reply bypass, and DHCPv4/v6 client port exclusions apply accurately');
+
+// lan_ifaces injection / >15-char / @alias protection & ubus priority
+let net_alias_dir = work_dir + '/net_alias_uci';
+check(common.ensure_dir(net_alias_dir, 0755), 'create net_alias_dir');
+check(fs.writefile(net_alias_dir + '/network',
+	"config interface 'lan'\n\toption device 'br-lan'\n\n" +
+	"config interface 'lan6'\n\toption device '@lan'\n\n" +
+	"config interface 'iot'\n\toption device '@overlong_alias_interface_name'\n\n" +
+	"config interface 'overlong_interface_section'\n\toption device 'this_device_name_is_way_over_15_chars'\n\n" +
+	"config interface 'ubus_resolved'\n\toption device '@stale_alias_123456'\n"
+) != null, 'write network UCI fixture with @alias and overlong device names');
+
+let ctx_sanitized = nft.resolve_network_context({
+	global: {
+		topology: 'main',
+		lan_interfaces: [
+			'lan6',
+			'iot',
+			'overlong_interface_section',
+			'ubus_resolved',
+			'bad" }\nflush ruleset\n#',
+			'..',
+			'br-lan:0',
+			'eth0.10'
+		]
+	}
+}, {
+	uci_confdir: net_alias_dir,
+	uci_savedir: net_alias_dir + '/.uci',
+	ubus_dump: {
+		interface: [
+			{ interface: 'ubus_resolved', l3_device: 'br-iot' }
+		]
+	}
+});
+check(index(ctx_sanitized.lan_ifaces, 'br-lan') >= 0 &&
+	index(ctx_sanitized.lan_ifaces, 'br-iot') >= 0 &&
+	index(ctx_sanitized.lan_ifaces, 'eth0.10') >= 0 &&
+	length(ctx_sanitized.lan_ifaces) == 3,
+	'resolve_network_context dereferences @lan -> br-lan, skips UCI when ubus resolves l3_device, and rejects injection/overlong/:label/.. names');
+
+let inj_apply = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/inj_guard.nft',
+	lan_ifaces: [ 'evil" }\ntable inet pwn {', '@too_long_interface_12345', '.' ]
+});
+check(inj_apply.ok === true &&
+	index(inj_apply.rules, 'elements = { "br-lan" }') >= 0 &&
+	index(inj_apply.rules, 'pwn') < 0,
+	'malicious/invalid lan_ifaces safely falls back to br-lan and passes nft -c -f');
+
+// /0 rejection and CIDR canonicalization
+check(nft.classify_ip_or_cidr('0.0.0.0/0') == null &&
+	nft.classify_ip_or_cidr('::/0') == null &&
+	nft.classify_ip_or_cidr('1.2.3.4/0') == null &&
+	nft.classify_ip_or_cidr('1.0.1.0/024')?.value == '1.0.1.0/24' &&
+	nft.classify_ip_or_cidr('2001:0db8:0000:0000::1/064')?.value == '2001:db8::1/64',
+	'classify_ip_or_cidr rejects /0 prefixes and canonicalizes leading zeros and IPv6 notation');
+
+let emg_res = nft.apply_emergency_lockdown({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/emergency_lockdown.nft'
+});
+check(emg_res.ok === true && emg_res.emergency === true &&
+	index(emg_res.rules, 'chain forward_lockdown {') >= 0 &&
+	index(emg_res.rules, 'reject with icmpx type admin-prohibited') >= 0,
+	'static emergency lockdown ruleset passes real nft -c -f');
 
 // 3. Live table load + atomic Set hot-reload (`reload_sets`) + live `get_counters`
 let live_apply = nft.apply_rules({

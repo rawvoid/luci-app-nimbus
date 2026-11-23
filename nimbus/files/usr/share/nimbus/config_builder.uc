@@ -97,10 +97,10 @@ function is_valid_cidr(cidr, family) {
 		return false;
 
 	if (family == 4)
-		return (length(ip_bytes) == 4 && prefix >= 0 && prefix <= 32);
+		return (length(ip_bytes) == 4 && prefix >= 1 && prefix <= 32);
 
 	if (family == 6)
-		return (length(ip_bytes) == 16 && prefix >= 0 && prefix <= 128);
+		return (length(ip_bytes) == 16 && prefix >= 1 && prefix <= 128);
 
 	return false;
 }
@@ -935,16 +935,19 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			cfg.dns.rules = remap_rules_recursive(cfg.dns.rules, stripped_tags, rep_tags);
 	}
 
-	// Step 4: local DNS inbound & DNS loop prevention (when dns.mode == 'singbox')
+	// Step 4: local DNS inbound & DNS loop prevention (when dns.mode == 'singbox' or global.proxy_local == '1')
 	let effective_dns_port = null;
 	let local_dns_source = 'none';
 	let local_dns_server = null;
 	let dns_mode = d.mode || 'none';
-	if (dns_mode == 'singbox') {
-		let dns_servers = cfg?.dns?.servers;
-		if (type(dns_servers) != 'array' || length(dns_servers) == 0)
-			return fail(common.ERR_VALIDATE_FAILED, 'dns.servers must be non-empty when dns.mode is "singbox"', warnings);
+	let proxy_local = (g.proxy_local == '1' || g.proxy_local === 1 || g.proxy_local === true ||
+		g.router_proxy == '1' || g.router_proxy === 1 || g.router_proxy === true);
 
+	let dns_servers = cfg?.dns?.servers;
+	if (dns_mode == 'singbox' && (type(dns_servers) != 'array' || length(dns_servers) == 0))
+		return fail(common.ERR_VALIDATE_FAILED, 'dns.servers must be non-empty when dns.mode is "singbox"', warnings);
+
+	if ((dns_mode == 'singbox' || proxy_local) && type(dns_servers) == 'array' && length(dns_servers) > 0) {
 		let local_servers = [];
 		for (let srv in dns_servers) {
 			if (type(srv) == 'object' && (srv.type == 'local' || srv.address == 'local'))
@@ -957,7 +960,9 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 				local_policy = 'auto';
 
 			if (local_policy == 'reject') {
-				let loop_msg = 'dns.servers contains type "local" upstream which causes a DNS loopback loop with dnsmasq when dns.mode="singbox"';
+				let loop_msg = (dns_mode == 'singbox')
+					? 'dns.servers contains type "local" upstream which causes a DNS loopback loop with dnsmasq when dns.mode="singbox"'
+					: 'dns.servers contains type "local" upstream which causes an output_udp/dnsmasq bootstrap loop when global.proxy_local="1"';
 				push(warnings, loop_msg);
 				return fail(common.ERR_VALIDATE_FAILED, loop_msg, warnings);
 			}
@@ -1014,7 +1019,9 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 				delete srv.strategy;
 			}
 		}
+	}
 
+	if (dns_mode == 'singbox') {
 		let reused_dns = null;
 		for (let inb in cfg.inbounds) {
 			if (inb.type != 'direct')

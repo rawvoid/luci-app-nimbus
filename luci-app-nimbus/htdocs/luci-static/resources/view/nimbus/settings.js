@@ -103,9 +103,24 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
+		var validateIfaceList = function(section_id, value) {
+			if (value == null || value === '')
+				return true;
+			var items = Array.isArray(value) ? value : [ value ];
+			for (var i = 0; i < items.length; i++) {
+				var item = String(items[i] || '').trim();
+				if (!item)
+					continue;
+				if (item === '.' || item === '..' || item.length > 15 || !/^[A-Za-z0-9_.+-]+$/.test(item))
+					return _('Invalid interface name "%s": must be 1–15 characters matching [A-Za-z0-9_.+-].').format(item);
+			}
+			return true;
+		};
+
 		o = sGlobal.option(form.DynamicList, 'lan_interfaces', _('LAN Interfaces'),
 			_('Logical OpenWrt network interfaces whose client traffic is intercepted.'));
 		o.default = 'lan';
+		o.validate = validateIfaceList;
 		ifaceNames.forEach(function(name) {
 			if (name !== 'loopback')
 				o.value(name);
@@ -114,6 +129,7 @@ return view.extend({
 		o = sGlobal.option(form.DynamicList, 'wan_interfaces', _('WAN Interfaces'),
 			_('Logical WAN interfaces whose public IPv4/IPv6 prefixes are automatically bypassed in Main Router topology.'));
 		o.depends('topology', 'main');
+		o.validate = validateIfaceList;
 		ifaceNames.forEach(function(name) {
 			if (name !== 'loopback' && name !== 'lan')
 				o.value(name);

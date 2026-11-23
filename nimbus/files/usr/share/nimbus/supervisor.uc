@@ -50,6 +50,7 @@ function get_runtime_paths() {
 		crontab_file: getenv('NIMBUS_CRONTAB_FILE') || null,
 		resolv_auto_path: getenv('NIMBUS_RESOLV_AUTO_PATH') || null,
 		init_script: getenv('NIMBUS_INIT_SCRIPT') || '/etc/init.d/nimbus',
+		nft_bin: getenv('NFT_BIN') || null,
 		nft_dry_run: (getenv('NIMBUS_NFT_DRY_RUN') == '1'),
 		nft_check_only: (getenv('NIMBUS_NFT_CHECK_ONLY') == '1'),
 		skip_routes: (getenv('NIMBUS_SKIP_ROUTES') == '1'),
@@ -202,16 +203,49 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			cache_dir: paths.cache_lists_dir
 		});
 
-		nft.apply_lockdown({
+		let lock_res = nft.apply_lockdown({
 			uci: uci_cfg,
 			uci_confdir: paths.uci_confdir,
 			uci_savedir: paths.uci_savedir,
 			bypass_v4: wl.v4,
 			bypass_v6: wl.v6,
 			output_path: paths.rules_file,
+			nft_bin: paths.nft_bin,
 			dry_run: paths.nft_dry_run,
 			check_only: paths.nft_check_only
 		});
+
+		let lockdown_ok = (lock_res.ok === true);
+		let final_error = reason;
+		if (!lockdown_ok) {
+			common.log_msg(
+				'error',
+				sprintf('primary lockdown rules failed (%s); falling back to static emergency lockdown', lock_res.error || 'unknown error'),
+				paths.log_file
+			);
+			let emg_res = nft.apply_emergency_lockdown({
+				output_path: paths.rules_file,
+				nft_bin: paths.nft_bin,
+				dry_run: paths.nft_dry_run,
+				check_only: paths.nft_check_only
+			});
+			if (emg_res.ok === true) {
+				lockdown_ok = true;
+				let emg_warn = sprintf(
+					'primary lockdown rules failed (%s); emergency static fail-closed forward block is active',
+					lock_res.error || 'nft error'
+				);
+				if (index(warnings, emg_warn) < 0)
+					push(warnings, emg_warn);
+			} else {
+				final_error = sprintf(
+					'%s (CRITICAL: failed to apply both primary and emergency lockdown rules: %s)',
+					reason,
+					emg_res.error || lock_res.error || 'nft error'
+				);
+				common.log_msg('error', final_error, paths.log_file);
+			}
+		}
 
 		if (!paths.skip_routes) {
 			route.cleanup_routes({
@@ -221,7 +255,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			});
 		}
 
-		if (uci_cfg?.dns?.mode == 'singbox') {
+		if (lockdown_ok && uci_cfg?.dns?.mode == 'singbox') {
 			let dns_warn = 'LOCKDOWN active while dns.mode="singbox": router local DNS resolution is blocked to prevent DNS leaks; stop service to restore dnsmasq';
 			if (index(warnings, dns_warn) < 0)
 				push(warnings, dns_warn);
@@ -229,7 +263,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 
 		let next_state = {
 			...old_state,
-			state: 'lockdown',
+			state: lockdown_ok ? 'lockdown' : 'error',
 			fail_open: false,
 			whitelist: {
 				enabled: (w.enabled != '0'),
@@ -237,7 +271,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 				v6_count: wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0
 			},
 			warnings: warnings,
-			last_error: reason,
+			last_error: final_error,
 			updated_at: time()
 		};
 		common.write_state(next_state, paths.state_file);
@@ -346,6 +380,7 @@ function cmd_prepare_start(paths, is_reload) {
 		bypass_v6: wl.v6,
 		mode: 'tproxy_redirect',
 		output_path: paths.rules_file,
+		nft_bin: paths.nft_bin,
 		dry_run: paths.nft_dry_run,
 		check_only: paths.nft_check_only
 	});
@@ -481,8 +516,9 @@ function cmd_hotplug(paths) {
 	}
 
 	let need_dns_reload = false;
+	let proxy_local_on = (uci_cfg?.global?.proxy_local == '1' || uci_cfg?.global?.router_proxy == '1');
 	if (st.state == 'running' &&
-		uci_cfg?.dns?.mode == 'singbox' &&
+		(uci_cfg?.dns?.mode == 'singbox' || proxy_local_on) &&
 		(uci_cfg?.dns?.local_dns_policy || 'auto') == 'auto' &&
 		(st?.effective?.local_dns_source == 'wan' || st?.effective?.local_dns_source == 'fallback')) {
 		let wan_res = cb.resolve_wan_upstream_dns(uci_cfg, {

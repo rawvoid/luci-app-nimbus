@@ -85,6 +85,24 @@ function is_valid_mac(mac) {
 	return (type(mac) == 'string' && match(trim(mac), /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/) != null);
 }
 
+function is_valid_ifname(name) {
+	if (type(name) != 'string')
+		return false;
+	let s = trim(name);
+	if (length(s) < 1 || length(s) > 15 || s == '.' || s == '..')
+		return false;
+	return (match(s, /^[A-Za-z0-9_.+-]+$/) != null);
+}
+
+function filter_ifname_list(list) {
+	let out = [];
+	for (let item in to_list(list, [])) {
+		if (is_valid_ifname(item))
+			push_unique(out, trim(item));
+	}
+	return out;
+}
+
 function classify_ip_or_cidr(text) {
 	if (type(text) != 'string')
 		return null;
@@ -105,16 +123,21 @@ function classify_ip_or_cidr(text) {
 	if (fam == 0)
 		return null;
 
+	let canon_ip = arrtoip(bytes);
+	if (!canon_ip)
+		return null;
+
 	if (length(parts) == 2) {
 		if (!match(parts[1], /^[0-9]+$/))
 			return null;
 		let plen = int(parts[1], 10);
 		let max_plen = (fam == 4) ? 32 : 128;
-		if (common.isnan(plen) || plen < 0 || plen > max_plen)
+		if (common.isnan(plen) || plen <= 0 || plen > max_plen)
 			return null;
+		return { family: fam, value: sprintf('%s/%d', canon_ip, plen) };
 	}
 
-	return { family: fam, value: lc(s) };
+	return { family: fam, value: canon_ip };
 }
 
 function filter_ip_list(list, family) {
@@ -171,6 +194,30 @@ function normalize_port_mode(raw) {
 	return 'all';
 }
 
+function resolve_uci_iface_devices(ifname, net_uci, depth) {
+	if ((depth ?? 0) > 3 || type(net_uci) != 'object' || type(ifname) != 'string')
+		return [];
+
+	let sec = net_uci[ifname];
+	if (type(sec) != 'object')
+		return [];
+
+	let out = [];
+	let raw_dev = sec.device || sec.ifname;
+	for (let tok in to_list(raw_dev, [])) {
+		if (substr(tok, 0, 1) == '@') {
+			let target = substr(tok, 1);
+			if (length(target) > 0 && target != ifname) {
+				for (let sub in resolve_uci_iface_devices(target, net_uci, (depth ?? 0) + 1))
+					push_unique(out, sub);
+			}
+		} else if (is_valid_ifname(tok)) {
+			push_unique(out, trim(tok));
+		}
+	}
+	return out;
+}
+
 function query_network_context_sources(lan_names, wan_names, topology, opts) {
 	let options = opts || {};
 	let net_uci = common.uci_get_all('network', options.uci_confdir, options.uci_savedir);
@@ -206,7 +253,7 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 		let resolved_dev = false;
 		if (type(uitem) == 'object') {
 			let ldev = uitem.l3_device || uitem.device;
-			if (type(ldev) == 'string' && length(trim(ldev)) > 0) {
+			if (is_valid_ifname(ldev)) {
 				push_unique(lan_ifaces, trim(ldev));
 				resolved_dev = true;
 			}
@@ -229,12 +276,15 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 		}
 
 		let sec = net_uci?.[lname];
+		let has_uci_dev = false;
 		if (type(sec) == 'object') {
-			let dev = sec.device || sec.ifname;
-			if (type(dev) == 'string' && length(trim(dev)) > 0) {
-				for (let d in split(trim(dev), /[ \t\r\n]+/))
+			let raw_dev = sec.device || sec.ifname;
+			has_uci_dev = (type(raw_dev) == 'string' && length(trim(raw_dev)) > 0);
+			if (!resolved_dev && has_uci_dev) {
+				for (let d in resolve_uci_iface_devices(lname, net_uci, 0)) {
 					push_unique(lan_ifaces, d);
-				resolved_dev = true;
+					resolved_dev = true;
+				}
 			}
 			for (let ip4 in to_list(sec.ipaddr, [])) {
 				if (index(ip4, '/') >= 0) {
@@ -255,8 +305,10 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 			}
 		}
 
-		if (!resolved_dev) {
-			push_unique(lan_ifaces, (lname == 'lan') ? 'br-lan' : lname);
+		if (!resolved_dev && !has_uci_dev) {
+			let fb_dev = (lname == 'lan') ? 'br-lan' : trim('' + lname);
+			if (is_valid_ifname(fb_dev))
+				push_unique(lan_ifaces, fb_dev);
 		}
 	}
 
@@ -329,7 +381,7 @@ function resolve_network_context(uci_cfg, opts) {
 
 	let base = query_network_context_sources(lan_names, wan_names, topology, options);
 
-	let lan_ifaces = (options.lan_ifaces != null) ? to_list(options.lan_ifaces, [ 'br-lan' ]) : base.lan_ifaces;
+	let lan_ifaces = (options.lan_ifaces != null) ? filter_ifname_list(options.lan_ifaces) : base.lan_ifaces;
 	if (length(lan_ifaces) == 0)
 		lan_ifaces = [ 'br-lan' ];
 
@@ -555,6 +607,13 @@ function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_po
 	return lines;
 }
 
+function append_nfproto_guard(out, ipv4_enable, ipv6_enable) {
+	if (!ipv6_enable)
+		push(out, '\t\tmeta nfproto != ipv4 return');
+	else if (!ipv4_enable)
+		push(out, '\t\tmeta nfproto != ipv6 return');
+}
+
 function append_subchain(out, chain_name, body_lines) {
 	push(out, '');
 	push(out, sprintf('\tchain %s {', chain_name));
@@ -689,7 +748,11 @@ function generate_rules(opts) {
 		push(out, '\tchain forward_lockdown {');
 		push(out, '\t\ttype filter hook forward priority filter - 1; policy accept;');
 		push(out, '\t\tiifname != @lan_ifaces return');
-		push(out, '\t\tmeta l4proto icmpv6 return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
+		push(out, '\t\tct status dnat return');
+		push(out, '\t\tct direction reply return');
+		if (ipv6_enable)
+			push(out, '\t\tmeta l4proto icmpv6 return');
 
 		if (short_circuit_bypass) {
 			push(out, '\t\treturn');
@@ -718,6 +781,7 @@ function generate_rules(opts) {
 		push(out, '\tchain prerouting_dns {');
 		push(out, '\t\ttype nat hook prerouting priority dstnat + 1; policy accept;');
 		push(out, '\t\tiifname != @lan_ifaces return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tmeta l4proto != { tcp, udp } return');
 		push(out, '\t\tth dport != 53 return');
 		push(out, '\t\tct status dnat return');
@@ -750,6 +814,7 @@ function generate_rules(opts) {
 	push(out, '\tchain prerouting_tcp {');
 	push(out, '\t\ttype nat hook prerouting priority dstnat + 2; policy accept;');
 	push(out, '\t\tiifname != @lan_ifaces return');
+	append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 	push(out, '\t\tmeta l4proto != tcp return');
 	push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 	push(out, '\t\tct status dnat return');
@@ -789,9 +854,12 @@ function generate_rules(opts) {
 	}
 
 	push(out, '\t\tiifname != @lan_ifaces return');
+	append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 	push(out, '\t\tmeta l4proto != udp return');
 	push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 	push(out, '\t\tfib daddr type local return');
+	push(out, '\t\tct status dnat return');
+	push(out, '\t\tct direction reply return');
 
 	if (hijack_lan_dns)
 		push(out, '\t\tudp dport 53 return');
@@ -821,6 +889,7 @@ function generate_rules(opts) {
 		push(out, '\tchain output_tcp {');
 		push(out, '\t\ttype nat hook output priority -100; policy accept;');
 		push(out, '\t\toifname "lo" return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tmeta l4proto != tcp return');
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 		push(out, '\t\tfib daddr type local return');
@@ -854,9 +923,16 @@ function generate_rules(opts) {
 		push(out, '\tchain output_udp {');
 		push(out, '\t\ttype route hook output priority mangle; policy accept;');
 		push(out, '\t\toifname "lo" return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tmeta l4proto != udp return');
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 		push(out, '\t\tfib daddr type local return');
+		push(out, '\t\tct status dnat return');
+		push(out, '\t\tct direction reply return');
+		if (ipv4_enable)
+			push(out, '\t\tmeta nfproto ipv4 udp sport 68 udp dport 67 return');
+		if (ipv6_enable)
+			push(out, '\t\tmeta nfproto ipv6 udp sport 546 udp dport 547 return');
 		if (ipv4_enable)
 			push(out, sprintf('\t\tip daddr @fakeip_v4 meta mark set %s counter accept', proxy_mark_hex));
 		if (ipv6_enable)
@@ -950,6 +1026,62 @@ function apply_rules(opts) {
 	}
 
 	return { ok: true, rules: script, output_path: out_path };
+}
+
+function build_emergency_lockdown_rules() {
+	return join('\n', [
+		'table inet nimbus',
+		'delete table inet nimbus',
+		'',
+		'table inet nimbus {',
+		'\tcounter lockdown_dropped {}',
+		'',
+		'\tchain forward_lockdown {',
+		'\t\ttype filter hook forward priority filter - 1; policy accept;',
+		'\t\tct status dnat return',
+		'\t\tct direction reply return',
+		'\t\tmeta l4proto icmpv6 icmpv6 type { 1, 2, 3, 4, 133, 134, 135, 136, 137 } return',
+		'\t\tip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } return',
+		'\t\tip6 daddr { fc00::/7, fe80::/10, ff00::/8 } return',
+		'\t\tcounter name "lockdown_dropped" reject with icmpx type admin-prohibited',
+		'\t}',
+		'}',
+		''
+	]);
+}
+
+function apply_emergency_lockdown(opts) {
+	let options = opts || {};
+	let script = build_emergency_lockdown_rules();
+	let out_path = options.output_path || common.RULES_NFT_FILE;
+
+	if (!common.atomic_write(out_path, script, 0600)) {
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: sprintf('failed to write emergency lockdown rules to %s', out_path)
+		};
+	}
+
+	if (options.dry_run === true)
+		return { ok: true, rules: script, output_path: out_path, emergency: true };
+
+	let nft_bin = get_nft_bin(options);
+	let argv = options.check_only
+		? [ nft_bin, '-c', '-f', out_path ]
+		: [ nft_bin, '-f', out_path ];
+	let res = run_nft_cmd(argv, options);
+	if (res.rc != 0) {
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: length(res.output) > 0 ? res.output : sprintf('nft emergency lockdown exited with code %d', res.rc),
+			rules: script,
+			output_path: out_path
+		};
+	}
+
+	return { ok: true, rules: script, output_path: out_path, emergency: true };
 }
 
 function apply_lockdown(opts) {
@@ -1251,13 +1383,17 @@ function check_fw4_lan_input(uci_cfg, opts) {
 const build_rules_nft = generate_rules;
 
 export {
+	is_valid_ifname,
+	classify_ip_or_cidr,
 	resolve_network_context,
 	parse_device_rules,
 	parse_port_elements,
 	generate_rules,
 	build_rules_nft,
+	build_emergency_lockdown_rules,
 	apply_rules,
 	apply_lockdown,
+	apply_emergency_lockdown,
 	delete_table,
 	build_set_reload_script,
 	reload_sets,

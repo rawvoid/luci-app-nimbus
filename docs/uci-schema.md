@@ -10,6 +10,8 @@
 - **命名规范**：全部使用 `snake_case`。
 - **数据边界**：
   - `/etc/config/nimbus` 仅保存用户配置。
+  - `/etc/nimbus/composer.json`（权限 `0600`）仅保存编排模式（`config_mode='composer'`）下的结构化配置蓝图（各共享节点源的提取规则、出站组、手动出站、自定义入站、DNS、路由规则、规则集与顶层复写 JSON），避免将多行嵌套 JSON 塞入 UCI。
+  - `/etc/nimbus/profiles/` 由两种模式共享：`profile` 模式将其作为整份只读完整配置使用，`composer` 模式从中按需提取非组出站节点。
   - 运行期上下文（状态机阶段、生效端口/网卡、探测到的 API 入口摘要、`warnings` 与 `last_error`）统一存于 `/var/run/nimbus/state.json`（权限 `0600`，严禁存储明文 API `secret`）；真实 `sing-box` 进程号由 `supervisor.uc` 维护于 `/var/run/nimbus/sing-box.pid`。
   - 实时进程状态、内存占用与防火墙计数器通过 `ubus`、`/proc` 与 `nft` 按需实时查询。白名单计数须区分“各源文本解析条目数”与“经 `nftables` `auto-merge` 合并后的加载元素数”。
   - 远程白名单与订阅的上次更新时间直接读取对应文件的 `mtime`，HTTP 增量同步使用 `curl -z`，仅在 `SHA256` 变化时覆盖本地缓存。
@@ -30,7 +32,8 @@
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `'0'` | `'0'`, `'1'` | 全局启用开关 |
-| `active_profile` | `string` | `''` | 已存在的 `config profile` Section 名 | 当前激活的 `sing-box` 配置 ID |
+| `config_mode` | `enum` | `'composer'` | `'composer'`, `'profile'` | 配置来源模式：`composer`=编排配置模式（使用 `/etc/nimbus/composer.json` 结合共享 `/etc/nimbus/profiles/*.json` 节点源合成标准 `sing-box` 1.14 配置）；`profile`=完整配置模式（直接使用 `active_profile` 对应的整份只读 JSON）。未设置或非法值时缺省按 `'composer'` 处理（项目未发布，无需老版本迁移逻辑） |
+| `active_profile` | `string` | `''` | 已存在的 `config profile` Section 名 | 仅在 `config_mode='profile'` 时生效，指定当前激活的完整 `sing-box` 配置 ID |
 | `topology` | `enum` | `'main'` | `'main'`, `'side'` | `main`=主路由；`side`=旁路由（自动关闭 LAN 口 `send_redirects`，不依赖 `wan` 接口） |
 | `proxy_mode` | `enum` | `'tproxy_redirect'` | `'tproxy_redirect'`（v1.1+ 预留 `'tun'`） | 透明代理模式（v1.0 仅实现 `tproxy_redirect`） |
 | `fail_open` | `bool` | `'0'` | `'0'`, `'1'` | `'0'`=内核异常/崩溃时切入 Lockdown 阻断非白名单 LAN 转发（始终放行路由器管理流量）；`'1'`=异常时清表回落直连 |
@@ -119,6 +122,8 @@
 
 ### 2.7 `config profile`（多实例：`sing-box` 配置文件与订阅）
 
+> `config profile` Section 与 `/etc/nimbus/profiles/<filename>` 文件在 `profile` 模式与 `composer` 模式间共享：切换模式无需重复配置订阅，前者整份作为配置输入，后者从中提取非组出站节点。
+
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `name` | `string` | 必填 | 非空显示名称 | 前端展示名 |
@@ -149,6 +154,7 @@
 ```uci
 config main 'global'
 	option enabled '0'
+	option config_mode 'composer'
 	option active_profile ''
 	option topology 'main'
 	option proxy_mode 'tproxy_redirect'
@@ -227,5 +233,5 @@ config list_source 'custom_direct'
 5. **白名单源完整性**：`list_source.type='url'` 时 `url` 必填；`type='local'` 时 `filename` 必填且各本地列表 `filename` 不可重复。
 6. **配置源完整性**：`profile.type='subscription'` 时 `url` 必填；各 `profile.filename` 不可重复。
 7. **设备条目完整**：启用的 `lan_device` 必须至少填写 `mac` 或 `ip` 之一。
-8. **启动前置校验**：`global.enabled='1'` 时，`active_profile` 对应文件与 `core.bin_path` 必须有效；不满足则按 `fail_open` 策略处理并写入错误原因至 `/var/run/nimbus/state.json`。
+8. **启动前置校验**：`global.enabled='1'` 时，`core.bin_path` 必须有效；`config_mode='profile'` 时 `active_profile` 对应文件必须有效；`config_mode='composer'` 时 `/etc/nimbus/composer.json` 必须合法并可合成通过 `sing-box check` 的配置；不满足则按 `fail_open` 策略处理并写入错误原因至 `/var/run/nimbus/state.json`。
 9. **运行期合成碰撞校验**：`config_builder.uc` 合成配置时校验 `effective_outbound_mark != proxy.proxy_mark`，并检测自动注入入站端口与用户配置中已有入站监听端口之间不存在碰撞冲突。

@@ -11,7 +11,7 @@
 - **非阻塞与并发安全**：
   - `rpcd-mod-ucode` 运行在 `rpcd` 单线程 `uloop` 主循环内，**严禁阻塞等锁或同步执行长耗时外部命令**。
   - 所有写方法均须先以非阻塞 `f.lock('xn')` 获取 `/var/run/nimbus/nimbus.lock`；若锁被占用，立即返回 `code: "E_LOCKED"`。
-  - 长耗时操作（`service_action`、`profile_activate(reload=true)`、`profile_update`、`list_update`、`core_check_update`）通过 `uloop.process` + 延迟 `req.reply()` 异步派发子进程执行；`core_install` 派发脱离主请求的后台任务（由 `uloop.process` 回调收割或双 fork/`start-stop-daemon -b` 避免僵尸进程）并通过 `core_task_status` 轮询。
+  - 长耗时操作（`service_action`、`profile_activate(reload=true)`、`profile_update`、`list_update`、`core_check_update`、`composer_preview`、`composer_save`、`composer_mode_set(reload=true)`）通过 `uloop.process` + 延迟 `req.reply()` 异步派发子进程执行；`core_install` 派发脱离主请求的后台任务（由 `uloop.process` 回调收割或双 fork/`start-stop-daemon -b` 避免僵尸进程）并通过 `core_task_status` 轮询。
 - **文件名安全校验**：
   - Profile 文件名必须匹配 `^[A-Za-z0-9._-]+\.json$`，固定映射至 `/etc/nimbus/profiles/`。
   - 本地白名单文件名必须匹配 `^[A-Za-z0-9._-]+\.txt$`，固定映射至 `/etc/nimbus/lists/local/`。
@@ -48,10 +48,22 @@
   "ok": true,
   "state": "running",
   "enabled": true,
+  "config_mode": "composer",
   "topology": "main",
   "proxy_mode": "tproxy_redirect",
   "fail_open": false,
   "active_profile": "main_sub",
+  "composer": {
+    "initialized": true,
+    "enabled_sources": 1,
+    "extracted_nodes": 12,
+    "groups": 3,
+    "manual_outbounds": 1,
+    "inbounds": 0,
+    "dns_servers": 3,
+    "route_rules": 6,
+    "rule_sets": 2
+  },
   "process": {
     "running": true,
     "pid": 4312,
@@ -120,7 +132,7 @@
   "warnings": []
 }
 ```
-> `state` 枚举值：`"stopped"` | `"preparing"` | `"running"` | `"lockdown"`。`status`（只读）不返回明文 API `secret`。v1.0 中 `proxy_mode` 固定为 `"tproxy_redirect"`，`effective.tun_iface`、`effective.inbound_sources.tun` 与 `counters.tun_packets`/`tun_bytes` 保持 `null`/`0`（预留供 v1.1 扩展）。
+> `state` 枚举值：`"stopped"` | `"preparing"` | `"running"` | `"lockdown"`。`config_mode` 枚举值：`"composer"` | `"profile"`（`profile` 模式下 `composer` 字段为 `null`；`composer` 模式下返回编排摘要，文件未初始化时从当前 UCI/磁盘实时估算）。`status`（只读）不返回明文 API `secret`。v1.0 中 `proxy_mode` 固定为 `"tproxy_redirect"`，`effective.tun_iface`、`effective.inbound_sources.tun` 与 `counters.tun_packets`/`tun_bytes` 保持 `null`/`0`（预留供 v1.1 扩展）。
 
 ### 2.2 `api_secret`（写）
 仅在前端用户点击“打开 / 复制控制面板连接配置”时按需调用，从 `/var/run/nimbus/config.json`（`0600`）实时读取探测到的明文 API `secret`。
@@ -277,10 +289,10 @@
 - **响应**：`{ "ok": true, "active_profile": "main_sub", "reloaded": true }`
 
 ### 3.6 `profile_delete`（写）
-原子删除未激活配置对应的 **UCI `config profile` Section 与 `/etc/nimbus/profiles/<filename>` 文件**，并同步 `# nimbus-profile` 定时项。
+原子删除未处于使用状态的配置对应的 **UCI `config profile` Section 与 `/etc/nimbus/profiles/<filename>` 文件**，并同步 `# nimbus-profile` 定时项。
 
 - **请求**：`{ "section_id": "old_cfg" }`
-- **响应**：`{ "ok": true, "section_id": "old_cfg" }`（若为当前 `global.active_profile`，返回 `E_CONFLICT`）。
+- **响应**：`{ "ok": true, "section_id": "old_cfg" }`（在 `profile` 模式下为当前 `global.active_profile`，或在 `composer` 模式下已被 `/etc/nimbus/composer.json` 的 `sources` 启用时，返回 `E_CONFLICT`）。
 
 ### 3.7 `profile_update`（写，异步非阻塞派发）
 通过 `uloop.process` 调用 `profile_updater.uc` 立即拉取指定或全部 `type='subscription'` 订阅配置，仅在 `sing-box check -D /tmp/nimbus-check-dir` 通过且 `SHA256` 变化时原子替换；若更新了当前激活配置且服务在运行，自动平滑重载。
@@ -310,6 +322,134 @@
 }
 ```
 > `status` 枚举：`"updated"` | `"unchanged"` | `"failed"`。
+
+---
+
+## 3B. 编排配置管理接口（`composer`，`sing-box` 1.14 蓝图）
+
+### 3.8 `composer_get`（只读）
+读取 `/etc/nimbus/composer.json`（若尚未创建则返回默认骨架），并附带全部共享 `config profile` 摘要与当前数据面自动托管的入站信息。
+
+- **请求**：`{}`
+- **响应**：
+```json
+{
+  "ok": true,
+  "config_mode": "composer",
+  "exists": true,
+  "mtime": 1795191000,
+  "composer": {
+    "schema_version": 1,
+    "sources": {},
+    "inbounds": [],
+    "outbound_groups": [],
+    "outbounds": [],
+    "dns": {},
+    "rule_sets": [],
+    "route": {},
+    "override": {}
+  },
+  "profiles": [],
+  "auto_inbounds": {
+    "proxy_mode": "tproxy_redirect",
+    "redirect_port": 7891,
+    "tproxy_port": 7892,
+    "dns_mode": "none",
+    "singbox_dns_port": 5353
+  }
+}
+```
+
+### 3.9 `composer_nodes`（只读）
+使用后端 `ucode` 正则引擎（POSIX ERE 不区分大小写）解析共享订阅源并返回提取节点与预览列表，不写盘。
+
+- **请求**：
+```json
+{
+  "profile_id": "main_sub",
+  "composer": null,
+  "include_regex": "HK|香港",
+  "exclude_regex": "倍率|过期"
+}
+```
+> `profile_id` 省略或为空时汇总全部启用源；传入临时 `composer` 草稿可实时预览未保存的提取策略效果；传入 `include_regex`/`exclude_regex` 时按组筛选语义再过滤一遍。
+- **响应**：
+```json
+{
+  "ok": true,
+  "nodes": [
+    {
+      "profile_id": "main_sub",
+      "original_tag": "HK-01",
+      "tag": "[A] HK-01",
+      "type": "vless",
+      "server": "example.com",
+      "server_port": 443
+    }
+  ],
+  "per_source_counts": {
+    "main_sub": 12
+  },
+  "warnings": []
+}
+```
+
+### 3.10 `composer_preview`（只读，异步非阻塞派发）
+通过 `uloop.process` 对当前已保存或请求传入的 `composer` 草稿执行 Stage A 编排与 Stage B 数据面合成，并在 `validate != false` 且内核存在时执行隔离目录 `sing-box check`，不写正式配置。
+
+- **请求**：`{ "composer": { ... }, "validate": true }`
+- **响应**：
+```json
+{
+  "ok": true,
+  "composed": { ... },
+  "effective": { ... },
+  "warnings": [],
+  "checked": true,
+  "check_ok": true,
+  "check_error": null,
+  "summary": {
+    "enabled_sources": 1,
+    "extracted_nodes": 12,
+    "groups": 3,
+    "manual_outbounds": 1,
+    "inbounds": 0,
+    "dns_servers": 3,
+    "route_rules": 6,
+    "rule_sets": 2
+  }
+}
+```
+
+### 3.11 `composer_save`（写，异步非阻塞派发）
+校验并原子保存 `/etc/nimbus/composer.json`（权限 `0600`，`composer` 序列化后体积上限 `256KB`）；当 `validate != false` 且内核存在时先走 Stage A + Stage B 与 `sing-box check`；`SHA256` 一致时不写盘；可选触发平滑重载。
+
+- **请求**：`{ "composer": { ... }, "validate": true, "reload": false }`
+- **响应**：
+```json
+{
+  "ok": true,
+  "checked": true,
+  "changed": true,
+  "mtime": 1795192000,
+  "reload_required": true,
+  "reloaded": false,
+  "warnings": []
+}
+```
+
+### 3.12 `composer_mode_set`（写，可选异步重载）
+切换 UCI `global.config_mode`（`"composer"` 或 `"profile"`）并提交；当 `reload == true` 且服务处于运行或 `lockdown` 态时通过 `uloop.process` 异步触发重载。
+
+- **请求**：`{ "mode": "composer", "reload": true }`
+- **响应**：`{ "ok": true, "config_mode": "composer", "reload_required": true, "reloaded": true }`
+
+### 3.13 `composer_import`（只读）
+将指定 `profile_id` 对应文件或传入的原始 `sing-box` JSON 文本（上限 `256KB`）逆向拆解为 `composer` 结构草稿（未归类顶层块自动放入 `override`），不写盘。
+
+- **请求**：`{ "source": "profile", "profile_id": "main_sub", "content": "" }`
+> `source` 枚举：`"profile"` | `"json"`。
+- **响应**：`{ "ok": true, "composer": { ... }, "warnings": [] }`
 
 ---
 
@@ -596,7 +736,11 @@
 					"list_read",
 					"core_info",
 					"core_check_update",
-					"core_task_status"
+					"core_task_status",
+					"composer_get",
+					"composer_nodes",
+					"composer_preview",
+					"composer_import"
 				],
 				"network.interface": [ "dump" ],
 				"luci-rpc": [ "getHostHints" ]
@@ -620,7 +764,9 @@
 					"list_save",
 					"list_delete",
 					"list_update",
-					"core_install"
+					"core_install",
+					"composer_save",
+					"composer_mode_set"
 				]
 			},
 			"uci": [ "nimbus" ],
@@ -666,7 +812,7 @@
 		}
 	},
 	"admin/services/nimbus/profiles": {
-		"title": "Profiles",
+		"title": "Config",
 		"order": 30,
 		"action": {
 			"type": "view",

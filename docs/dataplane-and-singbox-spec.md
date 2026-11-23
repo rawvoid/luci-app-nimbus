@@ -1,6 +1,6 @@
 # Dataplane & sing-box Specification
 
-本文档是 `nft_manager.uc`、`route_manager.uc`、`config_builder.uc`、`dns_manager.uc`、`list_updater.uc`、`profile_updater.uc`、`core_manager.uc` 与 `supervisor.uc` 的底层实现契约。所有防火墙规则、策略路由、配置合成、监督轮转与版本兼容逻辑必须严格按本规范实现。
+本文档是 `nft_manager.uc`、`route_manager.uc`、`config_composer.uc`、`config_builder.uc`、`dns_manager.uc`、`list_updater.uc`、`profile_updater.uc`、`core_manager.uc` 与 `supervisor.uc` 的底层实现契约。所有防火墙规则、策略路由、配置合成、监督轮转与版本兼容逻辑必须严格按本规范实现。
 
 ---
 
@@ -350,16 +350,43 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 ---
 
-## 4. `sing-box` 配置合成与双 API 探测规范 (`config_builder.uc`)
+## 4. `sing-box` 配置合成与双 API 探测规范 (`config_composer.uc` / `config_builder.uc`)
+
+### 4.0 双模式输入与两阶段编排规范 (`config_composer.uc`，以 `sing-box` 1.14 `schema.json` 为标准)
+
+1. **模式判定**：由 `common.normalize_config_mode(uci_cfg)` 判定当前生效模式：仅当 `global.config_mode == 'profile'` 时走完整配置模式；其余情况（包括默认 `'composer'`、未设置或非 `'profile'` 值）统一走编排配置模式。
+2. **`/etc/nimbus/composer.json`（权限 `0600`）Schema（`schema_version: 1`）**：
+   - **`sources`**：以 UCI `profile` Section ID 为键的节点提取配置对象，每项包含：
+     - `enabled`（bool）、`tag_prefix`（string）、`include_regex`（string）、`exclude_regex`（string）
+     - `exclude_types`（array，默认 `["selector", "urltest", "direct", "block", "dns"]`）
+     - `strip_fields`（array，默认 `["domain_resolver", "routing_mark"]`）
+     - `node_override`（object，通过 RFC 7396 Merge Patch 合并至该源每个提取节点）
+   - **`inbounds`**：数组，每项为最小信封 `{ id, enabled, type, tag, remark, config }`；编译为 `{ ...config, type, tag }`。
+   - **`outbound_groups`**：数组，每项为 `{ id, enabled, type, tag, remark, outbounds: [...], providers: [{ profile_id, include_regex, exclude_regex }], fallback_outbound, config }`（`type` 为 `"selector"` 或 `"urltest"`；`providers[].profile_id` 设为 `"*"` 时匹配全部已启用节点源）。
+   - **`outbounds`**：数组，每项为手动出站 `{ id, enabled, type, tag, remark, config }`（如 `direct`、自建节点等）。
+   - **`dns`**：对象 `{ final, strategy, extra, servers: [{ id, enabled, type, tag, remark, config }], rules: [{ id, enabled, remark, action, server, config }] }`。遵循 `sing-box` 1.14 规范：不使用已移除的 `independent_cache`；DNS 规则 `action` 对齐 1.14 标准枚举（`route`、`evaluate`、`respond`、`route-options`、`reject`、`predefined`）。
+   - **`rule_sets`**：数组，每项为 `{ id, enabled, type, tag, format, remark, config }`（写入最终配置的 `route.rule_set`）。遵循 `sing-box` 1.14 规范：`type == "inline"` 时省略 `format`；`type == "remote"` 时使用 `http_client` 而非已移除的 `download_detour`。
+   - **`route`**：对象 `{ final, default_domain_resolver, extra, rules: [{ id, enabled, remark, action, outbound, config }] }`。遵循 `sing-box` 1.14 规范：路由规则 `action` 对齐 1.14 标准枚举（`route`、`route-options`、`bypass`、`reject`、`hijack-dns`、`sniff`、`resolve`）。
+   - **`override`**：顶层自由 JSON 对象（用于 `services` 含 `api` 与 `hysteria-realm`、`experimental`、`endpoints`、`http_clients`、`ntp`、`certificate`、`certificate_providers`、`network_namespaces` 等）。在 Stage A 末尾、Stage B 之前按 **RFC 7396 JSON Merge Patch** 递归深度合并（`null` 值显式删除对应键，数组整体替换）。
+3. **多订阅出站提取与路由器防崩护栏**：
+   - **输入兼容**：从共享 `/etc/nimbus/profiles/<filename>` 读取源 JSON，支持完整配置 `{ "outbounds": [...] }` 或纯出站数组 `[...]`（`endpoints` 不纳入订阅提取，由 `override` 管理）。
+   - **黑名单过滤**：排除 `type` 命中 `exclude_types` 的条目，保证未来新协议自动提取。
+   - **正则与错误边界**：所有正则过滤统一由后端 `ucode` `regexp(pat, 'i')`（POSIX ERE 不区分大小写）执行；源级 `include_regex` / `exclude_regex` 匹配 `original_tag`，组绑定筛选匹配最终 `tag`；非法正则直接中止并返回 `E_VALIDATE_FAILED`。
+   - **前缀、链式 `detour` 与跨源去重**：应用 `tag_prefix` 时若同源节点存在指向同源另一已提取节点的 `detour`，同步重映射其 `detour` 引用；不同源之间若最终 `tag` 碰撞，自动追加 `" #2"`、`" #3"` 后缀并写入 `warnings`。
+   - **脏字段清洗与出站排序**：对提取节点删除 `strip_fields`（默认剥离 `domain_resolver` 与 `routing_mark`）并应用 `node_override`；最终 `cfg.outbounds` 按 `[启用 outbound_groups, 启用手动 outbounds, 按 UCI profile 顺序提取的订阅节点]` 排列。
+   - **空组与失效 `default` 兜底**：若某出站组展开后成员为空，自动回填 `fallback_outbound`（默认 `'direct'`）并写入 `warning`（仅当 `fallback_outbound` 亦显式为空时才返回校验错）；若 `selector` 的 `config.default` 不在最终成员列表中，自动移除 `default` 并写入 `warning`，避免订阅波动触发 Fail-Closed Lockdown。
 
 ### 4.1 输入与输出
 
-- **输入**：只读原始配置 `/etc/nimbus/profiles/<filename>`、当前 UCI 配置、`sing-box` 二进制路径。
+- **输入**：
+  - `config_mode == 'profile'`：只读原始配置 `/etc/nimbus/profiles/<filename>`、当前 UCI 配置、`sing-box` 二进制路径。
+  - `config_mode == 'composer'`（默认）：先由 `config_composer.uc`（Stage A）基于 `/etc/nimbus/composer.json` 与共享 `/etc/nimbus/profiles/*.json` 合成标准 `sing-box` 1.14 JSON，再交由 `config_builder.uc`（Stage B）执行透明代理、DNS 防环路、Fake-IP 与 API 探测流水线。
 - **输出**：
   - 经 `sing-box check` 校验通过后原子替换的 `/var/run/nimbus/config.json`（权限 `0600`）；
-  - 返回供 `nft_manager.uc`、`route_manager.uc`、`dns_manager.uc` 及 `/var/run/nimbus/state.json` 使用的构建上下文对象（注意：`effective_outbound_mark` 在上下文内部为整数如 `255`，落盘 `state.json` 与返回 `status` 时格式化为十六进制字符串如 `"0xff"`；且 `state.json` 中 `apis` 严禁写入明文 `secret`，仅保留 `has_secret`）：
+  - 返回供 `nft_manager.uc`、`route_manager.uc`、`dns_manager.uc` 及 `/var/run/nimbus/state.json` 使用的构建上下文对象（`composer` 模式下额外附带 `config_mode: "composer"` 与 `composer` 摘要；`effective_outbound_mark` 在上下文内部为整数如 `255`，落盘 `state.json` 与返回 `status` 时格式化为十六进制字符串如 `"0xff"`；且 `state.json` 中 `apis` 严禁写入明文 `secret`，仅保留 `has_secret`）：
     ```json
     {
+      "config_mode": "composer",
       "core_version": "1.14.4",
       "effective_outbound_mark": 255,
       "effective_redirect_port": 7891,
@@ -371,6 +398,16 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
       "apis": {
         "singbox_api": { ... },
         "clash_api": { ... }
+      },
+      "composer": {
+        "enabled_sources": 1,
+        "extracted_nodes": 12,
+        "groups": 3,
+        "manual_outbounds": 1,
+        "inbounds": 0,
+        "dns_servers": 3,
+        "route_rules": 6,
+        "rule_sets": 2
       },
       "warnings": []
     }
@@ -536,12 +573,14 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 负责处理所有 `type == 'subscription'` 的 `config profile` 远程拉取、预校验与定时更新：
 
-1. **拉取与预校验**：
+1. **拉取与预校验（模式自适应）**：
    - 使用 `curl -fsSL --connect-timeout 15 --max-time 60 -A <profile.user_agent>` 下载至 `/tmp/nimbus-sub-<id>.tmp`；当 `profile.via_proxy == '1'` 且本地代理入站可用时附加 `--proxy`。
-   - 解析为 JSON 并调用 `config_builder.uc` 在隔离临时目录 `/tmp/nimbus-check-dir` 执行完整合成与 `sing-box check -c ... -D /tmp/nimbus-check-dir`；任何失败均直接丢弃临时文件，**严禁覆写** `/etc/nimbus/profiles/<filename>`。
+   - **当 `config_mode == 'profile'`**：解析为 JSON 对象并调用 `config_builder.uc` 在隔离临时目录 `/tmp/nimbus-check-dir` 执行完整合成与 `sing-box check -c ... -D /tmp/nimbus-check-dir`。
+   - **当 `config_mode == 'composer'`**：支持完整配置对象（`{ "outbounds": [...] }`）或纯出站 JSON 数组（`[...]`）；若该订阅在 `/etc/nimbus/composer.json` 中已启用（`sources[id].enabled === true`），则以内存中的候选文档替换该源并执行完整 Stage A + Stage B 合成及 `sing-box check` 校验；若当前未在编排中启用，则至少校验其为含非空有效出站条目的合法 JSON。
+   - 任何校验失败均直接丢弃临时文件，**严禁覆写** `/etc/nimbus/profiles/<filename>`。
 2. **哈希比对与原子替换**：
    - 计算临时文件与现有 `/etc/nimbus/profiles/<filename>` 的 `SHA256`：哈希一致则记为 `"unchanged"` 不触发写盘；仅当变化时写入同目录临时文件并 `rename()` 原子替换，确保闪存零无效磨损。
-   - 若本次更新的是当前 `global.active_profile` 且服务处于 `running` 态，在互斥锁保护下自动触发运行期配置重建与平滑重载。
+   - 在 `profile` 模式下更新了 `global.active_profile`，或在 `composer` 模式下更新了 `composer.json` 中已启用的节点源时，若服务处于 `running` 态，在互斥锁保护下自动触发运行期配置重建与平滑重载。
 3. **定时调度（每小时分发器）**：
    - 因标准 5 段 Cron 无法精确表达任意小时周期（UCI `update_interval_hours` 为 `1`–`720`），当存在至少 1 个启用 `auto_update == '1'` 的订阅时，在 `/etc/crontabs/root` 注册一条每小时整点触发的任务（`0 * * * * ... # nimbus-profile`）。
    - 分发器遍历所有 `type == 'subscription'` 且 `auto_update == '1'` 的配置，检查 `(now - stat(file).mtime) >= update_interval_hours * 3600`（文件不存在视作立即到期），到期则执行 1–2 步更新流程。

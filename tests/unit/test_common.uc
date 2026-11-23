@@ -25,7 +25,10 @@ check(common.CONFIG_FILE == '/var/run/nimbus/config.json', 'CONFIG_FILE constant
 check(common.PID_FILE == '/var/run/nimbus/sing-box.pid', 'PID_FILE constant');
 check(common.LOCK_FILE == '/var/run/nimbus/nimbus.lock', 'LOCK_FILE constant');
 check(common.LOG_FILE == '/var/log/nimbus.log', 'LOG_FILE constant');
+check(common.COMPOSER_FILE == '/etc/nimbus/composer.json', 'COMPOSER_FILE constant');
 check(common.PROFILES_DIR == '/etc/nimbus/profiles', 'PROFILES_DIR constant');
+check(common.CONFIG_MODE_COMPOSER == 'composer', 'CONFIG_MODE_COMPOSER constant');
+check(common.CONFIG_MODE_PROFILE == 'profile', 'CONFIG_MODE_PROFILE constant');
 check(common.LOCAL_LISTS_DIR == '/etc/nimbus/lists/local', 'LOCAL_LISTS_DIR constant');
 check(common.CACHE_LISTS_DIR == '/etc/nimbus/lists/cache', 'CACHE_LISTS_DIR constant');
 check(common.DNS_BACKUP_FILE == '/etc/nimbus/dns_backup.json', 'DNS_BACKUP_FILE constant');
@@ -137,6 +140,7 @@ let sample_uci = fs.readfile(repo_root + '/nimbus/files/etc/config/nimbus');
 check(type(sample_uci) == 'string' && length(sample_uci) > 0, 'repo default uci config readable');
 common.atomic_write(uci_conf + '/nimbus', sample_uci, 0644);
 let all_uci = common.uci_get_all('nimbus', uci_conf, uci_save);
+check(all_uci?.global?.config_mode == 'composer', 'uci_get_all reads default global.config_mode');
 check(all_uci?.global?.proxy_mode == 'tproxy_redirect', 'uci_get_all reads global.proxy_mode');
 check(all_uci?.global?.fail_open == '0', 'uci_get_all reads global.fail_open');
 check(all_uci?.proxy?.outbound_mark == '0xff', 'uci_get_all reads proxy.outbound_mark');
@@ -180,6 +184,16 @@ check(!common.is_valid_list_filename('../bad.txt'), 'rejects ../ in list');
 check(!common.is_valid_list_filename('dir/list.txt'), 'rejects slash in list');
 check(!common.is_valid_list_filename('list.json'), 'rejects non-txt list');
 check(!common.is_valid_list_filename('.txt'), 'rejects bare .txt');
+
+// 9b. Config mode normalization
+check(common.normalize_config_mode('profile') == 'profile', 'normalize_config_mode profile');
+check(common.normalize_config_mode(' PROFILE ') == 'profile', 'normalize_config_mode uppercase padded profile');
+check(common.normalize_config_mode('composer') == 'composer', 'normalize_config_mode composer');
+check(common.normalize_config_mode('') == 'composer', 'normalize_config_mode empty defaults to composer');
+check(common.normalize_config_mode(null) == 'composer', 'normalize_config_mode null defaults to composer');
+check(common.normalize_config_mode('unknown') == 'composer', 'normalize_config_mode unknown defaults to composer');
+check(common.normalize_config_mode({ global: { config_mode: 'profile' } }) == 'profile', 'normalize_config_mode uci object profile');
+check(common.normalize_config_mode({ global: {} }) == 'composer', 'normalize_config_mode uci object missing defaults to composer');
 
 // 10. sha256_str & sha256_file
 check(common.sha256_str('') == 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'sha256 empty string');

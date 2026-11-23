@@ -111,8 +111,8 @@ return view.extend({
 				var item = String(items[i] || '').trim();
 				if (!item)
 					continue;
-				if (item === '.' || item === '..' || item.length > 15 || !/^[A-Za-z0-9_.+-]+$/.test(item))
-					return _('Invalid interface name "%s": must be 1–15 characters matching [A-Za-z0-9_.+-].').format(item);
+				if (item === '.' || item === '..' || item.length > 64 || !/^[A-Za-z0-9_.+-]+$/.test(item))
+					return _('Invalid interface name "%s": must be 1–64 characters matching [A-Za-z0-9_.+-].').format(item);
 			}
 			return true;
 		};
@@ -148,10 +148,10 @@ return view.extend({
 			return true;
 		};
 
-		o = sGlobal.option(form.Flag, 'proxy_local', _('Proxy Router Outbound Traffic'),
+		var oProxyLocal = sGlobal.option(form.Flag, 'proxy_local', _('Proxy Router Outbound Traffic'),
 			_('Intercept TCP/UDP connections initiated by the router itself.'));
-		o.default = '0';
-		o.rmempty = false;
+		oProxyLocal.default = '0';
+		oProxyLocal.rmempty = false;
 
 		o = sGlobal.option(form.ListValue, 'log_level', _('Log Level'));
 		[ 'trace', 'debug', 'info', 'warn', 'error', 'fatal', 'panic' ].forEach(function(lvl) {
@@ -325,12 +325,13 @@ return view.extend({
 		};
 
 		var oLocalPolicy = sDns.option(form.ListValue, 'local_dns_policy', _('Local DNS ("local") Handling'),
-			_('How to rewrite sing-box DNS servers of type "local" when dnsmasq forwards to sing-box to avoid DNS loops.'));
+			_('How to rewrite sing-box DNS servers of type "local" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops.'));
 		oLocalPolicy.value('auto', _('Auto-detect WAN DNS (Fallback to Direct DNS)'));
 		oLocalPolicy.value('fallback', _('Always Use Configured Direct DNS'));
 		oLocalPolicy.value('reject', _('Strict Reject ("local" Not Allowed)'));
 		oLocalPolicy.default = 'auto';
 		oLocalPolicy.depends('mode', 'singbox');
+		oLocalPolicy.depends('nimbus.global.proxy_local', '1');
 
 		var oLocalFallback = sDns.option(form.Value, 'local_fallback_server', _('Manual / Fallback Direct DNS'),
 			_('Non-loopback direct DNS IP used when policy is "fallback", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS.'));
@@ -339,8 +340,13 @@ return view.extend({
 		oLocalFallback.rmempty = true;
 		oLocalFallback.depends({ mode: 'singbox', local_dns_policy: 'auto' });
 		oLocalFallback.depends({ mode: 'singbox', local_dns_policy: 'fallback' });
+		oLocalFallback.depends({ 'nimbus.global.proxy_local': '1', local_dns_policy: 'auto' });
+		oLocalFallback.depends({ 'nimbus.global.proxy_local': '1', local_dns_policy: 'fallback' });
 		oLocalFallback.validate = function(section_id, value) {
-			if (oDnsMode.formvalue(section_id) !== 'singbox')
+			var isSingboxDns = (oDnsMode.formvalue(section_id) === 'singbox');
+			var rawProxyLocal = oProxyLocal.formvalue('global');
+			var isProxyLocal = (String(rawProxyLocal != null ? rawProxyLocal : (uci.get('nimbus', 'global', 'proxy_local') || '0')) === '1');
+			if (!isSingboxDns && !isProxyLocal)
 				return true;
 			var pol = oLocalPolicy.formvalue(section_id) || 'auto';
 			if (pol === 'reject')

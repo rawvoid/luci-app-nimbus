@@ -1202,11 +1202,14 @@ msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes ato
 msgstr "管理直连绕行 IPv4/IPv6 CIDR 白名单。编辑本地列表或刷新远程源后，将通过 nftables 原子热更新生效，无需重启 sing-box。"
 
 
+msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
+msgstr "无效的接口名称“%s”：长度须为 1–64 个字符，且仅包含 [A-Za-z0-9_.+-]。"
+
 msgid "Local DNS (\"local\") Handling"
 msgstr "local 类型 DNS 上游处理"
 
-msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box to avoid DNS loops."
-msgstr "当 dnsmasq 转发至 sing-box 时，如何改写配置中的 \"local\" 类型 DNS 上游以防止解析死循环。"
+msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops."
+msgstr "当 dnsmasq 转发至 sing-box 或启用路由器本机代理时，如何改写配置中的 \"local\" 类型 DNS 上游以防止解析死循环。"
 
 msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
 msgstr "自动探测 WAN 上游 DNS（不可用时回退至直连 DNS）"

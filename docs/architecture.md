@@ -86,13 +86,13 @@
 
 ### 3.2 `tproxy_redirect` 数据面处理流水线（v1.1 预留 `tun` 扩展位）
 
-在 `table inet nimbus` 中按以下统一前段筛选流量：
-1. 防环路标记 `meta mark $OUTBOUND_MARK return`
-2. Fake-IP 自动识别优先通道（跳过保留段与白名单，直进代理）
-3. 保留段 / 局域网子网（`lan_v4`/`lan_v6`） / WAN 公网 IP / LAN 设备白名单 `return`
-4. 端口过滤（`port_filter_mode`: `all` / `include` / `exclude`）
-5. 远程 + 多手动白名单 `bypass_v4` / `bypass_v6` 命中 `return`
-6. `ct mark`（`0x10`/`0x20`，掩码 `0x30`）按位首包决策缓存（UDP TPROXY 链）
+在 `table inet nimbus` 中按以下统一顺序筛选流量：
+1. 入站接口、单栈协议族守卫（`meta nfproto`）、防环路标记 `meta mark $OUTBOUND_MARK return`、本机地址 `fib daddr type local return` 及入站连接回包保护（`ct status dnat return` / `ct direction reply return`）
+2. `ct mark`（`0x10`/`0x20`，掩码 `0x30`，写入前清掩码 `ct mark & 0xffffffcf`）首包决策快速路径（UDP TPROXY 链）
+3. 有序局域网设备分流（`lan_device` 按 `.index` 自上而下优先匹配，`lan_device_mode` 默认策略兜底）
+4. Fake-IP 自动识别优先通道（跳过端口过滤、保留段与白名单，直进代理还原真实域名）
+5. 端口过滤（`port_filter_mode`: `all` / `include` / `exclude`）
+6. 保留段 / 局域网子网（`lan_v4`/`lan_v6`） / WAN 公网 IP / 远程与手动白名单（`bypass_v4`/`bypass_v6`）命中 `return`
 
 末尾导流动作：
 - **`tproxy_redirect`**：优先复用配置中已有的 `redirect`/`tproxy` 入站（缺失自动补齐，运行期剥离冲突 `tun` 并递归重映射 tag）；TCP 走 `dstnat` 链 `redirect`，UDP 走 `mangle` 链 `tproxy` + 策略路由指向 `local default dev lo`。
@@ -195,7 +195,7 @@
 
 ### 6.3 `hotplug.d/iface/90-nimbus` 事件自愈
 监听网络接口的 `ifup` / `ifupdate` / `ifdown` 事件：
-- **WAN/WAN6 与 LAN 前缀变更**：主路由模式提取最新公网 `wan_v4` / `wan_v6`；所有模式均刷新 `lan_interfaces` 的最新 `lan_v4` / `lan_v6` 前缀，执行单事务 `nft -f` 原子刷新对应 Set，不重启 `sing-box`。
+- **WAN/WAN6 与 LAN 接口/前缀变更**：主路由模式提取最新公网 `wan_v4` / `wan_v6`；所有模式均刷新 `lan_interfaces` 的最新 `lan_ifaces` 设备集合与 `lan_v4` / `lan_v6` 前缀，执行单事务 `nft -f` 原子刷新对应 Set，不重启 `sing-box`。若检测到 `table inet nimbus` 已被外部清空，自动重放 `/var/run/nimbus/rules.nft`（及最新 `/var/run/nimbus/bypass_sets.nft`）完成主表自愈。
 - **策略路由自愈**：当 `state.json` 处于 `running` 态时，检查 `ip -4/-6 rule` 与表 `100` 路由是否被 `netifd` 重载清除，缺失则自动补回。
 
 ---

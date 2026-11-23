@@ -140,6 +140,7 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 
 	let payload = {
 		state: state_name,
+		emergency_lockdown: false,
 		enabled: (g.enabled == '1'),
 		topology: (g.topology == 'side') ? 'side' : 'main',
 		proxy_mode: g.proxy_mode || 'tproxy_redirect',
@@ -218,8 +219,11 @@ function execute_fail_handler(reason, paths, existing_lock) {
 		});
 
 		let lockdown_ok = (lock_res.ok === true);
+		let used_emergency = false;
 		let final_error = reason;
-		if (!lockdown_ok) {
+		if (lockdown_ok) {
+			fs.unlink(paths.bypass_sets_file);
+		} else {
 			common.log_msg(
 				'error',
 				sprintf('primary lockdown rules failed (%s); falling back to static emergency lockdown', lock_res.error || 'unknown error'),
@@ -233,6 +237,8 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			});
 			if (emg_res.ok === true) {
 				lockdown_ok = true;
+				used_emergency = true;
+				fs.unlink(paths.bypass_sets_file);
 				let emg_warn = sprintf(
 					'primary lockdown rules failed (%s); emergency static fail-closed forward block is active',
 					lock_res.error || 'nft error'
@@ -263,11 +269,16 @@ function execute_fail_handler(reason, paths, existing_lock) {
 				push(warnings, dns_warn);
 		}
 
-		let lock_v4 = lock_res?.loaded_counts?.bypass_v4 ?? wl?.v4_count ?? old_state?.whitelist?.v4_count ?? 0;
-		let lock_v6 = lock_res?.loaded_counts?.bypass_v6 ?? wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0;
+		let lock_v4 = used_emergency
+			? 0
+			: (lock_res?.loaded_counts?.bypass_v4 ?? wl?.v4_count ?? old_state?.whitelist?.v4_count ?? 0);
+		let lock_v6 = used_emergency
+			? 0
+			: (lock_res?.loaded_counts?.bypass_v6 ?? wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0);
 		let next_state = {
 			...old_state,
 			state: lockdown_ok ? 'lockdown' : 'error',
+			emergency_lockdown: (lockdown_ok && used_emergency),
 			fail_open: false,
 			whitelist: {
 				enabled: (w.enabled != '0'),
@@ -280,6 +291,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 		};
 		common.write_state(next_state, paths.state_file);
 	} else {
+		fs.unlink(paths.bypass_sets_file);
 		let del_res = nft.delete_table({
 			nft_bin: paths.nft_bin,
 			dry_run: paths.nft_dry_run
@@ -304,6 +316,7 @@ function execute_fail_handler(reason, paths, existing_lock) {
 		let next_state = {
 			...old_state,
 			state: 'error',
+			emergency_lockdown: false,
 			fail_open: true,
 			whitelist: {
 				enabled: (w.enabled != '0'),
@@ -401,6 +414,7 @@ function cmd_prepare_start(paths, is_reload) {
 		common.release_lock(lock_fh);
 		return 1;
 	}
+	fs.unlink(paths.bypass_sets_file);
 
 	if (!paths.skip_routes) {
 		let rt_res = route.setup_routes({
@@ -474,6 +488,7 @@ function cmd_stop(paths) {
 	let old_state = common.read_state(paths.state_file) || {};
 
 	fs.unlink(paths.pid_file);
+	fs.unlink(paths.bypass_sets_file);
 	let del_res = nft.delete_table({
 		nft_bin: paths.nft_bin,
 		dry_run: paths.nft_dry_run
@@ -494,6 +509,7 @@ function cmd_stop(paths) {
 	common.write_state({
 		...old_state,
 		state: 'stopped',
+		emergency_lockdown: false,
 		enabled: (uci_cfg?.global?.enabled == '1'),
 		whitelist: {
 			enabled: (w.enabled != '0'),
@@ -521,6 +537,18 @@ function cmd_hotplug(paths) {
 	}
 
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
+	if (st.emergency_lockdown === true) {
+		if (!paths.nft_dry_run && !paths.nft_check_only && !nft.table_exists({ nft_bin: paths.nft_bin })) {
+			let st_rules = fs.stat(paths.rules_file);
+			if (st_rules && st_rules.type == 'file') {
+				common.log_msg('warn', 'hotplug detected missing emergency lockdown table; replaying rules.nft', paths.log_file);
+				nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
+			}
+		}
+		common.release_lock(lock_fh);
+		return 0;
+	}
+
 	let iface_res = nft.reload_iface_sets(uci_cfg, {
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
@@ -536,7 +564,7 @@ function cmd_hotplug(paths) {
 			let heal_res = nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
 			if (heal_res.ok) {
 				let st_byp = fs.stat(paths.bypass_sets_file);
-				if (st_byp && st_byp.type == 'file' && st_byp.mtime >= st_rules.mtime)
+				if (st_byp && st_byp.type == 'file')
 					nft.replay_rules_file(paths.bypass_sets_file, { nft_bin: paths.nft_bin });
 				nft.reload_iface_sets(uci_cfg, {
 					uci_confdir: paths.uci_confdir,

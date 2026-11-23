@@ -287,7 +287,7 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 		let has_uci_dev = false;
 		if (type(sec) == 'object') {
 			let raw_dev = sec.device || sec.ifname;
-			has_uci_dev = (type(raw_dev) == 'string' && length(trim(raw_dev)) > 0);
+			has_uci_dev = (length(to_list(raw_dev, [])) > 0);
 			if (!resolved_dev && has_uci_dev) {
 				for (let d in resolve_uci_iface_devices(lname, net_uci, 0)) {
 					push_unique(lan_ifaces, d);
@@ -1217,6 +1217,15 @@ function apply_lockdown(opts) {
 	return apply_rules(options);
 }
 
+function table_exists(opts) {
+	let options = opts || {};
+	if (options.dry_run === true)
+		return true;
+	let nft_bin = get_nft_bin(options);
+	let res = run_nft_cmd([ nft_bin, '-j', 'list', 'counters', 'table', 'inet', 'nimbus' ], options);
+	return (res.rc == 0);
+}
+
 function delete_table(opts) {
 	let options = opts || {};
 	if (options.dry_run === true)
@@ -1599,6 +1608,7 @@ export {
 	apply_lockdown,
 	apply_emergency_lockdown,
 	replay_rules_file,
+	table_exists,
 	delete_table,
 	build_set_reload_script,
 	reload_sets,

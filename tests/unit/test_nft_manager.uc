@@ -873,4 +873,36 @@ check(ctrs_terse.ok === true && ctrs_terse.tcp_packets == 125 &&
 	length(ctrs_terse_calls) == 2 && index(ctrs_terse_calls[1], '-t') >= 0,
 	'get_counters passes -t (--terse) when falling back to list table inet nimbus');
 
+// 7. Second-round edge regressions: UCI list device/ifname arrays & table_exists()
+let net_list_dir = work_dir + '/net_list_uci';
+check(common.ensure_dir(net_list_dir, 0755), 'create net_list_dir');
+check(fs.writefile(net_list_dir + '/network',
+	"config interface 'lan'\n\tlist device 'br-lan'\n\tlist device 'eth0.20'\n\n" +
+	"config interface 'guest'\n\tlist ifname 'br-guest'\n\n" +
+	"config interface 'guest6'\n\tlist device '@guest'\n"
+) != null, 'write network UCI fixture with list device / list ifname arrays');
+
+let ctx_list_devs = nft.resolve_network_context({
+	global: { topology: 'main', lan_interfaces: [ 'lan', 'guest6' ] }
+}, {
+	uci_confdir: net_list_dir,
+	uci_savedir: net_list_dir + '/.uci',
+	ubus_dump: { interface: [] }
+});
+check(index(ctx_list_devs.lan_ifaces, 'br-lan') >= 0 &&
+	index(ctx_list_devs.lan_ifaces, 'eth0.20') >= 0 &&
+	index(ctx_list_devs.lan_ifaces, 'br-guest') >= 0 &&
+	length(ctx_list_devs.lan_ifaces) == 3,
+	'resolve_network_context handles UCI list device / list ifname arrays and @alias resolution');
+
+check(!nft.table_exists({ nft_bin: nft_bin }), 'table_exists returns false before loading table');
+let live_emg = nft.apply_emergency_lockdown({
+	nft_bin: nft_bin,
+	output_path: work_dir + '/live_emg.nft'
+});
+check(live_emg.ok === true && nft.table_exists({ nft_bin: nft_bin }),
+	'table_exists returns true when live emergency lockdown table is loaded');
+check(nft.delete_table({ nft_bin: nft_bin }).ok === true && !nft.table_exists({ nft_bin: nft_bin }),
+	'table_exists returns false after delete_table');
+
 printf('test_nft_manager.uc: %d assertions passed\n', passed);

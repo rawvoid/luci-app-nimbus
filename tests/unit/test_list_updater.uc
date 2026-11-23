@@ -370,4 +370,37 @@ check(st_stopped_list.ok === true &&
 	st_stopped_list.sources[0].v4_count > 0,
 	'get_list_status reports nft_loaded=0 when service is stopped while preserving per-source parsed counts');
 
+// 10. Cold-start (no state.json) and emergency_lockdown edge cases
+let missing_state_file = work_dir + '/nonexistent_state.json';
+let st_cold_start = lu.get_list_status(null, { ...list_opts, state_file: missing_state_file });
+check(st_cold_start.ok === true &&
+	st_cold_start.nft_loaded.v4_count == 0 &&
+	st_cold_start.nft_loaded.v6_count == 0 &&
+	st_cold_start.sources[0].v4_count > 0,
+	'get_list_status reports nft_loaded=0 on fresh install when state.json does not exist yet');
+
+check(common.write_state({
+	state: 'lockdown',
+	emergency_lockdown: true,
+	whitelist: { enabled: true, v4_count: 0, v6_count: 0 }
+}, state_file), 'seed emergency_lockdown state');
+let st_emg_list = lu.get_list_status(null, list_opts);
+check(st_emg_list.ok === true &&
+	st_emg_list.nft_loaded.v4_count == 0 &&
+	st_emg_list.nft_loaded.v6_count == 0,
+	'get_list_status reports nft_loaded=0 during emergency_lockdown');
+
+let emg_reload_calls = 0;
+let rel_emg = lu.reload_whitelist_sets(null, {
+	...list_opts,
+	nft_dry_run: false,
+	nft_runner: () => {
+		emg_reload_calls++;
+		return { rc: 1, output: 'should not run nft during emergency_lockdown' };
+	}
+});
+check(rel_emg.ok === true && rel_emg.hot_reloaded === false &&
+	emg_reload_calls == 0 && rel_emg.nft_loaded.v4_count == 0 && rel_emg.nft_loaded.v6_count == 0,
+	'reload_whitelist_sets skips nft set reload and preserves 0 counts during emergency_lockdown');
+
 printf('test_list_updater.uc: %d assertions passed\n', passed);

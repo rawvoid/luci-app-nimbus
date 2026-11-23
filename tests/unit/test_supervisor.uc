@@ -436,18 +436,22 @@ check(common.atomic_write(mock_nft_flaky, sprintf(
 check(run_sup_cmd('--fail-handler', { NFT_BIN: mock_nft_flaky }) == 0, '--fail-handler runs with flaky nft');
 let st_emg = common.read_state(state_file);
 check(st_emg.state == 'lockdown' &&
+	st_emg.emergency_lockdown === true &&
+	st_emg.whitelist?.v4_count == 0 &&
+	st_emg.whitelist?.v6_count == 0 &&
 	trim(fs.readfile(nft_call_file) || '') == '2' &&
 	length(filter(st_emg.warnings || [], (w) => index(w, 'emergency static fail-closed') >= 0)) == 1,
-	'Fail Handler falls back to static emergency lockdown and validates with real nft when primary lockdown fails');
+	'Fail Handler falls back to static emergency lockdown with zeroed whitelist counts and emergency_lockdown=true');
 
 let mock_nft_dead = work_dir + '/mock-nft-dead.sh';
 check(common.atomic_write(mock_nft_dead, '#!/bin/sh\necho "nft totally broken" >&2\nexit 1\n', 0755), 'write mock_nft_dead');
 check(run_sup_cmd('--fail-handler', { NFT_BIN: mock_nft_dead }) == 0, '--fail-handler runs with dead nft');
 let st_dead = common.read_state(state_file);
-check(st_dead.state == 'error' && index(st_dead.last_error || '', 'CRITICAL') >= 0,
+check(st_dead.state == 'error' && st_dead.emergency_lockdown === false &&
+	index(st_dead.last_error || '', 'CRITICAL') >= 0,
 	'Fail Handler refuses to claim state=lockdown when both primary and emergency lockdown fail');
 
-// 8. P1 regression test: live --hotplug self-heals table inet nimbus + bypass_sets.nft when flushed externally
+// 8. P1/P2 regression tests: live --hotplug self-heal, same-second bypass_sets.nft unlink, and emergency_lockdown hotplug stability
 check(write_uci_nimbus('0', 'none'), 'reset uci for live hotplug self-heal test');
 let bypass_sets_file = run_dir + '/bypass_sets.nft';
 let wan_sets_file = run_dir + '/wan_sets.nft';
@@ -457,6 +461,8 @@ let live_hotplug_env = {
 	NIMBUS_WAN_SETS_FILE: wan_sets_file
 };
 check(run_sup_cmd('--prepare-start', live_hotplug_env) == 0, 'live --prepare-start loads table inet nimbus');
+check(common.read_state(state_file)?.emergency_lockdown === false,
+	'--prepare-start clears emergency_lockdown flag in state.json');
 check(common.atomic_write(bypass_sets_file,
 	'flush set inet nimbus bypass_v4\nadd element inet nimbus bypass_v4 { 9.9.9.0/24 }\n', 0600),
 	'seed newer bypass_sets.nft');
@@ -471,6 +477,45 @@ check(system([ '/bin/sh', '-c', '/usr/sbin/nft -j list set inet nimbus bypass_v4
 	'query healed bypass_v4 set after hotplug');
 check(index(fs.readfile(healed_v4_out) || '', '9.9.9.0') >= 0,
 	'hotplug self-heal replayed both rules.nft and newer bypass_sets.nft');
+
+// Verify --prepare-reload unlinks old bypass_sets.nft to prevent same-second mtime race
+check(run_sup_cmd('--prepare-reload', live_hotplug_env) == 0, 'live --prepare-reload rebuilds rules.nft');
+check(fs.stat(bypass_sets_file) == null, '--prepare-reload unlinks stale bypass_sets.nft after applying fresh rules.nft');
+check(system([ '/usr/sbin/nft', 'delete', 'table', 'inet', 'nimbus' ]) == 0, 'delete table after --prepare-reload');
+check(run_sup_cmd('--hotplug', live_hotplug_env) == 0, 'live --hotplug self-heals fresh rules.nft');
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft -j list set inet nimbus bypass_v4 > "' + healed_v4_out + '"' ]) == 0,
+	'query bypass_v4 after post-reload hotplug heal');
+check(index(fs.readfile(healed_v4_out) || '', '9.9.9.0') < 0,
+	'post-reload hotplug self-heal does not replay stale bypass_sets.nft from previous ruleset');
+
+// Verify live emergency_lockdown hotplug preserves table handle without failing or resetting counters, and heals only when missing
+check(common.atomic_write(nft_call_file, '0\n', 0644), 'reset nft_call_file for live emergency hotplug test');
+check(run_sup_cmd('--fail-handler', { ...live_hotplug_env, NFT_BIN: mock_nft_flaky }) == 0,
+	'live --fail-handler loads static emergency lockdown table');
+let emg_table_json_1 = work_dir + '/emg_table_1.json';
+let emg_table_json_2 = work_dir + '/emg_table_2.json';
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft -j -t list table inet nimbus > "' + emg_table_json_1 + '"' ]) == 0,
+	'inspect live emergency table before hotplug');
+let log_len_before = length(fs.readfile(log_file) || '');
+check(run_sup_cmd('--hotplug', live_hotplug_env) == 0, 'live --hotplug runs cleanly during emergency_lockdown');
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft -j -t list table inet nimbus > "' + emg_table_json_2 + '"' ]) == 0,
+	'inspect live emergency table after hotplug');
+let emg_obj_1 = common.read_json(emg_table_json_1);
+let emg_obj_2 = common.read_json(emg_table_json_2);
+let log_delta = substr(fs.readfile(log_file) || '', log_len_before);
+check(emg_obj_1?.nftables?.[1]?.table?.handle != null &&
+	emg_obj_1.nftables[1].table.handle == emg_obj_2?.nftables?.[1]?.table?.handle &&
+	index(log_delta, 'failed') < 0 && index(log_delta, 'replaying') < 0,
+	'hotplug during emergency_lockdown preserves existing table handle and counters without spurious replay');
+
+check(system([ '/usr/sbin/nft', 'delete', 'table', 'inet', 'nimbus' ]) == 0,
+	'delete live emergency lockdown table');
+check(run_sup_cmd('--hotplug', live_hotplug_env) == 0, 'live --hotplug restores deleted emergency lockdown table');
+check(system([ '/bin/sh', '-c', '/usr/sbin/nft list table inet nimbus >/dev/null 2>&1' ]) == 0,
+	'emergency lockdown table restored after external deletion');
+
 check(run_sup_cmd('--stop', live_hotplug_env) == 0, 'clean up live table via --stop');
+check(common.read_state(state_file)?.emergency_lockdown === false,
+	'--stop resets emergency_lockdown to false');
 
 printf('test_supervisor.uc: %d assertions passed\n', passed);

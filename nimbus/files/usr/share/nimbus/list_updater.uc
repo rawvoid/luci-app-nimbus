@@ -499,16 +499,11 @@ function get_list_status(uci_cfg, opts) {
 
 	let state_path = options.state_file || common.STATE_FILE;
 	let st = common.read_state(state_path);
-	let nft_v4 = active.v4_count;
-	let nft_v6 = active.v6_count;
-	if (type(st) == 'object') {
-		if (st.state == 'running' || st.state == 'lockdown') {
-			nft_v4 = st.whitelist?.v4_count ?? active.v4_count;
-			nft_v6 = st.whitelist?.v6_count ?? active.v6_count;
-		} else {
-			nft_v4 = 0;
-			nft_v6 = 0;
-		}
+	let nft_v4 = 0;
+	let nft_v6 = 0;
+	if (type(st) == 'object' && (st.state == 'running' || st.state == 'lockdown') && st.emergency_lockdown !== true) {
+		nft_v4 = st.whitelist?.v4_count ?? active.v4_count;
+		nft_v6 = st.whitelist?.v6_count ?? active.v6_count;
 	}
 
 	return {
@@ -606,12 +601,13 @@ function reload_whitelist_sets(uci_cfg, opts) {
 	let active = collect_active_lists(uci_data, options);
 	let st = common.read_state(state_path) || {};
 
+	let is_emg_lockdown = (st.state == 'lockdown' && st.emergency_lockdown === true && options.force_reload !== true);
 	let service_active = (options.force_reload === true) ||
-		(st.state == 'running' || st.state == 'lockdown');
+		((st.state == 'running' || st.state == 'lockdown') && !is_emg_lockdown);
 
 	let hot_reloaded = false;
-	let loaded_v4 = active.v4_count;
-	let loaded_v6 = active.v6_count;
+	let loaded_v4 = is_emg_lockdown ? 0 : active.v4_count;
+	let loaded_v6 = is_emg_lockdown ? 0 : active.v6_count;
 
 	if (service_active) {
 		let nres = nft.reload_sets({
@@ -946,11 +942,12 @@ function update_lists(section_id, opts) {
 	let st = common.read_state(state_path) || {};
 	st.list_meta = common.merge_meta_updates(st.list_meta, list_meta_updates);
 
+	let is_emg_lockdown = (st.state == 'lockdown' && st.emergency_lockdown === true && options.force_reload !== true);
 	let service_active = (options.force_reload === true) ||
-		(st.state == 'running' || st.state == 'lockdown');
+		((st.state == 'running' || st.state == 'lockdown') && !is_emg_lockdown);
 	let hot_reloaded = false;
-	let loaded_v4 = active.v4_count;
-	let loaded_v6 = active.v6_count;
+	let loaded_v4 = is_emg_lockdown ? 0 : active.v4_count;
+	let loaded_v6 = is_emg_lockdown ? 0 : active.v6_count;
 
 	if (service_active && (any_changed || options.force_reload === true)) {
 		let nres = nft.reload_sets({

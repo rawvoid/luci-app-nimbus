@@ -462,6 +462,15 @@ check(fakeip_warn_res.ok === true &&
 	length(filter(fakeip_warn_res.context.warnings, (w) => index(w, 'direct-bypass LAN device policy') >= 0)) == 1,
 	'emits diagnostic warnings when Fake-IP coexists with port_filter_mode or direct-bypass LAN devices');
 
+let hijack_none_uci = make_uci({ dns_mode: 'none' });
+hijack_none_uci.dns.hijack_lan_dns = '1';
+let hijack_none_res = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, hijack_none_uci);
+check(hijack_none_res.ok === true &&
+	length(filter(hijack_none_res.context.warnings, (w) => index(w, 'dns.hijack_lan_dns="1" is enabled while dns.mode="none"') >= 0)) == 1,
+	'emits diagnostic warning when hijack_lan_dns=1 is paired with dns.mode=none');
+
 let empty_dns_err = cb.transform_config({
 	dns: { servers: [] },
 	outbounds: [ { type: 'direct', tag: 'direct' } ]

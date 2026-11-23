@@ -60,14 +60,17 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 			'lockdown hooks forward only: ' + combo_desc);
 		check(index(rules, 'hook input') < 0 && index(rules, 'hook prerouting') < 0 && index(rules, 'hook output') < 0,
 			'lockdown never hooks input/prerouting/output: ' + combo_desc);
-		check(index(rules, 'meta l4proto icmpv6 return') >= 0,
-			'lockdown preserves icmpv6 NDP: ' + combo_desc);
-		check(index(rules, 'counter name "lockdown_dropped"') >= 0 &&
-			index(rules, 'reject with icmpx type admin-prohibited') >= 0,
-			'lockdown rejects with counter name "lockdown_dropped": ' + combo_desc);
+		check(index(rules, 'meta l4proto icmpv6 icmpv6 type { 1, 2, 3, 4, 133, 134, 135, 136, 137 } return') >= 0,
+			'lockdown preserves essential icmpv6 errors and NDP while blocking arbitrary echo leaks: ' + combo_desc);
+		check(index(rules, 'counter name "lockdown_dropped" reject with icmpx type admin-prohibited') >= 0 &&
+			index(rules, 'counter name "lockdown_dropped" counter') < 0,
+			'lockdown rejects with deduplicated counter name "lockdown_dropped": ' + combo_desc);
 	} else {
 		check(index(rules, 'chain prerouting_tcp {') >= 0 && index(rules, 'chain prerouting_udp {') >= 0,
 			'tproxy_redirect has prerouting_tcp and prerouting_udp: ' + combo_desc);
+		check(index(rules, 'counter name "tcp_proxied" counter') < 0 &&
+			index(rules, 'counter name "udp_proxied" counter') < 0,
+			'proxy rules omit redundant anonymous counter alongside named counter: ' + combo_desc);
 		check(index(rules, 'ct status dnat return') >= 0 && index(rules, 'fib daddr type local return') >= 0,
 			'prerouting chains protect dnat and local destinations: ' + combo_desc);
 		check(index(rules, 'ct mark & 0x30 == 0x10 return') >= 0 &&
@@ -305,7 +308,7 @@ check(empty_proxy_lockdown.ok === true &&
 	index(empty_proxy_lockdown.rules, 'ip6 daddr @reserved_v6') < 0 &&
 	index(empty_proxy_lockdown.rules, 'reject with icmpx') < 0 &&
 	index(empty_proxy_lockdown.rules, 'counter lockdown_dropped {}') >= 0 &&
-	index(empty_proxy_lockdown.rules, '\t\tmeta l4proto icmpv6 return\n\t\treturn\n\t}') >= 0,
+	index(empty_proxy_lockdown.rules, '\t\tmeta l4proto icmpv6 icmpv6 type { 1, 2, 3, 4, 133, 134, 135, 136, 137 } return\n\t\treturn\n\t}') >= 0,
 	'default_bypass with IPv4-only proxy rule under ipv4_enable=0 prunes dead lockdown tail');
 
 let explicit_override = nft.apply_rules({
@@ -407,12 +410,13 @@ let dns_bypass_default_proxy = nft.apply_rules({
 check(dns_bypass_default_proxy.ok === true, 'hijack_lan_dns=1 default_proxy + bypass passes nft -c -f');
 let d_proto = index(dns_bypass_default_proxy.rules, 'meta l4proto != { tcp, udp } return');
 let d_port = index(dns_bypass_default_proxy.rules, 'th dport != 53 return');
+let d_mark = index(dns_bypass_default_proxy.rules, 'meta mark 0xff return');
 let d_mac = index(dns_bypass_default_proxy.rules, 'ether saddr 78:2e:03:53:00:2f return');
 let d_ip = index(dns_bypass_default_proxy.rules, 'ip saddr 10.11.1.115 return');
 let d_redir = index(dns_bypass_default_proxy.rules, 'meta l4proto { tcp, udp } th dport 53 counter redirect to :53');
 check(index(dns_bypass_default_proxy.rules, 'prerouting_dns_hijack') < 0 &&
-	d_proto >= 0 && d_port > d_proto && d_mac > d_port && d_ip > d_mac && d_redir > d_ip,
-	'prerouting_dns checks protocol/port before device bypass rules and omits hijack subchain');
+	d_proto >= 0 && d_port > d_proto && d_mark > d_port && d_mac > d_mark && d_ip > d_mac && d_redir > d_ip,
+	'prerouting_dns checks protocol/port/outbound_mark before device bypass rules and omits hijack subchain');
 
 let dns_mixed_default_proxy = nft.apply_rules({
 	nft_bin: nft_bin,
@@ -786,7 +790,87 @@ let fw_warn = nft.check_fw4_lan_input(
 	{ global: { lan_interfaces: [ 'lan' ] } },
 	{ firewall_uci: { z_lan: { '.type': 'zone', name: 'lan', network: 'lan guest', input: 'REJECT' } } }
 );
-check(length(fw_warn) == 1 && index(fw_warn[0], 'REJECT') >= 0 && index(fw_warn[0], 'TPROXY') >= 0,
-	'check_fw4_lan_input emits diagnostic warning when LAN zone input is REJECT');
+check(length(fw_warn) == 1 && index(fw_warn[0], 'REJECT') >= 0 &&
+	index(fw_warn[0], 'TCP REDIRECT') >= 0 && index(fw_warn[0], 'UDP TPROXY') >= 0,
+	'check_fw4_lan_input emits diagnostic warning covering TCP REDIRECT / UDP TPROXY / DNS hijack when LAN zone input is REJECT');
+
+let fw_unassigned = nft.check_fw4_lan_input(
+	{ global: { lan_interfaces: [ 'lan', 'iot_vlan' ] } },
+	{
+		firewall_uci: {
+			def: { '.type': 'defaults', input: 'REJECT' },
+			z_lan: { '.type': 'zone', name: 'lan', network: [ 'lan' ], input: 'ACCEPT' }
+		}
+	}
+);
+check(length(fw_unassigned) == 1 && index(fw_unassigned[0], 'iot_vlan') >= 0 &&
+	index(fw_unassigned[0], 'not assigned to any fw4 zone') >= 0,
+	'check_fw4_lan_input warns when a LAN interface is unassigned to any fw4 zone under defaults.input != ACCEPT');
+
+// 6. P2 regression tests: WAN6 UCI ip6addr /128 stripping + ip6prefix + ubus priority, and get_counters short-circuit + -t
+let wan_uci_dir = work_dir + '/wan_uci_test';
+check(common.ensure_dir(wan_uci_dir, 0755), 'create wan_uci_dir');
+check(fs.writefile(wan_uci_dir + '/network',
+	"config interface 'lan'\n\toption device 'br-lan'\n\toption ipaddr '192.168.99.1/24'\n\n" +
+	"config interface 'wan'\n\toption ipaddr '203.0.113.55/24'\n\n" +
+	"config interface 'wan6'\n\toption ip6addr '2001:db8:dead::2/64'\n\toption ip6prefix '2001:db8:beef::/56'\n"
+) != null, 'write static WAN/WAN6 network UCI fixture');
+
+let ctx_uci_only = nft.resolve_network_context({
+	global: { topology: 'main', lan_interfaces: [ 'lan' ], wan_interfaces: [ 'wan', 'wan6' ] }
+}, {
+	uci_confdir: wan_uci_dir,
+	uci_savedir: wan_uci_dir + '/.uci',
+	ubus_dump: { interface: [] }
+});
+check(index(ctx_uci_only.wan_v4, '203.0.113.55') >= 0 &&
+	index(ctx_uci_only.wan_v6, '2001:db8:dead::2') >= 0 &&
+	index(ctx_uci_only.wan_v6, '2001:db8:dead::2/64') < 0 &&
+	index(ctx_uci_only.wan_v6, '2001:db8:beef::/56') >= 0,
+	'UCI WAN6 fallback strips /64 link prefix to host /128 while preserving routed ip6prefix');
+
+let ctx_ubus_wins = nft.resolve_network_context({
+	global: { topology: 'main', lan_interfaces: [ 'lan' ], wan_interfaces: [ 'wan', 'wan6' ] }
+}, {
+	uci_confdir: wan_uci_dir,
+	uci_savedir: wan_uci_dir + '/.uci',
+	ubus_dump: {
+		interface: [
+			{ interface: 'lan', up: true, l3_device: 'br-lan', 'ipv4-address': [ { address: '10.0.0.1', mask: 24 } ] },
+			{ interface: 'wan', up: true, l3_device: 'eth1', 'ipv4-address': [ { address: '198.51.100.9', mask: 24 } ] },
+			{ interface: 'wan6', up: true, l3_device: 'eth1', 'ipv6-address': [ { address: '2001:db8:cafe::2', mask: 64 } ] }
+		]
+	}
+});
+check(index(ctx_ubus_wins.lan_v4, '10.0.0.1/24') >= 0 &&
+	index(ctx_ubus_wins.lan_v4, '192.168.99.1/24') < 0 &&
+	index(ctx_ubus_wins.wan_v4, '198.51.100.9') >= 0 &&
+	index(ctx_ubus_wins.wan_v4, '203.0.113.55') < 0 &&
+	index(ctx_ubus_wins.wan_v6, '2001:db8:cafe::2') >= 0 &&
+	index(ctx_ubus_wins.wan_v6, '2001:db8:dead::2') < 0,
+	'live ubus interface data takes precedence without merging stale static UCI addresses');
+
+let ctrs_calls = [];
+let ctrs_missing = nft.get_counters({
+	runner: (argv) => {
+		push(ctrs_calls, argv);
+		return { rc: 1, output: 'Error: No such file or directory' };
+	}
+});
+check(ctrs_missing.ok === true && length(ctrs_calls) == 1,
+	'get_counters short-circuits without a second nft fork when table inet nimbus does not exist');
+
+let ctrs_terse_calls = [];
+let ctrs_terse = nft.get_counters({
+	runner: (argv) => {
+		push(ctrs_terse_calls, argv);
+		if (length(ctrs_terse_calls) == 1)
+			return { rc: 0, output: '' };
+		return { rc: 0, output: sample_list_table_json };
+	}
+});
+check(ctrs_terse.ok === true && ctrs_terse.tcp_packets == 125 &&
+	length(ctrs_terse_calls) == 2 && index(ctrs_terse_calls[1], '-t') >= 0,
+	'get_counters passes -t (--terse) when falling back to list table inet nimbus');
 
 printf('test_nft_manager.uc: %d assertions passed\n', passed);

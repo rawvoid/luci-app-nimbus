@@ -252,6 +252,7 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 	for (let lname in lan_names) {
 		let uitem = ubus_ifaces[lname];
 		let resolved_dev = false;
+		let has_ubus_lan_ips = false;
 		if (type(uitem) == 'object') {
 			let ldev = uitem.l3_device || uitem.device;
 			if (is_valid_ifname(ldev)) {
@@ -261,8 +262,10 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 			if (type(uitem['ipv4-address']) == 'array') {
 				for (let a4 in uitem['ipv4-address']) {
 					let c = classify_ip_or_cidr(sprintf('%s/%s', '' + a4?.address, '' + (a4?.mask ?? 24)));
-					if (c && c.family == 4)
+					if (c && c.family == 4) {
 						push_unique(lan_v4, c.value);
+						has_ubus_lan_ips = true;
+					}
 				}
 			}
 			for (let k6 in [ 'ipv6-address', 'ipv6-prefix-assignment' ]) {
@@ -270,10 +273,14 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 					continue;
 				for (let a6 in uitem[k6]) {
 					let c = classify_ip_or_cidr(sprintf('%s/%s', '' + a6?.address, '' + (a6?.mask ?? 64)));
-					if (c && c.family == 6)
+					if (c && c.family == 6) {
 						push_unique(lan_v6, c.value);
+						has_ubus_lan_ips = true;
+					}
 				}
 			}
+			if (uitem.up === true)
+				has_ubus_lan_ips = true;
 		}
 
 		let sec = net_uci?.[lname];
@@ -287,22 +294,24 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 					resolved_dev = true;
 				}
 			}
-			for (let ip4 in to_list(sec.ipaddr, [])) {
-				if (index(ip4, '/') >= 0) {
-					let c = classify_ip_or_cidr(ip4);
-					if (c && c.family == 4)
-						push_unique(lan_v4, c.value);
-				} else {
-					let plen = netmask_to_prefix(sec.netmask || '255.255.255.0') ?? 24;
-					let c = classify_ip_or_cidr(sprintf('%s/%d', ip4, plen));
-					if (c && c.family == 4)
-						push_unique(lan_v4, c.value);
+			if (!has_ubus_lan_ips) {
+				for (let ip4 in to_list(sec.ipaddr, [])) {
+					if (index(ip4, '/') >= 0) {
+						let c = classify_ip_or_cidr(ip4);
+						if (c && c.family == 4)
+							push_unique(lan_v4, c.value);
+					} else {
+						let plen = netmask_to_prefix(sec.netmask || '255.255.255.0') ?? 24;
+						let c = classify_ip_or_cidr(sprintf('%s/%d', ip4, plen));
+						if (c && c.family == 4)
+							push_unique(lan_v4, c.value);
+					}
 				}
-			}
-			for (let ip6 in to_list(sec.ip6addr, [])) {
-				let c = classify_ip_or_cidr(ip6);
-				if (c && c.family == 6)
-					push_unique(lan_v6, c.value);
+				for (let ip6 in to_list(sec.ip6addr, [])) {
+					let c = classify_ip_or_cidr(ip6);
+					if (c && c.family == 6)
+						push_unique(lan_v6, c.value);
+				}
 			}
 		}
 
@@ -316,19 +325,24 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 	if (topology == 'main') {
 		for (let wname in wan_names) {
 			let uitem = ubus_ifaces[wname];
+			let has_ubus_wan = false;
 			if (type(uitem) == 'object') {
 				if (type(uitem['ipv4-address']) == 'array') {
 					for (let a4 in uitem['ipv4-address']) {
 						let c = classify_ip_or_cidr('' + a4?.address);
-						if (c && c.family == 4)
+						if (c && c.family == 4) {
 							push_unique(wan_v4, c.value);
+							has_ubus_wan = true;
+						}
 					}
 				}
 				if (type(uitem['ipv6-address']) == 'array') {
 					for (let a6 in uitem['ipv6-address']) {
 						let c = classify_ip_or_cidr('' + a6?.address);
-						if (c && c.family == 6)
+						if (c && c.family == 6) {
 							push_unique(wan_v6, c.value);
+							has_ubus_wan = true;
+						}
 					}
 				}
 				for (let k6 in [ 'ipv6-prefix', 'ipv6-prefix-assignment' ]) {
@@ -336,11 +350,18 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 						continue;
 					for (let p6 in uitem[k6]) {
 						let c = classify_ip_or_cidr(sprintf('%s/%s', '' + p6?.address, '' + (p6?.mask ?? 64)));
-						if (c && c.family == 6)
+						if (c && c.family == 6) {
 							push_unique(wan_v6, c.value);
+							has_ubus_wan = true;
+						}
 					}
 				}
+				if (uitem.up === true)
+					has_ubus_wan = true;
 			}
+
+			if (has_ubus_wan)
+				continue;
 
 			let sec = net_uci?.[wname];
 			if (type(sec) != 'object')
@@ -352,7 +373,13 @@ function query_network_context_sources(lan_names, wan_names, topology, opts) {
 					push_unique(wan_v4, c.value);
 			}
 			for (let ip6 in to_list(sec.ip6addr, [])) {
-				let c = classify_ip_or_cidr(ip6);
+				let raw6 = (index(ip6, '/') >= 0) ? split(ip6, '/')[0] : ip6;
+				let c = classify_ip_or_cidr(raw6);
+				if (c && c.family == 6)
+					push_unique(wan_v6, c.value);
+			}
+			for (let p6 in to_list(sec.ip6prefix, [])) {
+				let c = classify_ip_or_cidr(p6);
 				if (c && c.family == 6)
 					push_unique(wan_v6, c.value);
 			}
@@ -550,7 +577,7 @@ function append_daddr_bypass_lines(out, ipv4_enable, ipv6_enable, verdict) {
 function build_lockdown_tail_lines(ipv4_enable, ipv6_enable) {
 	let lines = [];
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
-	push(lines, '\t\tcounter name "lockdown_dropped" counter reject with icmpx type admin-prohibited');
+	push(lines, '\t\tcounter name "lockdown_dropped" reject with icmpx type admin-prohibited');
 	return lines;
 }
 
@@ -558,9 +585,9 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 	let lines = [];
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 
 	if (port_mode == 'include') {
 		if (length(filter_tcp_ports) == 0)
@@ -574,9 +601,9 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 
 	return lines;
 }
@@ -585,9 +612,9 @@ function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_po
 	let lines = [];
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 
 	if (port_mode == 'include') {
 		if (length(filter_udp_ports) == 0)
@@ -601,9 +628,9 @@ function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_po
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'ct mark set ct mark & 0xffffffcf | 0x10 return');
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 
 	return lines;
 }
@@ -753,7 +780,7 @@ function generate_rules(opts) {
 		push(out, '\t\tct status dnat return');
 		push(out, '\t\tct direction reply return');
 		if (ipv6_enable)
-			push(out, '\t\tmeta l4proto icmpv6 return');
+			push(out, '\t\tmeta l4proto icmpv6 icmpv6 type { 1, 2, 3, 4, 133, 134, 135, 136, 137 } return');
 
 		if (short_circuit_bypass) {
 			push(out, '\t\treturn');
@@ -785,6 +812,7 @@ function generate_rules(opts) {
 		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tmeta l4proto != { tcp, udp } return');
 		push(out, '\t\tth dport != 53 return');
+		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 		push(out, '\t\tct status dnat return');
 		push(out, '\t\tfib daddr type local return');
 
@@ -849,9 +877,9 @@ function generate_rules(opts) {
 
 	if (proxy_local) {
 		if (ipv4_enable)
-			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv4 counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv4 counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv6 counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv6 counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 	}
 
 	push(out, '\t\tiifname != @lan_ifaces return');
@@ -868,9 +896,9 @@ function generate_rules(opts) {
 	push(out, '\t\tct mark & 0x30 == 0x10 return');
 	if (!short_circuit_bypass) {
 		if (ipv4_enable)
-			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" counter tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
 	}
 
 	if (short_circuit_bypass) {
@@ -897,9 +925,9 @@ function generate_rules(opts) {
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 		push(out, '\t\tfib daddr type local return');
 		if (ipv4_enable)
-			push(out, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+			push(out, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv4_enable)
 			push(out, '\t\tip daddr @reserved_v4 return');
 		if (ipv6_enable)
@@ -917,9 +945,9 @@ function generate_rules(opts) {
 		if (ipv6_enable)
 			push(out, '\t\tip6 daddr @bypass_v6 return');
 		if (ipv4_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+			push(out, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" counter redirect to :%d', redirect_port));
+			push(out, sprintf('\t\tmeta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		push(out, '\t}');
 
 		push(out, '');
@@ -937,9 +965,9 @@ function generate_rules(opts) {
 		if (ipv6_enable)
 			push(out, '\t\tmeta nfproto ipv6 udp sport 546 udp dport 547 return');
 		if (ipv4_enable)
-			push(out, sprintf('\t\tip daddr @fakeip_v4 meta mark set %s counter accept', proxy_mark_hex));
+			push(out, sprintf('\t\tip daddr @fakeip_v4 meta mark set %s accept', proxy_mark_hex));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta mark set %s counter accept', proxy_mark_hex));
+			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta mark set %s accept', proxy_mark_hex));
 		if (ipv4_enable)
 			push(out, '\t\tip daddr @reserved_v4 return');
 		if (ipv6_enable)
@@ -957,9 +985,9 @@ function generate_rules(opts) {
 		if (ipv6_enable)
 			push(out, '\t\tip6 daddr @bypass_v6 return');
 		if (ipv4_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv4 meta mark set %s counter accept', proxy_mark_hex));
+			push(out, sprintf('\t\tmeta nfproto ipv4 meta mark set %s accept', proxy_mark_hex));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv6 meta mark set %s counter accept', proxy_mark_hex));
+			push(out, sprintf('\t\tmeta nfproto ipv6 meta mark set %s accept', proxy_mark_hex));
 		push(out, '\t}');
 	}
 
@@ -1474,8 +1502,15 @@ function get_counters(opts) {
 
 	let nft_bin = get_nft_bin(options);
 	let res = run_nft_cmd([ nft_bin, '-j', 'list', 'counters', 'table', 'inet', 'nimbus' ], options);
-	if (res.rc != 0 || length(res.output) == 0) {
-		res = run_nft_cmd([ nft_bin, '-j', 'list', 'table', 'inet', 'nimbus' ], options);
+	if (res.rc != 0) {
+		let err_lc = lc(res.output || '');
+		if (index(err_lc, 'no such file or directory') >= 0 || index(err_lc, 'does not exist') >= 0)
+			return parse_counters(null);
+		res = run_nft_cmd([ nft_bin, '-j', '-t', 'list', 'table', 'inet', 'nimbus' ], options);
+		if (res.rc != 0)
+			return parse_counters(null);
+	} else if (length(res.output) == 0) {
+		res = run_nft_cmd([ nft_bin, '-j', '-t', 'list', 'table', 'inet', 'nimbus' ], options);
 		if (res.rc != 0)
 			return parse_counters(null);
 	}
@@ -1493,17 +1528,34 @@ function check_fw4_lan_input(uci_cfg, opts) {
 	if (type(fw_uci) != 'object')
 		return warnings;
 
+	let default_input = 'ACCEPT';
+	let has_fw_config = false;
+	let covered_lan = {};
+
+	for (let k, sec in fw_uci) {
+		if (type(sec) != 'object')
+			continue;
+		if (sec['.type'] == 'defaults') {
+			has_fw_config = true;
+			if (sec.input != null && length(trim('' + sec.input)) > 0)
+				default_input = uc(trim('' + sec.input));
+		}
+	}
+
 	for (let k, sec in fw_uci) {
 		if (type(sec) != 'object' || sec['.type'] != 'zone')
 			continue;
 
+		has_fw_config = true;
 		let zname = sec.name || k;
-		let nets = to_list(sec.network, (type(sec.name) == 'string') ? [ sec.name ] : []);
+		let has_explicit_binding = (sec.network != null || sec.device != null || sec.subnet != null);
+		let nets = to_list(sec.network, (!has_explicit_binding && type(sec.name) == 'string') ? [ sec.name ] : []);
+		let devs = to_list(sec.device, []);
 		let matched_lan = false;
 		for (let ln in lan_names) {
-			if (index(nets, ln) >= 0) {
+			if (index(nets, ln) >= 0 || index(devs, ln) >= 0) {
+				covered_lan[ln] = true;
 				matched_lan = true;
-				break;
 			}
 		}
 		if (!matched_lan)
@@ -1512,9 +1564,20 @@ function check_fw4_lan_input(uci_cfg, opts) {
 		let policy = uc(trim('' + (sec.input || 'ACCEPT')));
 		if (policy != 'ACCEPT') {
 			push(warnings, sprintf(
-				'fw4 zone "%s" has input policy "%s" (expected ACCEPT); UDP TPROXY traffic may be blocked',
+				'fw4 zone "%s" has input policy "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
 				zname, policy
 			));
+		}
+	}
+
+	if (has_fw_config && default_input != 'ACCEPT') {
+		for (let ln in lan_names) {
+			if (!exists(covered_lan, ln)) {
+				push(warnings, sprintf(
+					'LAN interface "%s" is not assigned to any fw4 zone while defaults.input is "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
+					ln, default_input
+				));
+			}
 		}
 	}
 

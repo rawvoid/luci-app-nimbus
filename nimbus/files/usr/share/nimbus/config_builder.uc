@@ -940,6 +940,12 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	let local_dns_source = 'none';
 	let local_dns_server = null;
 	let dns_mode = d.mode || 'none';
+	let hijack_lan_dns = (d.hijack_lan_dns == '1' || d.hijack_lan_dns === 1 || d.hijack_lan_dns === true);
+	if (hijack_lan_dns && dns_mode == 'none') {
+		push(warnings,
+			'dns.hijack_lan_dns="1" is enabled while dns.mode="none": intercepted LAN DNS queries go to system dnsmasq using unproxied upstream resolvers unless dnsmasq is externally configured'
+		);
+	}
 	let proxy_local = (g.proxy_local == '1' || g.proxy_local === 1 || g.proxy_local === true ||
 		g.router_proxy == '1' || g.router_proxy === 1 || g.router_proxy === true);
 

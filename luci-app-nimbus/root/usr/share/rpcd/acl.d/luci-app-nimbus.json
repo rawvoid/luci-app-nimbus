@@ -8,11 +8,13 @@
 					"log_read",
 					"profile_list",
 					"profile_read",
+					"profile_preview",
 					"list_status",
 					"list_read",
 					"core_info",
 					"core_check_update",
 					"core_task_status",
+					"composer_list",
 					"composer_get",
 					"composer_nodes",
 					"composer_preview",
@@ -32,7 +34,6 @@
 					"log_clear",
 					"profile_save",
 					"profile_meta_save",
-					"profile_activate",
 					"profile_delete",
 					"profile_update",
 					"whitelist_config_save",
@@ -41,8 +42,9 @@
 					"list_delete",
 					"list_update",
 					"core_install",
+					"composer_create",
 					"composer_save",
-					"composer_mode_set"
+					"composer_delete"
 				]
 			},
 			"uci": [ "nimbus" ],

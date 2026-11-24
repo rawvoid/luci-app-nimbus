@@ -1,6 +1,5 @@
 config main 'global'
 	option enabled '0'
-	option config_mode 'composer'
 	option active_profile ''
 	option topology 'main'
 	option proxy_mode 'tproxy_redirect'

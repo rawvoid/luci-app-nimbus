@@ -50,10 +50,11 @@
 +-----------------------------------------------------------------------+
 ```
 
-### 1.1 双模式两阶段配置合成管线
+### 1.1 统一活动配置与两阶段配置合成管线
 
-- **`profile` 模式（完整配置）**：读取 `/etc/nimbus/profiles/<active_profile>` -> `config_builder.uc`（透明入站复用/补齐、DNS 防环路、规则动作与双 API 探测、`sing-box check`）-> `/var/run/nimbus/config.json`。
-- **`composer` 模式（编排配置，新装默认）**：读取 `/etc/nimbus/composer.json` + 共享 `/etc/nimbus/profiles/*.json`（仅提取非组出站节点）-> **Stage A** `config_composer.uc`（多源过滤提取、出站组展开与兜底、结构化编排与 RFC 7396 `override` 合并）-> **Stage B** `config_builder.uc` -> `/var/run/nimbus/config.json`。
+`nimbus` 不设全局「配置模式」，仅由单一 UCI 指针 `global.active_profile` 指定当前生效配置（按目标 Section 类型自动分流）：
+- **编排配置（`config composer` 多实例）**：读取 `/etc/nimbus/composers/<filename>`（权限 `0600`）+ 共享 `/etc/nimbus/profiles/*.json`（按需提取非组出站节点）-> **Stage A** `config_composer.uc`（多源过滤提取、出站组展开与兜底、结构化编排与 RFC 7396 `override` 合并）-> **Stage B** `config_builder.uc` -> `/var/run/nimbus/config.json`。
+- **独立订阅 / 本地配置（`config profile` 且 `as_config='1'`）**：读取 `/etc/nimbus/profiles/<filename>` -> **Stage B** `config_builder.uc`（透明入站复用/补齐、DNS 防环路、规则动作与双 API 探测、`sing-box check`）-> `/var/run/nimbus/config.json`。
 
 ---
 
@@ -168,8 +169,8 @@
 | 路径 | 介质 | 内容 | 读写策略 |
 | :--- | :--- | :--- | :--- |
 | `/etc/config/nimbus` | Flash | UCI 用户配置 | 仅用户修改配置时写入；不存放动态状态 |
-| `/etc/nimbus/composer.json` | Flash | 编排模式配置蓝图（权限 `0600`，含手动出站/复写 JSON 与各共享源提取策略） | 经 `sing-box check` 预校验且内容变化时单次原子替换 |
-| `/etc/nimbus/profiles/` | Flash | 本地上传与订阅原始 JSON（只读源，由 `profile` 模式与 `composer` 模式节点提取共享） | 订阅更新在 `/tmp` 按当前模式预校验通过且 `SHA256` 变化时原子替换 |
+| `/etc/nimbus/composers/` | Flash | 多套编排配置蓝图 `<filename>`（权限 `0600`，含手动出站/复写 JSON 与各订阅源提取策略） | 经 `sing-box check` 预校验且内容变化时单次原子替换 |
+| `/etc/nimbus/profiles/` | Flash | 远程订阅与本地只读 JSON 文件（任意条目均可被编排提取节点；启用 `as_config='1'` 者可直接作为 `active_profile` 独立运行） | 订阅更新在 `/tmp` 按 `as_config` 及当前生效配置引用情况预校验通过且 `SHA256` 变化时原子替换 |
 | `/etc/nimbus/lists/local/` | Flash | 多个独立手动白名单 `.txt` 文件 | 用户保存并通过格式校验后原子写入 |
 | `/etc/nimbus/lists/cache/` | Flash | 远程白名单源离线缓存 `<section_id>.txt` | `curl -z` 增量拉取，校验通过且 `SHA256` 变化时原子替换；上次更新时间直接读 `mtime` |
 | `/etc/nimbus/bin/` | Flash（可自定义外挂盘或 `/tmp`） | `sing-box` 二进制文件 | 仅在用户安装/升级内核时写入；操作前执行两阶段空间检查 |
@@ -177,7 +178,7 @@
 | `/var/run/nimbus/` | **RAM (`tmpfs`)** | `sing-box -D /var/run/nimbus` 工作目录（承接相对路径 `cache.db` 与 `dashboard/`）、`config.json`（`0600`）、`state.json`（`0600`，不含明文密钥）、`sing-box.pid`、`*.nft`、`core_task.json`、`nimbus.lock` | 全部驻留内存；用户 JSON 中显式绝对路径原样保留 |
 | `/var/log/nimbus.log` | **RAM (`tmpfs`)** | 独立运行日志（默认级别 `warn`） | `sing-box` 原生 `O_APPEND` 写入；`supervisor.uc` 定时器实施滞回截断（超过 512KB 时就地截断保留尾部 256KB） |
 
-**固件升级保留（`sysupgrade`）**：`/lib/upgrade/keep.d/nimbus` 注册 `/etc/config/nimbus`、`/etc/nimbus/composer.json`、`/etc/nimbus/profiles/`、`/etc/nimbus/lists/` 与 `/etc/nimbus/dns_backup.json`；不包含 `/etc/nimbus/bin/` 下的大体积内核二进制。
+**固件升级保留（`sysupgrade`）**：`/lib/upgrade/keep.d/nimbus` 注册 `/etc/config/nimbus`、`/etc/nimbus/composers/`、`/etc/nimbus/profiles/`、`/etc/nimbus/lists/` 与 `/etc/nimbus/dns_backup.json`；不包含 `/etc/nimbus/bin/` 下的大体积内核二进制。
 
 ---
 

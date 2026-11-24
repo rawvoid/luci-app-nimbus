@@ -1221,31 +1221,12 @@ function run_singbox_check(bin_path, config_path, check_dir) {
 	return { ok: true };
 }
 
-function resolve_profile_path(uci_cfg, profile_path, profiles_dir) {
-	if (type(profile_path) == 'string' && length(profile_path) > 0)
-		return { ok: true, path: profile_path };
-
-	let active = uci_cfg?.global?.active_profile;
-	if (type(active) != 'string' || length(active) == 0)
-		return fail(common.ERR_NOT_FOUND, 'global.active_profile is not configured');
-
-	let sec = uci_cfg?.[active];
-	if (type(sec) != 'object' || sec['.type'] != 'profile')
-		return fail(common.ERR_NOT_FOUND, sprintf('active profile section "%s" not found', active));
-
-	if (!common.is_valid_profile_filename(sec.filename))
-		return fail(common.ERR_INVALID_ARG, sprintf('invalid profile filename: %s', '' + sec.filename));
-
-	return { ok: true, path: (profiles_dir || common.PROFILES_DIR) + '/' + sec.filename };
-}
-
 function build_config(opts) {
 	let options = opts || {};
 	let uci_cfg = options.uci || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
 	let bin_path = options.bin_path || uci_cfg?.core?.bin_path || '/etc/nimbus/bin/sing-box';
 	let validate_only = (options.validate_only === true);
 	let skip_check = (options.skip_check === true);
-	let config_mode = common.normalize_config_mode(uci_cfg);
 
 	let core_version = options.core_version || null;
 	if (!skip_check || !core_version) {
@@ -1260,8 +1241,22 @@ function build_config(opts) {
 
 	let has_raw_config = (exists(options, 'raw_config') && options.raw_config != null);
 	let has_profile_path = (type(options.profile_path) == 'string' && length(options.profile_path) > 0);
-	let use_composer = (options.compose_from_composer === true) ||
-		(!has_raw_config && !has_profile_path && config_mode == common.CONFIG_MODE_COMPOSER);
+	let explicit_composer = (options.compose_from_composer === true ||
+		options.composer != null ||
+		(type(options.composer_file) == 'string' && length(options.composer_file) > 0) ||
+		(type(options.composer_id) == 'string' && length(options.composer_id) > 0));
+
+	let use_composer = explicit_composer;
+	let resolved_target = null;
+	if (!explicit_composer && !has_raw_config && !has_profile_path) {
+		resolved_target = common.resolve_active_target(uci_cfg, {
+			composers_dir: options.composers_dir,
+			profiles_dir: options.profiles_dir
+		});
+		if (!resolved_target.ok)
+			return resolved_target;
+		use_composer = (resolved_target.kind == 'composer');
+	}
 
 	let raw_cfg = null;
 	let stage_a_warnings = [];
@@ -1271,7 +1266,9 @@ function build_config(opts) {
 	if (use_composer) {
 		let comp_res = cc.compose(uci_cfg, {
 			composer: options.composer,
-			composer_file: options.composer_file,
+			composer_file: options.composer_file || (resolved_target ? resolved_target.path : null),
+			composer_id: options.composer_id,
+			composers_dir: options.composers_dir,
 			profiles_dir: options.profiles_dir,
 			override_profile_docs: options.override_profile_docs
 		});
@@ -1292,18 +1289,15 @@ function build_config(opts) {
 			raw_cfg = options.raw_config;
 		}
 	} else {
-		let p_res = resolve_profile_path(uci_cfg, options.profile_path, options.profiles_dir);
-		if (!p_res.ok)
-			return p_res;
-
-		let raw_text = fs.readfile(p_res.path);
+		let p_path = has_profile_path ? options.profile_path : resolved_target.path;
+		let raw_text = fs.readfile(p_path);
 		if (raw_text == null)
-			return fail(common.ERR_NOT_FOUND, sprintf('failed to read profile: %s', p_res.path));
+			return fail(common.ERR_NOT_FOUND, sprintf('failed to read profile: %s', p_path));
 
 		try {
 			raw_cfg = json(raw_text);
 		} catch (e) {
-			return fail(common.ERR_VALIDATE_FAILED, sprintf('invalid profile JSON (%s): %s', p_res.path, '' + e));
+			return fail(common.ERR_VALIDATE_FAILED, sprintf('invalid profile JSON (%s): %s', p_path, '' + e));
 		}
 	}
 
@@ -1325,8 +1319,8 @@ function build_config(opts) {
 
 	if (length(stage_a_warnings) > 0)
 		tr.context.warnings = [ ...stage_a_warnings, ...(tr.context.warnings || []) ];
-	tr.context.config_mode = config_mode;
-	tr.context.composer = (config_mode == common.CONFIG_MODE_COMPOSER) ? composer_summary : null;
+	tr.context.active_kind = use_composer ? 'composer' : 'profile';
+	tr.context.composer = use_composer ? composer_summary : null;
 	if (use_composer) {
 		tr.composed_config = composed_snapshot;
 		tr.composer_summary = composer_summary;

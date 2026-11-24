@@ -8,13 +8,6 @@
 var DEFAULT_EXCLUDE_TYPES = [ 'selector', 'urltest', 'direct', 'block', 'dns' ];
 var DEFAULT_STRIP_FIELDS = [ 'domain_resolver', 'routing_mark' ];
 
-function makeBadge(text, bg, fg) {
-	return E('span', {
-		'class': 'label',
-		'style': 'display:inline-block;padding:2px 7px;border-radius:3px;font-size:85%;font-weight:600;background:%s;color:%s;'.format(bg, fg)
-	}, text);
-}
-
 function parseCsvList(str) {
 	return String(str || '')
 		.split(/[\n,]+/)
@@ -212,11 +205,136 @@ function buildSnippetTextarea(initialObj, snippetList, onApplySnippet, errBox, r
 	};
 }
 
+function showComposerPreviewModal(title, previewArgs) {
+	var bodyBox = E('div', {}, [
+		E('p', {}, E('span', { 'class': 'spinning' }, _('Synthesizing configuration and running sing-box check...')))
+	]);
+
+	ui.showModal(title || _('Preview & Check'), [
+		bodyBox,
+		E('div', { 'class': 'right', 'style': 'margin-top:12px;' }, [
+			E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': ui.hideModal }, _('Close'))
+		])
+	]);
+
+	return nimbusApi.composerPreview(previewArgs).then(function(res) {
+		if (!res || res.ok === false) {
+			dom.content(bodyBox, E('div', { 'class': 'alert-message error' }, nimbusApi.formatError(res)));
+			return;
+		}
+
+		var effectiveText = res.effective_json || snippets.prettyJson(res.effective || {});
+		var composedText = res.composed_json || snippets.prettyJson(res.composed || {});
+		var previewTab = 'effective';
+
+		var statusBadge;
+		if (res.checked) {
+			statusBadge = res.check_ok
+				? E('span', { 'class': 'label' }, _('sing-box check: Passed'))
+				: E('strong', {}, _('sing-box check: Failed'));
+		} else {
+			statusBadge = E('em', {}, _('Preview Only (sing-box binary not installed)'));
+		}
+
+		var sum = res.summary || {};
+		var summaryLine = E('small', { 'style': 'opacity:0.75;' },
+			_('%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets').format(
+				sum.enabled_sources || 0,
+				sum.extracted_nodes || 0,
+				sum.groups || 0,
+				sum.inbounds || 0,
+				sum.dns_servers || 0,
+				sum.route_rules || 0,
+				sum.rule_sets || 0
+			));
+
+		var previewTextarea = E('textarea', {
+			'class': 'cbi-input-textarea',
+			'rows': '17',
+			'readonly': 'readonly',
+			'spellcheck': 'false',
+			'style': 'width:100%;font-family:monospace;font-size:12px;resize:vertical;'
+		}, effectiveText);
+
+		var effLi = E('li', { 'class': 'cbi-tab' }, [
+			E('a', {
+				'href': '#',
+				'click': function(ev) {
+					ev.preventDefault();
+					previewTab = 'effective';
+					effLi.className = 'cbi-tab';
+					compLi.className = 'cbi-tab-disabled';
+					previewTextarea.value = effectiveText;
+				}
+			}, _('Effective Runtime JSON (Stage B)'))
+		]);
+		var compLi = E('li', { 'class': 'cbi-tab-disabled' }, [
+			E('a', {
+				'href': '#',
+				'click': function(ev) {
+					ev.preventDefault();
+					previewTab = 'composed';
+					effLi.className = 'cbi-tab-disabled';
+					compLi.className = 'cbi-tab';
+					previewTextarea.value = composedText;
+				}
+			}, _('Composed JSON (Stage A)'))
+		]);
+
+		var copyBtn = E('button', {
+			'type': 'button',
+			'class': 'btn cbi-button cbi-button-action',
+			'click': function() {
+				var text = (previewTab === 'composed') ? composedText : effectiveText;
+				nimbusApi.copyToClipboard(text).then(function() {
+					nimbusApi.notifySuccess(_('JSON copied to clipboard.'));
+				}, function() {
+					nimbusApi.notifyError(_('Failed to copy to clipboard.'));
+				});
+			}
+		}, _('Copy JSON'));
+
+		var blocks = [
+			E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;' }, [
+				statusBadge,
+				summaryLine
+			])
+		];
+
+		if (res.checked && !res.check_ok && res.check_error) {
+			blocks.push(E('div', { 'class': 'alert-message error', 'style': 'margin-bottom:10px;' }, [
+				E('strong', {}, _('Validation Error:')),
+				E('pre', { 'style': 'margin:6px 0 0;white-space:pre-wrap;word-break:break-word;font-size:11px;' }, res.check_error)
+			]));
+		}
+
+		if (Array.isArray(res.warnings) && res.warnings.length > 0) {
+			blocks.push(E('div', { 'class': 'alert-message warning', 'style': 'margin-bottom:10px;' }, [
+				E('strong', {}, _('Warnings:')),
+				E('ul', { 'style': 'margin:4px 0 0 18px;' }, res.warnings.map(function(w) {
+					return E('li', {}, w);
+				}))
+			]));
+		}
+
+		blocks.push(E('ul', { 'class': 'cbi-tabmenu' }, [ effLi, compLi ]));
+		blocks.push(previewTextarea);
+		blocks.push(E('div', { 'style': 'display:flex;justify-content:flex-start;margin-top:8px;' }, [ copyBtn ]));
+
+		dom.content(bodyBox, blocks);
+	}).catch(function(err) {
+		dom.content(bodyBox, E('div', { 'class': 'alert-message error' }, nimbusApi.formatError(err)));
+	});
+}
+
 function renderWorkspace(opts) {
 	var options = opts || {};
 	var initComp = options.initialComposerData || {};
 	var initProf = options.initialProfileList || {};
-	var sharedActions = options.sharedProfileActions || {};
+	var composerId = options.sectionId || initComp.id || '';
+	var composerName = initComp.name || composerId;
+	var composerFilename = initComp.filename || '';
+	var isActive = Boolean(initComp.active);
 
 	var draft = parseComposerFromPayload(initComp);
 	var profiles = (Array.isArray(initProf.profiles) && initProf.profiles.length > 0)
@@ -241,14 +359,48 @@ function renderWorkspace(opts) {
 	var overrideText = snippets.prettyJson(draft.override);
 	var overrideError = null;
 
-	var headerBox = E('div', { 'class': 'cbi-section' });
+	var headerBarEl = E('div', {});
+	var nameInput = E('input', {
+		'type': 'text',
+		'class': 'cbi-input-text',
+		'value': composerName,
+		'placeholder': _('e.g. Main Router')
+	});
+	var filenameCode = E('code', {}, composerFilename || '-');
+	var headerMetaEl = E('div', { 'style': 'margin-top:10px;' }, [
+		E('div', { 'class': 'cbi-value' }, [
+			E('label', { 'class': 'cbi-value-title' }, _('Configuration Name')),
+			E('div', { 'class': 'cbi-value-field' }, [
+				E('div', { 'style': 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;' }, [
+					nameInput,
+					E('small', { 'style': 'opacity:0.75;' }, [
+						_('File: '),
+						filenameCode
+					])
+				])
+			])
+		])
+	]);
+
+	var headerBox = E('div', { 'class': 'cbi-section' }, [
+		headerBarEl,
+		headerMetaEl
+	]);
 	var tabMenu = E('ul', { 'class': 'cbi-tabmenu' });
-	var tabPanel = E('div', { 'class': 'cbi-section' });
-	var rootEl = E('div', { 'class': 'nimbus-composer-workspace' }, [
-		headerBox,
+	var tabPanel = E('div', { 'class': 'cbi-section-node cbi-section-node-tabbed' });
+	var tabSection = E('div', { 'class': 'cbi-section' }, [
 		tabMenu,
 		tabPanel
 	]);
+	var rootEl = E('div', { 'class': 'nimbus-composer-workspace' }, [
+		headerBox,
+		tabSection
+	]);
+
+	nameInput.addEventListener('input', function() {
+		composerName = nameInput.value;
+		markDirty({ skipTabRender: true });
+	});
 
 	var TABS = [
 		{ id: 'sources', label: _('Sources') },
@@ -414,24 +566,31 @@ function renderWorkspace(opts) {
 		});
 	}
 
-	function saveComposer(reload) {
+	function saveComposer(reload, saveOpts) {
 		if (busy)
-			return;
+			return Promise.resolve(false);
+		var trimmedName = String(composerName || '').trim();
+		if (!trimmedName) {
+			nimbusApi.notifyError(_('Configuration name cannot be empty.'));
+			return Promise.resolve(false);
+		}
 		var jsonStr = validateBeforeComposerSend();
 		if (!jsonStr)
-			return;
+			return Promise.resolve(false);
 
 		busy = true;
 		renderHeader();
 
-		nimbusApi.composerSave({
+		return nimbusApi.composerSave({
+			section_id: composerId,
+			name: trimmedName,
 			composer_json: jsonStr,
 			validate: true,
 			reload: reload === true
 		}).then(function(res) {
 			busy = false;
 			if (destroyed)
-				return;
+				return false;
 			if (!res || res.ok === false) {
 				nimbusApi.notifyError(res);
 				if (res && Array.isArray(res.warnings) && res.warnings.length > 0) {
@@ -440,9 +599,11 @@ function renderWorkspace(opts) {
 					})), 'warning');
 				}
 				renderHeader();
-				return;
+				return false;
 			}
 
+			composerName = res.name || trimmedName;
+			nameInput.value = composerName;
 			draft = parseComposerFromPayload(res);
 			syncOverrideTextFromDraft();
 			dirty = false;
@@ -450,14 +611,18 @@ function renderWorkspace(opts) {
 			savedMtime = res.mtime || Math.floor(Date.now() / 1000);
 			setBeforeUnload(false);
 
-			if (reload && res.reloaded)
-				nimbusApi.notifySuccess(_('Composer configuration saved, validated, and applied.'));
-			else if (res.reload_required)
-				nimbusApi.notifySuccess(_('Composer configuration saved and validated. Reload service to apply changes.'));
-			else if (res.checked)
-				nimbusApi.notifySuccess(_('Composer configuration saved and validated with sing-box.'));
-			else
-				nimbusApi.notifySuccess(_('Composer configuration saved.'));
+			if (!saveOpts || !saveOpts.silentSuccess) {
+				if (reload && res.reloaded)
+					nimbusApi.notifySuccess(_('Composer "%s" saved, validated, and applied.').format(composerName));
+				else if (reload && !isActive)
+					nimbusApi.notifySuccess(_('Composer "%s" saved and validated. Select it as Active Configuration in Settings to apply.').format(composerName));
+				else if (res.reload_required)
+					nimbusApi.notifySuccess(_('Composer "%s" saved and validated. Reload service to apply changes.').format(composerName));
+				else if (res.checked)
+					nimbusApi.notifySuccess(_('Composer "%s" saved and validated with sing-box.').format(composerName));
+				else
+					nimbusApi.notifySuccess(_('Composer "%s" saved.').format(composerName));
+			}
 
 			if (Array.isArray(res.warnings) && res.warnings.length > 0) {
 				ui.addNotification(null, E('div', {}, [
@@ -470,14 +635,60 @@ function renderWorkspace(opts) {
 
 			renderHeader();
 			renderActiveTab();
-			if (typeof options.onSaved === 'function')
+			if ((!saveOpts || !saveOpts.skipOnSaved) && typeof options.onSaved === 'function')
 				options.onSaved(res);
+			return true;
 		}).catch(function(err) {
 			busy = false;
 			if (!destroyed) {
 				nimbusApi.notifyError(err);
 				renderHeader();
 			}
+			return false;
+		});
+	}
+
+	function resetComposer() {
+		if (busy)
+			return Promise.resolve(false);
+		busy = true;
+		renderHeader();
+
+		return nimbusApi.composerGet(composerId).then(function(res) {
+			busy = false;
+			if (destroyed)
+				return false;
+			if (!res || res.ok === false) {
+				nimbusApi.notifyError(res);
+				renderHeader();
+				return false;
+			}
+			composerName = res.name || composerId;
+			composerFilename = res.filename || composerFilename;
+			isActive = Boolean(res.active);
+			nameInput.value = composerName;
+			dom.content(filenameCode, composerFilename || '-');
+			draft = parseComposerFromPayload(res);
+			if (Array.isArray(res.profiles))
+				profiles = res.profiles.slice();
+			if (res.auto_inbounds)
+				autoInbounds = res.auto_inbounds;
+			savedExists = Boolean(res.exists);
+			savedMtime = res.mtime || null;
+			syncOverrideTextFromDraft();
+			dirty = false;
+			setBeforeUnload(false);
+			nimbusApi.notifySuccess(_('Unsaved changes discarded.'));
+			renderHeader();
+			renderActiveTab();
+			return true;
+		}).catch(function(err) {
+			busy = false;
+			if (!destroyed) {
+				nimbusApi.notifyError(err);
+				renderHeader();
+			}
+			return false;
 		});
 	}
 
@@ -485,128 +696,10 @@ function renderWorkspace(opts) {
 		var jsonStr = validateBeforeComposerSend();
 		if (!jsonStr)
 			return;
-
-		var bodyBox = E('div', {}, [
-			E('p', {}, E('span', { 'class': 'spinning' }, _('Synthesizing configuration and running sing-box check...')))
-		]);
-
-		ui.showModal(_('Preview & Check'), [
-			bodyBox,
-			E('div', { 'class': 'right', 'style': 'margin-top:12px;' }, [
-				E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': ui.hideModal }, _('Close'))
-			])
-		]);
-
-		nimbusApi.composerPreview({
+		showComposerPreviewModal(_('Preview & Check: %s').format(composerName || composerId), {
+			section_id: composerId,
 			composer_json: jsonStr,
 			validate: true
-		}).then(function(res) {
-			if (!res || res.ok === false) {
-				dom.content(bodyBox, E('div', { 'class': 'alert-message error' }, nimbusApi.formatError(res)));
-				return;
-			}
-
-			var effectiveText = res.effective_json || snippets.prettyJson(res.effective || {});
-			var composedText = res.composed_json || snippets.prettyJson(res.composed || {});
-			var previewTab = 'effective';
-
-			var statusBadge;
-			if (res.checked) {
-				statusBadge = res.check_ok
-					? makeBadge(_('sing-box check: Passed'), '#e6f4ea', '#137333')
-					: makeBadge(_('sing-box check: Failed'), '#fce8e6', '#c5221f');
-			} else {
-				statusBadge = makeBadge(_('Preview Only (sing-box binary not installed)'), '#fef7e0', '#b06000');
-			}
-
-			var sum = res.summary || {};
-			var summaryLine = E('span', { 'style': 'font-size:90%;color:#666;' },
-				_('%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets').format(
-					sum.enabled_sources || 0,
-					sum.extracted_nodes || 0,
-					sum.groups || 0,
-					sum.inbounds || 0,
-					sum.dns_servers || 0,
-					sum.route_rules || 0,
-					sum.rule_sets || 0
-				));
-
-			var previewTextarea = E('textarea', {
-				'class': 'cbi-input-textarea',
-				'rows': '17',
-				'readonly': 'readonly',
-				'spellcheck': 'false',
-				'style': 'width:100%;font-family:monospace;font-size:12px;resize:vertical;'
-			}, effectiveText);
-
-			var effLi = E('li', { 'class': 'cbi-tab' }, [
-				E('a', {
-					'href': '#',
-					'click': function(ev) {
-						ev.preventDefault();
-						previewTab = 'effective';
-						effLi.className = 'cbi-tab';
-						compLi.className = 'cbi-tab-disabled';
-						previewTextarea.value = effectiveText;
-					}
-				}, _('Effective Runtime JSON (Stage B)'))
-			]);
-			var compLi = E('li', { 'class': 'cbi-tab-disabled' }, [
-				E('a', {
-					'href': '#',
-					'click': function(ev) {
-						ev.preventDefault();
-						previewTab = 'composed';
-						effLi.className = 'cbi-tab-disabled';
-						compLi.className = 'cbi-tab';
-						previewTextarea.value = composedText;
-					}
-				}, _('Composed JSON (Stage A)'))
-			]);
-
-			var copyBtn = E('button', {
-				'type': 'button',
-				'class': 'btn cbi-button cbi-button-action',
-				'click': function() {
-					var text = (previewTab === 'composed') ? composedText : effectiveText;
-					nimbusApi.copyToClipboard(text).then(function() {
-						nimbusApi.notifySuccess(_('JSON copied to clipboard.'));
-					}, function() {
-						nimbusApi.notifyError(_('Failed to copy to clipboard.'));
-					});
-				}
-			}, _('Copy JSON'));
-
-			var blocks = [
-				E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;' }, [
-					statusBadge,
-					summaryLine
-				])
-			];
-
-			if (res.checked && !res.check_ok && res.check_error) {
-				blocks.push(E('div', { 'class': 'alert-message error', 'style': 'margin-bottom:10px;' }, [
-					E('strong', {}, _('Validation Error:')),
-					E('pre', { 'style': 'margin:6px 0 0;white-space:pre-wrap;word-break:break-word;font-size:11px;' }, res.check_error)
-				]));
-			}
-
-			if (Array.isArray(res.warnings) && res.warnings.length > 0) {
-				blocks.push(E('div', { 'class': 'alert-message warning', 'style': 'margin-bottom:10px;' }, [
-					E('strong', {}, _('Warnings:')),
-					E('ul', { 'style': 'margin:4px 0 0 18px;' }, res.warnings.map(function(w) {
-						return E('li', {}, w);
-					}))
-				]));
-			}
-
-			blocks.push(E('ul', { 'class': 'cbi-tabmenu' }, [ effLi, compLi ]));
-			blocks.push(previewTextarea);
-			blocks.push(E('div', { 'style': 'display:flex;justify-content:flex-start;margin-top:8px;' }, [ copyBtn ]));
-
-			dom.content(bodyBox, blocks);
-		}).catch(function(err) {
-			dom.content(bodyBox, E('div', { 'class': 'alert-message error' }, nimbusApi.formatError(err)));
 		});
 	}
 
@@ -756,7 +849,7 @@ function renderWorkspace(opts) {
 				_('Unsaved draft changes are present. Applying a preset or importing will replace the current draft.')) : '',
 			E('div', { 'style': 'margin-bottom:14px;' }, [
 				E('h4', { 'style': 'margin:0 0 6px;' }, _('Starter Presets')),
-				E('p', { 'style': 'margin:0 0 8px;font-size:90%;color:#666;' },
+				E('div', { 'class': 'cbi-section-descr', 'style': 'margin:0 0 8px;' },
 					_('Load a clean sing-box 1.14 composer blueprint (no deprecated fields).')),
 				E('div', { 'style': 'display:flex;gap:8px;flex-wrap:wrap;' }, [
 					E('button', {
@@ -779,14 +872,16 @@ function renderWorkspace(opts) {
 					}, _('Blank Canvas'))
 				])
 			]),
-			E('div', { 'style': 'margin-bottom:14px;padding-top:10px;border-top:1px solid #eee;' }, [
+			E('hr'),
+			E('div', { 'style': 'margin-bottom:14px;' }, [
 				E('h4', { 'style': 'margin:0 0 6px;' }, _('Import from Existing Profile')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;' }, [
 					profileSelect,
 					importProfBtn
 				])
 			]),
-			E('div', { 'style': 'margin-bottom:12px;padding-top:10px;border-top:1px solid #eee;' }, [
+			E('hr'),
+			E('div', { 'style': 'margin-bottom:12px;' }, [
 				E('h4', { 'style': 'margin:0 0 6px;' }, _('Import from Raw sing-box JSON')),
 				rawTextarea,
 				E('div', { 'style': 'margin-top:8px;' }, [ importJsonBtn ])
@@ -801,11 +896,11 @@ function renderWorkspace(opts) {
 		var stats = computeStats();
 		var statusBadge;
 		if (dirty)
-			statusBadge = makeBadge(_('Unsaved Changes'), '#fef0e1', '#c25e00');
+			statusBadge = E('span', { 'class': 'label notice' }, _('Unsaved Changes'));
 		else if (!savedExists)
-			statusBadge = makeBadge(_('Not Saved Yet'), '#fef7e0', '#b06000');
+			statusBadge = E('em', {}, _('Not Saved Yet'));
 		else
-			statusBadge = makeBadge(_('Synced'), '#e6f4ea', '#137333');
+			statusBadge = E('span', { 'class': 'label' }, _('Synced'));
 
 		var statsText = _('%d sources · %d groups · %d manual outbounds · %d rules').format(
 			stats.enabledSources,
@@ -814,14 +909,25 @@ function renderWorkspace(opts) {
 			stats.rules
 		);
 
-		var leftSide = E('div', { 'style': 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;' }, [
-			statusBadge,
-			E('span', { 'style': 'font-size:90%;color:#555;' }, statsText),
-			(savedExists && savedMtime)
-				? E('span', { 'style': 'font-size:85%;color:#888;' }, _('Saved: %s').format(nimbusApi.formatTimestamp(savedMtime)))
-				: '',
-			busy ? E('span', { 'class': 'spinning', 'style': 'font-size:90%;' }, _('Processing...')) : ''
-		]);
+		var leftItems = [];
+		if (typeof options.onBack === 'function') {
+			leftItems.push(E('button', {
+				'type': 'button',
+				'class': 'btn cbi-button',
+				'disabled': busy ? 'disabled' : null,
+				'click': function() { options.onBack(); }
+			}, _('Back to Config List')));
+		}
+		if (isActive)
+			leftItems.push(E('span', { 'class': 'label' }, _('Active')));
+		leftItems.push(statusBadge);
+		leftItems.push(E('small', { 'style': 'opacity:0.8;' }, statsText));
+		if (savedExists && savedMtime)
+			leftItems.push(E('small', { 'style': 'opacity:0.7;' }, _('Saved: %s').format(nimbusApi.formatTimestamp(savedMtime))));
+		if (busy)
+			leftItems.push(E('span', { 'class': 'spinning' }, _('Processing...')));
+
+		var leftSide = E('div', { 'style': 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;' }, leftItems);
 
 		var rightSide = E('div', { 'style': 'display:flex;gap:8px;flex-wrap:wrap;' }, [
 			E('button', {
@@ -835,23 +941,11 @@ function renderWorkspace(opts) {
 				'class': 'btn cbi-button cbi-button-action',
 				'disabled': busy ? 'disabled' : null,
 				'click': openPreviewModal
-			}, _('Preview & Check')),
-			E('button', {
-				'type': 'button',
-				'class': 'btn cbi-button cbi-button-save',
-				'disabled': busy ? 'disabled' : null,
-				'click': function() { saveComposer(false); }
-			}, _('Save')),
-			E('button', {
-				'type': 'button',
-				'class': 'btn cbi-button cbi-button-apply',
-				'disabled': busy ? 'disabled' : null,
-				'click': function() { saveComposer(true); }
-			}, _('Save & Apply'))
+			}, _('Preview & Check'))
 		]);
 
-		dom.content(headerBox, E('div', {
-			'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 12px;border:1px solid #e0e0e0;border-radius:4px;background:#fafafa;'
+		dom.content(headerBarEl, E('div', {
+			'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;'
 		}, [ leftSide, rightSide ]));
 	}
 
@@ -894,11 +988,11 @@ function renderWorkspace(opts) {
 			]));
 		}
 
-		blocks.push(E('div', { 'style': 'margin-bottom:6px;font-size:90%;color:#555;' },
-			_('Matched %d node(s).').format(nodes.length)));
+		blocks.push(E('div', { 'style': 'margin-bottom:6px;' },
+			E('small', { 'style': 'opacity:0.75;' }, _('Matched %d node(s).').format(nodes.length))));
 
 		if (nodes.length === 0) {
-			blocks.push(E('div', { 'style': 'font-size:90%;color:#777;' }, emptyText || _('No nodes matched.')));
+			blocks.push(E('em', {}, emptyText || _('No nodes matched.')));
 		} else {
 			var rows = [
 				E('tr', { 'class': 'tr cbi-section-table-titles' }, [
@@ -919,7 +1013,7 @@ function renderWorkspace(opts) {
 					E('td', { 'class': 'td' }, srv)
 				]));
 			});
-			blocks.push(E('div', { 'style': 'max-height:240px;overflow:auto;border:1px solid #e5e5e5;border-radius:3px;' }, [
+			blocks.push(E('div', { 'style': 'max-height:240px;overflow:auto;' }, [
 				E('table', { 'class': 'table cbi-section-table', 'style': 'margin:0;' }, rows)
 			]));
 		}
@@ -947,6 +1041,7 @@ function renderWorkspace(opts) {
 		}
 
 		nimbusApi.composerNodes({
+			section_id: composerId,
 			profile_id: profile.id,
 			composer_json: jsonStr
 		}).then(function(res) {
@@ -1053,6 +1148,7 @@ function renderWorkspace(opts) {
 				testBtn.disabled = true;
 				dom.content(testResultBox, E('span', { 'class': 'spinning' }, _('Testing extraction...')));
 				nimbusApi.composerNodes({
+					section_id: composerId,
 					profile_id: profile.id,
 					composer_json: jsonStr
 				}).then(function(res) {
@@ -1124,12 +1220,12 @@ function renderWorkspace(opts) {
 		}, _('Save'));
 
 		var groupAttachEl = groupCheckboxes.length === 0
-			? E('span', { 'style': 'color:#777;font-size:90%;' }, _('No outbound groups defined.'))
+			? E('em', {}, _('No outbound groups defined.'))
 			: E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:10px;' }, groupCheckboxes.map(function(item) {
 				return E('label', { 'style': 'display:inline-flex;align-items:center;gap:5px;margin:0;font-weight:normal;' }, [
 					item.cb,
 					E('span', {}, item.group.tag || item.group.id),
-					item.hasWildcard ? makeBadge('* ' + _('All'), '#e8f0fe', '#1967d2') : ''
+					item.hasWildcard ? E('span', { 'class': 'label notice' }, '* ' + _('All')) : ''
 				]);
 			}));
 
@@ -1200,30 +1296,16 @@ function renderWorkspace(opts) {
 	}
 
 	function renderSourcesTab() {
-		var hasSubs = profiles.some(function(p) { return p.type === 'subscription'; });
 		var pmap = getProfileMap();
 		var orphanIds = Object.keys(draft.sources).filter(function(sid) { return !pmap[sid]; });
+		var subUrl = L.url('admin', 'services', 'nimbus', 'subscriptions');
 
 		var toolbar = E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;' }, [
 			E('div', { 'style': 'display:flex;gap:8px;flex-wrap:wrap;' }, [
-				E('button', {
-					'type': 'button',
-					'class': 'btn cbi-button cbi-button-add',
-					'disabled': busy ? 'disabled' : null,
-					'click': function() {
-						if (typeof sharedActions.openMetaModal === 'function')
-							sharedActions.openMetaModal(null);
-					}
-				}, _('Add Source / Profile')),
-				E('button', {
-					'type': 'button',
-					'class': 'btn cbi-button cbi-button-action',
-					'disabled': (busy || !hasSubs) ? 'disabled' : null,
-					'click': function() {
-						if (typeof sharedActions.runProfileUpdate === 'function')
-							sharedActions.runProfileUpdate('');
-					}
-				}, _('Update All Subscriptions')),
+				E('a', {
+					'class': 'btn cbi-button',
+					'href': subUrl
+				}, _('Manage Subscriptions')),
 				E('button', {
 					'type': 'button',
 					'class': 'btn cbi-button',
@@ -1231,8 +1313,8 @@ function renderWorkspace(opts) {
 					'click': refreshProfilesOnly
 				}, _('Refresh'))
 			]),
-			E('span', { 'style': 'font-size:90%;color:#666;' },
-				_('Shared profiles under /etc/nimbus/profiles/. Toggle Extract to include nodes in Composer.'))
+			E('small', { 'style': 'opacity:0.75;' },
+				_('Toggle Extract to include nodes from shared subscriptions in Composer.'))
 		]);
 
 		var blocks = [ toolbar ];
@@ -1258,7 +1340,6 @@ function renderWorkspace(opts) {
 			E('tr', { 'class': 'tr cbi-section-table-titles' }, [
 				E('th', { 'class': 'th' }, _('Extract')),
 				E('th', { 'class': 'th' }, _('Name & File')),
-				E('th', { 'class': 'th' }, _('Subscription')),
 				E('th', { 'class': 'th' }, _('Extraction Rules')),
 				E('th', { 'class': 'th' }, _('Attached Groups')),
 				E('th', { 'class': 'th right' }, _('Actions'))
@@ -1267,7 +1348,10 @@ function renderWorkspace(opts) {
 
 		if (profiles.length === 0) {
 			rows.push(E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td center', 'colspan': '6' }, _('No profiles configured yet. Click "Add Source / Profile" to add one.'))
+				E('td', { 'class': 'td center', 'colspan': '5' }, [
+					E('span', {}, _('No subscriptions or profiles found. ')),
+					E('a', { 'href': subUrl }, _('Go to Subscriptions'))
+				])
 			]));
 		} else {
 			profiles.forEach(function(p) {
@@ -1285,30 +1369,21 @@ function renderWorkspace(opts) {
 
 				var fileMeta = p.exists
 					? '%s · %s'.format(nimbusApi.formatBytes(p.size_bytes || 0), nimbusApi.formatTimestamp(p.mtime))
-					: _('File missing');
+					: null;
 
 				var nameCell = E('div', {}, [
-					E('div', { 'style': 'font-weight:600;' }, p.name || p.id),
-					E('div', { 'style': 'font-size:85%;color:#666;' }, [
+					E('div', { 'style': 'font-weight:600;' }, [
+						E('span', {}, p.name || p.id),
+						' ',
+						E('small', { 'style': 'font-weight:normal;opacity:0.75;' },
+							p.type === 'subscription' ? '(' + _('Subscription') + ')' : '(' + _('Local') + ')')
+					]),
+					E('small', { 'style': 'opacity:0.75;' }, [
 						E('code', {}, p.filename || '-'),
 						' · ',
-						p.exists ? fileMeta : makeBadge(_('Missing'), '#fef7e0', '#b06000')
+						fileMeta ? fileMeta : E('em', {}, _('Missing'))
 					])
 				]);
-
-				var subCell = '-';
-				if (p.type === 'subscription') {
-					var subParts = [];
-					subParts.push(p.auto_update ? _('Auto: %dh').format(p.update_interval_hours || 24) : _('Manual'));
-					if (p.via_proxy)
-						subParts.push(_('Via Proxy'));
-					subCell = E('div', {}, [
-						E('div', { 'style': 'max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', 'title': p.url || '' }, p.url || '-'),
-						E('div', { 'style': 'font-size:85%;color:#666;' }, subParts.join(' · '))
-					]);
-				} else {
-					subCell = _('Local');
-				}
 
 				var ruleParts = [];
 				if (src) {
@@ -1322,16 +1397,18 @@ function renderWorkspace(opts) {
 						ruleParts.push(_('Override: %d keys').format(Object.keys(src.node_override).length));
 				}
 				var rulesCell = ruleParts.length > 0
-					? E('div', { 'style': 'font-size:85%;color:#444;' }, ruleParts.join(' · '))
-					: E('span', { 'style': 'color:#888;' }, _('Default'));
+					? E('small', { 'style': 'opacity:0.85;' }, ruleParts.join(' · '))
+					: E('em', { 'style': 'opacity:0.75;' }, _('Default'));
 
 				var attached = getGroupAttachedSummary(p.id);
 				var attachedCell = attached.length > 0
 					? E('div', { 'style': 'display:flex;gap:4px;flex-wrap:wrap;' }, attached.map(function(a) {
 						var lbl = a.viaWildcard ? '%s (*)'.format(a.tag) : a.tag;
-						return makeBadge(lbl, a.enabled ? '#e8f0fe' : '#f1f3f4', a.enabled ? '#1967d2' : '#5f6368');
+						return a.enabled
+							? E('span', { 'class': 'label' }, lbl)
+							: E('em', { 'style': 'opacity:0.75;' }, lbl);
 					}))
-					: E('span', { 'style': 'color:#888;' }, '-');
+					: E('span', { 'style': 'opacity:0.6;' }, '-');
 
 				var actBtns = [
 					E('button', {
@@ -1346,59 +1423,12 @@ function renderWorkspace(opts) {
 					}, _('Nodes'))
 				];
 
-				if (p.type === 'subscription') {
-					actBtns.push(E('button', {
-						'type': 'button',
-						'class': 'btn cbi-button cbi-button-neutral',
-						'click': function() {
-							if (typeof sharedActions.runProfileUpdate === 'function')
-								sharedActions.runProfileUpdate(p.id);
-						}
-					}, _('Update')));
-				}
-
-				actBtns.push(
-					E('button', {
-						'type': 'button',
-						'class': 'btn cbi-button',
-						'click': function() {
-							if (typeof sharedActions.openJsonEditor === 'function')
-								sharedActions.openJsonEditor(p);
-						}
-					}, _('Edit JSON')),
-					E('button', {
-						'type': 'button',
-						'class': 'btn cbi-button',
-						'click': function(ev) {
-							if (typeof sharedActions.handleUploadJson === 'function')
-								sharedActions.handleUploadJson(p.filename, true, ev.currentTarget);
-						}
-					}, _('Upload')),
-					E('button', {
-						'type': 'button',
-						'class': 'btn cbi-button',
-						'click': function() {
-							if (typeof sharedActions.openMetaModal === 'function')
-								sharedActions.openMetaModal(p);
-						}
-					}, _('Meta')),
-					E('button', {
-						'type': 'button',
-						'class': 'btn cbi-button cbi-button-negative',
-						'click': function() {
-							if (typeof sharedActions.deleteProfile === 'function')
-								sharedActions.deleteProfile(p);
-						}
-					}, _('Delete'))
-				);
-
 				rows.push(E('tr', { 'class': 'tr cbi-section-table-row' }, [
 					E('td', { 'class': 'td' }, extractCb),
 					E('td', { 'class': 'td' }, nameCell),
-					E('td', { 'class': 'td' }, subCell),
 					E('td', { 'class': 'td' }, rulesCell),
 					E('td', { 'class': 'td' }, attachedCell),
-					E('td', { 'class': 'td right' }, E('div', { 'style': 'display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;' }, actBtns))
+					E('td', { 'class': 'td right', 'style': 'white-space:nowrap;' }, E('div', { 'style': 'display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;' }, actBtns))
 				]));
 			});
 		}
@@ -1552,15 +1582,24 @@ function renderWorkspace(opts) {
 
 		function renderProviders() {
 			if (providers.length === 0) {
-				dom.content(providersBox, E('div', { 'style': 'font-size:90%;color:#777;margin-bottom:6px;' },
-					_('No subscription bindings configured (group uses static outbounds only).')));
+				dom.content(providersBox, E('div', { 'style': 'margin-bottom:6px;' },
+					E('em', {}, _('No subscription bindings configured (group uses static outbounds only).'))));
 				return;
 			}
 
-			var rows = providers.map(function(pv, idx) {
+			var tableRows = [
+				E('tr', { 'class': 'tr cbi-section-table-titles' }, [
+					E('th', { 'class': 'th' }, _('Source')),
+					E('th', { 'class': 'th' }, _('Include Regex')),
+					E('th', { 'class': 'th' }, _('Exclude Regex')),
+					E('th', { 'class': 'th right' }, _('Actions'))
+				])
+			];
+
+			providers.forEach(function(pv, idx) {
 				var srcSelect = E('select', {
 					'class': 'cbi-input-select',
-					'style': 'min-width:140px;max-width:190px;',
+					'style': 'width:100%;min-width:130px;',
 					'change': function() { pv.profile_id = srcSelect.value; }
 				}, [
 					E('option', { 'value': '*', 'selected': (pv.profile_id || '*') === '*' ? 'selected' : null }, _('* (All enabled sources)'))
@@ -1575,16 +1614,16 @@ function renderWorkspace(opts) {
 					'type': 'text',
 					'class': 'cbi-input-text',
 					'value': pv.include_regex || '',
-					'placeholder': _('Include regex (e.g. HK|SG)'),
-					'style': 'min-width:130px;flex:1;',
+					'placeholder': _('e.g. HK|SG'),
+					'style': 'width:100%;min-width:110px;',
 					'input': function() { pv.include_regex = pInc.value; }
 				});
 				var pExc = E('input', {
 					'type': 'text',
 					'class': 'cbi-input-text',
 					'value': pv.exclude_regex || '',
-					'placeholder': _('Exclude regex'),
-					'style': 'min-width:120px;flex:1;',
+					'placeholder': _('Optional'),
+					'style': 'width:100%;min-width:100px;',
 					'input': function() { pv.exclude_regex = pExc.value; }
 				});
 
@@ -1607,6 +1646,7 @@ function renderWorkspace(opts) {
 						prevBtn.disabled = true;
 						dom.content(previewBox, E('span', { 'class': 'spinning' }, _('Matching nodes...')));
 						nimbusApi.composerNodes({
+							section_id: composerId,
 							profile_id: (pv.profile_id && pv.profile_id !== '*') ? pv.profile_id : '',
 							composer_json: jsonStr,
 							include_regex: pv.include_regex || '',
@@ -1631,12 +1671,17 @@ function renderWorkspace(opts) {
 					}
 				}, _('Remove'));
 
-				return E('div', {
-					'style': 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;padding:6px;border:1px solid #ececec;border-radius:3px;background:#fcfcfc;'
-				}, [ srcSelect, pInc, pExc, prevBtn, rmBtn ]);
+				tableRows.push(E('tr', { 'class': 'tr cbi-section-table-row' }, [
+					E('td', { 'class': 'td' }, srcSelect),
+					E('td', { 'class': 'td' }, pInc),
+					E('td', { 'class': 'td' }, pExc),
+					E('td', { 'class': 'td right', 'style': 'white-space:nowrap;' }, [ prevBtn, ' ', rmBtn ])
+				]));
 			});
 
-			dom.content(providersBox, rows);
+			dom.content(providersBox, E('div', { 'style': 'overflow-x:auto;margin-bottom:6px;' }, [
+				E('table', { 'class': 'table cbi-section-table', 'style': 'margin:0;' }, tableRows)
+			]));
 		}
 
 		renderProviders();
@@ -2024,7 +2069,7 @@ function renderWorkspace(opts) {
 
 		ui.showModal(title, [
 			errBox,
-			E('p', { 'style': 'font-size:90%;color:#666;margin-top:0;' }, descr),
+			E('div', { 'class': 'cbi-section-descr', 'style': 'margin-top:0;' }, descr),
 			E('div', { 'style': 'margin-bottom:6px;' }, [
 				E('button', {
 					'type': 'button',
@@ -2106,8 +2151,8 @@ function renderWorkspace(opts) {
 					summaryParts.push(_('Fallback: %s').format(g.fallback_outbound));
 
 				var summaryCell = E('div', {}, [
-					E('div', { 'style': 'font-size:90%;' }, summaryParts.length ? summaryParts.join(' · ') : '-'),
-					g.remark ? E('div', { 'style': 'font-size:85%;color:#666;' }, g.remark) : ''
+					E('div', {}, summaryParts.length ? summaryParts.join(' · ') : '-'),
+					g.remark ? E('small', { 'style': 'opacity:0.75;' }, g.remark) : ''
 				]);
 
 				grpRows.push(E('tr', { 'class': 'tr cbi-section-table-row' }, [
@@ -2357,7 +2402,6 @@ function renderWorkspace(opts) {
 	function renderDnsTab() {
 		var dnsTags = getKnownDnsTags();
 		var finalCombo = snippets.createComboInput(draft.dns.final || '', dnsTags, 'dns-proxy');
-		finalCombo.container.style.maxWidth = '200px';
 		finalCombo.input.addEventListener('input', function() {
 			draft.dns.final = finalCombo.input.value.trim();
 			markDirty({ skipTabRender: true });
@@ -2365,7 +2409,6 @@ function renderWorkspace(opts) {
 
 		var strategySelect = E('select', {
 			'class': 'cbi-input-select',
-			'style': 'max-width:170px;',
 			'change': function() {
 				draft.dns.strategy = strategySelect.value;
 				markDirty({ skipTabRender: true });
@@ -2390,18 +2433,19 @@ function renderWorkspace(opts) {
 			}
 		}, _('Advanced DNS JSON...'));
 
-		var globalBar = E('div', {
-			'style': 'display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 10px;border:1px solid #e5e5e5;border-radius:4px;background:#fcfcfc;margin-bottom:14px;'
-		}, [
-			E('label', { 'style': 'display:inline-flex;align-items:center;gap:6px;margin:0;' }, [
-				E('span', { 'style': 'font-weight:600;' }, _('Final Server')),
-				finalCombo.container
+		var globalBar = E('div', { 'style': 'margin-bottom:14px;' }, [
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Final Server')),
+				E('div', { 'class': 'cbi-value-field' }, finalCombo.container)
 			]),
-			E('label', { 'style': 'display:inline-flex;align-items:center;gap:6px;margin:0;' }, [
-				E('span', { 'style': 'font-weight:600;' }, _('Strategy')),
-				strategySelect
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Strategy')),
+				E('div', { 'class': 'cbi-value-field' }, strategySelect)
 			]),
-			extraBtn
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Advanced Options')),
+				E('div', { 'class': 'cbi-value-field' }, extraBtn)
+			])
 		]);
 
 		// Section A: DNS Servers
@@ -2614,14 +2658,12 @@ function renderWorkspace(opts) {
 		var dnsTags = getKnownDnsTags();
 
 		var finalCombo = snippets.createComboInput(draft.route.final || '', outTags, 'Proxy');
-		finalCombo.container.style.maxWidth = '200px';
 		finalCombo.input.addEventListener('input', function() {
 			draft.route.final = finalCombo.input.value.trim();
 			markDirty({ skipTabRender: true });
 		});
 
 		var resolverCombo = snippets.createComboInput(draft.route.default_domain_resolver || '', dnsTags, 'dns-cn');
-		resolverCombo.container.style.maxWidth = '200px';
 		resolverCombo.input.addEventListener('input', function() {
 			draft.route.default_domain_resolver = resolverCombo.input.value.trim();
 			markDirty({ skipTabRender: true });
@@ -2640,18 +2682,19 @@ function renderWorkspace(opts) {
 			}
 		}, _('Advanced Route JSON...'));
 
-		var globalBar = E('div', {
-			'style': 'display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 10px;border:1px solid #e5e5e5;border-radius:4px;background:#fcfcfc;margin-bottom:14px;'
-		}, [
-			E('label', { 'style': 'display:inline-flex;align-items:center;gap:6px;margin:0;' }, [
-				E('span', { 'style': 'font-weight:600;' }, _('Final Outbound')),
-				finalCombo.container
+		var globalBar = E('div', { 'style': 'margin-bottom:14px;' }, [
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Final Outbound')),
+				E('div', { 'class': 'cbi-value-field' }, finalCombo.container)
 			]),
-			E('label', { 'style': 'display:inline-flex;align-items:center;gap:6px;margin:0;' }, [
-				E('span', { 'style': 'font-weight:600;' }, _('Default Domain Resolver')),
-				resolverCombo.container
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Default Domain Resolver')),
+				E('div', { 'class': 'cbi-value-field' }, resolverCombo.container)
 			]),
-			extraBtn
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Advanced Options')),
+				E('div', { 'class': 'cbi-value-field' }, extraBtn)
+			])
 		]);
 
 		// Section A: Route Rules
@@ -2949,7 +2992,7 @@ function renderWorkspace(opts) {
 		}, _('Format JSON'));
 
 		dom.content(tabPanel, [
-			E('p', { 'style': 'margin:0 0 10px;font-size:90%;color:#555;' },
+			E('div', { 'class': 'cbi-section-descr', 'style': 'margin:0 0 10px;' },
 				_('Top-level RFC 7396 JSON Merge Patch applied before dataplane synthesis (null deletes keys; arrays replace). Supports services (api, hysteria-realm), endpoints, http_clients, experimental, ntp, etc.')),
 			E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;' }, [
 				snipSelect,
@@ -2996,6 +3039,15 @@ function renderWorkspace(opts) {
 			isDirty: function() {
 				return dirty;
 			},
+			isBusy: function() {
+				return busy;
+			},
+			save: function(reload) {
+				return saveComposer(reload === true);
+			},
+			reset: function() {
+				return resetComposer();
+			},
 			updateData: function(freshProfileList, freshComposerData) {
 				if (destroyed)
 					return;
@@ -3007,7 +3059,12 @@ function renderWorkspace(opts) {
 				if (freshComposerData && typeof freshComposerData === 'object') {
 					if (freshComposerData.auto_inbounds)
 						autoInbounds = freshComposerData.auto_inbounds;
+					isActive = Boolean(freshComposerData.active);
 					if (!dirty) {
+						composerName = freshComposerData.name || composerName;
+						composerFilename = freshComposerData.filename || composerFilename;
+						nameInput.value = composerName;
+						dom.content(filenameCode, composerFilename || '-');
 						draft = parseComposerFromPayload(freshComposerData);
 						savedExists = Boolean(freshComposerData.exists);
 						savedMtime = freshComposerData.mtime || null;
@@ -3028,5 +3085,6 @@ function renderWorkspace(opts) {
 }
 
 return baseclass.extend({
-	renderWorkspace: renderWorkspace
+	renderWorkspace: renderWorkspace,
+	showPreviewModal: showComposerPreviewModal
 });

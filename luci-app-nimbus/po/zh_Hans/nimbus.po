@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: luci-app-nimbus\n"
-"PO-Revision-Date: 2026-11-22 02:00+0000\n"
+"PO-Revision-Date: 2026-11-23 23:32+0000\n"
 "Last-Translator: nimbus <noreply@example.com>\n"
 "Language-Team: Chinese (Simplified)\n"
 "Language: zh_Hans\n"
@@ -18,6 +18,9 @@ msgstr "概览"
 
 msgid "Settings"
 msgstr "设置"
+
+msgid "Subscriptions"
+msgstr "订阅管理"
 
 msgid "Config"
 msgstr "配置"
@@ -70,1221 +73,6 @@ msgstr "取消"
 msgid "Confirm"
 msgstr "确认"
 
-msgid "Idle"
-msgstr "空闲"
-
-msgid "Queued"
-msgstr "排队中"
-
-msgid "Checking Disk Space"
-msgstr "正在检查磁盘空间"
-
-msgid "Downloading"
-msgstr "正在下载"
-
-msgid "Verifying"
-msgstr "正在校验"
-
-msgid "Extracting"
-msgstr "正在解压"
-
-msgid "Installing Binary"
-msgstr "正在安装二进制文件"
-
-msgid "Reloading Service"
-msgstr "正在重载服务"
-
-msgid "Completed"
-msgstr "已完成"
-
-msgid "Failed"
-msgstr "失败"
-
-msgid "Unknown"
-msgstr "未知"
-
-msgid "sing-box core %s installed successfully."
-msgstr "sing-box 内核 %s 安装成功。"
-
-msgid "Core installation failed."
-msgstr "内核安装失败。"
-
-msgid "Starting core installation..."
-msgstr "正在启动内核安装任务..."
-
-msgid "Installed: v%s"
-msgstr "已安装: v%s"
-
-msgid "unknown"
-msgstr "未知"
-
-msgid "Not Executable"
-msgstr "不可执行"
-
-msgid "Not Installed"
-msgstr "未安装"
-
-msgid "Core Status & Architecture"
-msgstr "内核状态与系统架构"
-
-msgid "Installation Status"
-msgstr "安装状态"
-
-msgid "Binary Path"
-msgstr "二进制文件路径"
-
-msgid "Binary Size"
-msgstr "二进制文件大小"
-
-msgid "Last Modified"
-msgstr "最后修改时间"
-
-msgid "OpenWrt Architecture"
-msgstr "OpenWrt 架构"
-
-msgid "sing-box Target / ABI"
-msgstr "sing-box 目标平台 / ABI"
-
-msgid "Preferred Release Asset"
-msgstr "首选发行包后缀"
-
-msgid "Free Space (/tmp)"
-msgstr "可用空间 (/tmp)"
-
-msgid "Free Space (Target Dir)"
-msgstr "可用空间（目标目录）"
-
-msgid "Update Available"
-msgstr "有可用更新"
-
-msgid "Up to Date"
-msgstr "已是最新版本"
-
-msgid "Latest Release"
-msgstr "最新发布版本"
-
-msgid "Prerelease"
-msgstr "预发布版"
-
-msgid "Published At"
-msgstr "发布时间"
-
-msgid "Matched Asset"
-msgstr "匹配的发行资产"
-
-msgid "Asset Size"
-msgstr "资产大小"
-
-msgid "SHA256 Digest"
-msgstr "SHA256 摘要"
-
-msgid "Not provided in release metadata"
-msgstr "发行元数据中未提供"
-
-msgid "Release Notes"
-msgstr "发行说明"
-
-msgid "Install v%s from GitHub"
-msgstr "从 GitHub 安装 v%s"
-
-msgid "Install & Upgrade sing-box Core"
-msgstr "安装与升级 sing-box 内核"
-
-msgid "Download verified musl releases from GitHub or upload a local .tar.gz archive or sing-box binary."
-msgstr "从 GitHub 拉取并校验 musl 发行包，或上传本地 .tar.gz 压缩包 / sing-box 二进制文件。"
-
-msgid "Checking..."
-msgstr "检查中..."
-
-msgid "Check for Updates"
-msgstr "检查更新"
-
-msgid "Install Latest from GitHub"
-msgstr "从 GitHub 安装最新版"
-
-msgid "Upload Package (.tar.gz / Binary)"
-msgstr "上传内核包 (.tar.gz / 二进制)"
-
-msgid "Core Download & Path Settings"
-msgstr "内核下载与路径设置"
-
-msgid "Absolute path where the sing-box binary is stored (may point to external storage or /tmp)."
-msgstr "sing-box 二进制文件存放的绝对路径（可指向外挂存储或 /tmp）。"
-
-msgid "Binary path must be an absolute path starting with \"/\"."
-msgstr "二进制路径必须是以 \"/\" 开头的绝对路径。"
-
-msgid "GitHub Repository"
-msgstr "GitHub 仓库"
-
-msgid "Repository must match owner/repo format (e.g. SagerNet/sing-box)."
-msgstr "仓库名称必须符合 owner/repo 格式（例如 SagerNet/sing-box）。"
-
-msgid "Release Channel"
-msgstr "版本通道"
-
-msgid "Stable"
-msgstr "稳定版 (Stable)"
-
-msgid "GitHub Mirror Prefix"
-msgstr "GitHub 下载镜像前缀"
-
-msgid "Optional http(s):// prefix prepended to GitHub asset download URLs."
-msgstr "可选的 http(s):// 加速前缀，将拼接在 GitHub 资产下载地址前。"
-
-msgid "Mirror prefix must be empty or start with http:// or https://."
-msgstr "镜像前缀必须为空或以 http:// 或 https:// 开头。"
-
-msgid "Download via Proxy"
-msgstr "通过代理下载"
-
-msgid "Route GitHub API queries and asset downloads through an active local proxy inbound when available."
-msgstr "当本地代理入站可用时，经由当前代理查询 GitHub API 并下载发行资产。"
-
-msgid "Nimbus Core"
-msgstr "Nimbus 内核管理"
-
-msgid "Last 100 lines"
-msgstr "最近 100 行"
-
-msgid "Last 200 lines"
-msgstr "最近 200 行"
-
-msgid "Last 500 lines"
-msgstr "最近 500 行"
-
-msgid "Last 1000 lines"
-msgstr "最近 1000 行"
-
-msgid "Last 2000 lines"
-msgstr "最近 2000 行"
-
-msgid "Pause"
-msgstr "暂停"
-
-msgid "(Log file is empty)"
-msgstr "（日志文件为空）"
-
-msgid "File size: %s"
-msgstr "文件大小: %s"
-
-msgid "Showing trailing %d lines"
-msgstr "显示末尾 %d 行"
-
-msgid "Resume"
-msgstr "继续"
-
-msgid "Refresh"
-msgstr "刷新"
-
-msgid "Clear Logs"
-msgstr "清空日志"
-
-msgid "Truncate /var/log/nimbus.log to 0 bytes?"
-msgstr "确定将 /var/log/nimbus.log 清空为 0 字节吗？"
-
-msgid "Log file cleared."
-msgstr "日志已清空。"
-
-msgid "Nimbus Logs"
-msgstr "Nimbus 运行日志"
-
-msgid "Live viewer for /var/log/nimbus.log in tmpfs (automatically rotated above 512 KiB)."
-msgstr "实时查看内存中的 /var/log/nimbus.log（超过 512 KiB 时自动截断轮转）。"
-
-msgid "Auto-scroll"
-msgstr "自动滚动"
-
-msgid "Running"
-msgstr "运行中"
-
-msgid "Preparing"
-msgstr "准备中"
-
-msgid "Lockdown"
-msgstr "锁定阻断 (Lockdown)"
-
-msgid "Stopped"
-msgstr "已停止"
-
-msgid "Endpoint URL"
-msgstr "接口地址 (URL)"
-
-msgid "Endpoint URL copied to clipboard."
-msgstr "接口地址已复制到剪贴板。"
-
-msgid "Failed to copy to clipboard."
-msgstr "复制到剪贴板失败。"
-
-msgid "Copy"
-msgstr "复制"
-
-msgid "API Secret"
-msgstr "API 密钥"
-
-msgid "Show"
-msgstr "显示"
-
-msgid "Hide"
-msgstr "隐藏"
-
-msgid "API secret copied to clipboard."
-msgstr "API 密钥已复制到剪贴板。"
-
-msgid "Secret is not available in the current runtime configuration."
-msgstr "当前运行配置中未找到密钥。"
-
-msgid "No API secret is configured."
-msgstr "未配置 API 密钥。"
-
-msgid "Close"
-msgstr "关闭"
-
-msgid "Service did not start because it is disabled in Settings (global.enabled)."
-msgstr "服务未启动，因为当前在设置中已禁用（global.enabled）。"
-
-msgid "Service action \"%s\" completed."
-msgstr "服务操作 \"%s\" 已完成。"
-
-msgid "sing-box Native API Credentials"
-msgstr "sing-box 原生 API 连接凭据"
-
-msgid "Clash API Credentials"
-msgstr "Clash API 连接凭据"
-
-msgid "Fail-Closed Lockdown Active: "
-msgstr "Fail-Closed 安全锁定已触发: "
-
-msgid "Non-whitelist LAN forwarding traffic is blocked to prevent IP leaks. Router management (SSH and LuCI) remains accessible."
-msgstr "已阻断非白名单 LAN 转发流量以防真实 IP 泄漏。路由器本地管理（SSH 与 LuCI）仍保持可达。"
-
-msgid "Router DNS Notice: "
-msgstr "路由器本机 DNS 提示: "
-
-msgid "DNS mode is set to \"singbox\", so dnsmasq remains pointed at 127.0.0.1 to prevent DNS leaks. The router itself cannot resolve external domains (for core or subscription updates) until you click \"Stop\" to restore dnsmasq."
-msgstr "当前 DNS 模式为 \"singbox\"，为防止 DNS 泄漏，dnsmasq 仍指向 127.0.0.1。在锁定状态下路由器本机无法解析外部域名（无法从 GitHub 拉取内核或更新订阅），如需恢复网络解析请先点击“停止”以还原 dnsmasq。"
-
-msgid "Last Error: "
-msgstr "最近错误: "
-
-msgid "Nimbus service is currently disabled in Settings. "
-msgstr "Nimbus 服务当前在设置中处于禁用状态。"
-
-msgid "Go to Settings"
-msgstr "前往设置"
-
-msgid "sing-box core binary is not installed yet. "
-msgstr "尚未安装 sing-box 内核二进制文件。"
-
-msgid "Go to Core Management"
-msgstr "前往内核管理"
-
-msgid "No active sing-box profile is selected. "
-msgstr "尚未选择激活的 sing-box 配置文件。"
-
-msgid "Go to Config"
-msgstr "前往配置"
-
-msgid "Warnings:"
-msgstr "诊断警告:"
-
-msgid "None"
-msgstr "无"
-
-msgid "Start"
-msgstr "启动"
-
-msgid "Stop"
-msgstr "停止"
-
-msgid "Restart"
-msgstr "重启"
-
-msgid "Reload"
-msgstr "重载"
-
-msgid "Service Status"
-msgstr "服务状态"
-
-msgid "Applying action..."
-msgstr "正在执行操作..."
-
-msgid "Not installed"
-msgstr "未安装"
-
-msgid "Running (PID %d)"
-msgstr "运行中 (PID %d)"
-
-msgid "Not running"
-msgstr "未运行"
-
-msgid "Runtime Overview"
-msgstr "运行期概览"
-
-msgid "Boot / UCI Enabled"
-msgstr "开机启用 (UCI)"
-
-msgid "Enabled"
-msgstr "已启用"
-
-msgid "Disabled"
-msgstr "已禁用"
-
-msgid "Active Profile"
-msgstr "当前激活配置"
-
-msgid "Network Topology"
-msgstr "网络拓扑"
-
-msgid "Side Router"
-msgstr "旁路由模式"
-
-msgid "Main Router"
-msgstr "主路由模式"
-
-msgid "Proxy Mode"
-msgstr "代理模式"
-
-msgid "Failure Policy"
-msgstr "异常保护策略"
-
-msgid "Fail-Open (Direct Fallback)"
-msgstr "Fail-Open（异常回落直连）"
-
-msgid "Fail-Closed (Lockdown)"
-msgstr "Fail-Closed（异常锁定阻断）"
-
-msgid "sing-box Core"
-msgstr "sing-box 内核"
-
-msgid "Process"
-msgstr "进程状态"
-
-msgid "Uptime"
-msgstr "运行时长"
-
-msgid "Memory (RSS)"
-msgstr "内存占用 (RSS)"
-
-msgid "user inbound"
-msgstr "复用用户入站"
-
-msgid "auto-injected"
-msgstr "自动补齐"
-
-msgid "Effective Data Plane & Whitelist"
-msgstr "生效数据面与白名单"
-
-msgid "TCP Redirect Port"
-msgstr "TCP Redirect 端口"
-
-msgid "UDP TPROXY Port"
-msgstr "UDP TPROXY 端口"
-
-msgid "Outbound Mark"
-msgstr "出站防环路标记"
-
-msgid "DNS Takeover"
-msgstr "DNS 托管模式"
-
-msgid "Fake-IP Ranges"
-msgstr "Fake-IP 网段"
-
-msgid "None detected"
-msgstr "未检测到"
-
-msgid "Whitelist Bypass"
-msgstr "白名单绕行"
-
-msgid "IPv4"
-msgstr "IPv4"
-
-msgid "IPv6"
-msgstr "IPv6"
-
-msgid "TCP Proxied"
-msgstr "TCP 代理流量"
-
-msgid "%d packets (%s)"
-msgstr "%d 数据包 (%s)"
-
-msgid "UDP Proxied"
-msgstr "UDP 代理流量"
-
-msgid "Lockdown Rejected"
-msgstr "锁定阻断计数"
-
-msgid "%d packets"
-msgstr "%d 数据包"
-
-msgid "TUN Proxied"
-msgstr "TUN 代理流量"
-
-msgid "nftables Traffic Counters"
-msgstr "nftables 实时流量统计"
-
-msgid "Not configured in the active configuration."
-msgstr "当前生效配置中未定义此接口。"
-
-msgid "Loopback Only"
-msgstr "仅回环监听"
-
-msgid "No Secret Configured"
-msgstr "未配置密钥"
-
-msgid "Secret Protected"
-msgstr "已配置密钥保护"
-
-msgid "Reveal / Copy Credentials"
-msgstr "查看 / 复制凭据"
-
-msgid "Listen Address"
-msgstr "监听地址"
-
-msgid "Status Flags"
-msgstr "状态标记"
-
-msgid "Built-in Dashboard"
-msgstr "内置控制面板"
-
-msgid "Enabled (%s)"
-msgstr "已启用 (%s)"
-
-msgid "External UI"
-msgstr "外部控制面板 (External UI)"
-
-msgid "Configured"
-msgstr "已配置"
-
-msgid "Actions"
-msgstr "操作"
-
-msgid "Control APIs & Dashboards"
-msgstr "控制 API 与面板入口"
-
-msgid "sing-box Native API"
-msgstr "sing-box 原生 API"
-
-msgid "Open Dashboard"
-msgstr "打开 Dashboard"
-
-msgid "Clash API"
-msgstr "Clash API"
-
-msgid "Open External UI"
-msgstr "打开 External UI"
-
-msgid "Nimbus Overview"
-msgstr "Nimbus 运行概览"
-
-msgid "Reload Service"
-msgstr "重载服务"
-
-msgid "The active profile was updated and validated. Reload Nimbus service now to apply changes?"
-msgstr "当前激活的配置已保存并通过校验。是否立即重载 Nimbus 服务以应用更改？"
-
-msgid "Service reloaded successfully."
-msgstr "服务重载成功。"
-
-msgid "Profile \"%s\" uploaded and validated with sing-box."
-msgstr "配置 \"%s\" 已上传并通过 sing-box 校验。"
-
-msgid "Profile \"%s\" uploaded (JSON syntax checked)."
-msgstr "配置 \"%s\" 已上传（已通过 JSON 语法校验）。"
-
-msgid "Save"
-msgstr "保存"
-
-msgid "%s / %s direct limit"
-msgstr "%s / %s 直接传输上限"
-
-msgid "Content exceeds the 256 KiB inline transfer limit. Save locally and use \"Upload .json\" instead."
-msgstr "文本大小超过 256 KiB 直接传输上限，请保存为本地文件后点击“上传 .json”。"
-
-msgid "Profile JSON must be a top-level object."
-msgstr "配置文件顶层必须是合法的 JSON 对象。"
-
-msgid "Invalid JSON syntax: %s"
-msgstr "JSON 语法错误: %s"
-
-msgid "Profile \"%s\" saved and validated with sing-box."
-msgstr "配置 \"%s\" 已保存并通过 sing-box 校验。"
-
-msgid "Profile \"%s\" saved (JSON syntax checked)."
-msgstr "配置 \"%s\" 已保存（已通过 JSON 语法校验）。"
-
-msgid "Edit Profile JSON: %s"
-msgstr "编辑配置 JSON: %s"
-
-msgid "Validate with sing-box check before saving"
-msgstr "保存前执行 sing-box check 校验"
-
-msgid "Upload .json File"
-msgstr "上传 .json 文件"
-
-msgid "e.g. Main Profile"
-msgstr "例如：主力配置"
-
-msgid "Local File"
-msgstr "本地配置"
-
-msgid "Remote Subscription"
-msgstr "远程订阅"
-
-msgid "Subscription URL"
-msgstr "订阅链接 (URL)"
-
-msgid "User-Agent"
-msgstr "User-Agent"
-
-msgid "Fetch via Proxy"
-msgstr "通过代理拉取"
-
-msgid "Auto Update"
-msgstr "自动更新"
-
-msgid "Update Interval (Hours)"
-msgstr "更新周期（小时）"
-
-msgid "Allowed range: 1 to 720 hours."
-msgstr "允许范围：1 至 720 小时。"
-
-msgid "Profile name is required."
-msgstr "必须填写配置名称。"
-
-msgid "Filename must match ^[A-Za-z0-9._-]+\\.json$ (no path separators or \"..\")."
-msgstr "文件名必须匹配 ^[A-Za-z0-9._-]+\\.json$（禁止路径分隔符或 \"..\"）。"
-
-msgid "Subscription profile requires a valid http:// or https:// URL."
-msgstr "订阅配置必须提供合法的 http:// 或 https:// 地址。"
-
-msgid "Update interval must be an integer between 1 and 720 hours."
-msgstr "更新周期必须是 1 到 720 之间的整数。"
-
-msgid "Profile metadata updated."
-msgstr "配置元数据已更新。"
-
-msgid "Profile created."
-msgstr "配置已新建。"
-
-msgid "Edit Profile: %s"
-msgstr "编辑配置元数据: %s"
-
-msgid "Add Profile"
-msgstr "新建配置"
-
-msgid "Name"
-msgstr "名称"
-
-msgid "Type"
-msgstr "类型"
-
-msgid "Filename"
-msgstr "文件名"
-
-msgid "Stored read-only under /etc/nimbus/profiles/, e.g. main_sub.json."
-msgstr "以只读源形式存储于 /etc/nimbus/profiles/，例如 main_sub.json。"
-
-msgid "failed"
-msgstr "失败"
-
-msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
-msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败，已平滑重载服务。"
-
-msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
-msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败。"
-
-msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
-msgstr "订阅更新完成：%d 个已更新，%d 个无变化，已平滑重载服务。"
-
-msgid "Subscription update finished: %d updated, %d unchanged."
-msgstr "订阅更新完成：%d 个已更新，%d 个无变化。"
-
-msgid "Activated profile \"%s\" and reloaded service."
-msgstr "已激活配置 \"%s\" 并重载服务。"
-
-msgid "Activated profile \"%s\"."
-msgstr "已激活配置 \"%s\"。"
-
-msgid "Delete Profile"
-msgstr "删除配置"
-
-msgid "Delete profile \"%s\" (%s) and its configuration file?"
-msgstr "确认删除配置 \"%s\" (%s) 及其原始配置文件吗？"
-
-msgid "Profile \"%s\" deleted."
-msgstr "配置 \"%s\" 已删除。"
-
-msgid "Update All Subscriptions"
-msgstr "更新全部订阅"
-
-msgid "Processing..."
-msgstr "正在处理..."
-
-msgid "File Status"
-msgstr "文件状态"
-
-msgid "Subscription"
-msgstr "订阅信息"
-
-msgid "No profiles configured. Click \"Add Profile\" to create one."
-msgstr "暂无配置文件，请点击“新建配置”添加。"
-
-msgid "Active"
-msgstr "当前激活"
-
-msgid "Missing"
-msgstr "文件缺失"
-
-msgid "Auto: %dh"
-msgstr "自动: 每 %d 小时"
-
-msgid "Manual"
-msgstr "手动"
-
-msgid "Via Proxy"
-msgstr "走代理"
-
-msgid "Activate"
-msgstr "激活"
-
-msgid "Edit JSON"
-msgstr "编辑 JSON"
-
-msgid "Upload .json"
-msgstr "上传 .json"
-
-msgid "Update"
-msgstr "立即更新"
-
-msgid "Meta"
-msgstr "元数据"
-
-msgid "Delete"
-msgstr "删除"
-
-msgid "Local"
-msgstr "本地"
-
-msgid "Nimbus Configuration"
-msgstr "Nimbus 配置管理"
-
-msgid "Choose between structured Composer Mode and single-file Raw Profile Mode. Shared JSON files and subscriptions in /etc/nimbus/profiles/ remain read-only."
-msgstr "在结构化的「编排配置模式」与单文件的「完整配置模式」之间切换。/etc/nimbus/profiles/ 下的共享 JSON 与订阅文件始终保持只读。"
-
-msgid "Configuration applied and data plane reloaded."
-msgstr "配置已保存并重载数据面。"
-
-msgid "Nimbus Settings"
-msgstr "Nimbus 基础设置"
-
-msgid "Configure global routing topology, transparent proxy ports, DNS takeover, and per-device rules."
-msgstr "配置全局网络拓扑、透明代理端口、DNS 托管及局域网设备分流规则。"
-
-msgid "Global Settings"
-msgstr "全局设置"
-
-msgid "Enable Service"
-msgstr "启用服务"
-
-msgid "-- Select Profile --"
-msgstr "-- 请选择配置 --"
-
-msgid "Side Router (Bypass Gateway)"
-msgstr "旁路由模式（透明网关）"
-
-msgid "TPROXY + Redirect (TCP REDIRECT + UDP TPROXY)"
-msgstr "TPROXY + Redirect（TCP REDIRECT + UDP TPROXY）"
-
-msgid "Fail-Open on Error"
-msgstr "故障回落直连 (Fail-Open)"
-
-msgid "When disabled (default), service failure switches to Fail-Closed Lockdown blocking non-whitelist LAN forwarding while keeping router SSH/LuCI reachable."
-msgstr "默认关闭：服务异常时切入 Fail-Closed 锁定阻断态，拦截非白名单 LAN 转发防 IP 泄漏，同时保持路由器 SSH 与 LuCI 可访问。"
-
-msgid "LAN Interfaces"
-msgstr "LAN 逻辑接口"
-
-msgid "Logical OpenWrt network interfaces whose client traffic is intercepted."
-msgstr "需要透明代理接管流量的 OpenWrt LAN 逻辑接口。"
-
-msgid "WAN Interfaces"
-msgstr "WAN 逻辑接口"
-
-msgid "Logical WAN interfaces whose public IPv4/IPv6 prefixes are automatically bypassed in Main Router topology."
-msgstr "主路由模式下自动提取公网 IPv4/IPv6 前缀加入绕行集合的 WAN 逻辑接口。"
-
-msgid "Enable IPv4 Proxy"
-msgstr "启用 IPv4 代理"
-
-msgid "Enable IPv6 Proxy"
-msgstr "启用 IPv6 代理"
-
-msgid "IPv4 and IPv6 proxy cannot both be disabled."
-msgstr "IPv4 与 IPv6 代理不可同时禁用。"
-
-msgid "Proxy Router Outbound Traffic"
-msgstr "代理路由器本机出站流量"
-
-msgid "Intercept TCP/UDP connections initiated by the router itself."
-msgstr "接管路由器本机主动发起的 TCP/UDP 出站连接。"
-
-msgid "Log Level"
-msgstr "日志级别"
-
-msgid "Go Memory Limit (GOMEMLIMIT)"
-msgstr "Go 内存限制 (GOMEMLIMIT)"
-
-msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
-msgstr "填写 \"auto\"（按总内存 40% 计算，限制在 32MiB–256MiB）或指定二进制内存值（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
-
-msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
-msgstr "必须为 \"auto\" 或合法的二进制 Go 内存限制（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
-
-msgid "Data Plane & Traffic Filtering"
-msgstr "数据面与流量过滤"
-
-msgid "Used when the active configuration does not define a redirect inbound."
-msgstr "当当前生效配置未定义 redirect 入站时自动补齐的监听端口。"
-
-msgid "Used when the active configuration does not define a UDP tproxy inbound."
-msgstr "当当前生效配置未定义 UDP tproxy 入站时自动补齐的监听端口。"
-
-msgid "TPROXY port must differ from TCP Redirect port."
-msgstr "UDP TPROXY 端口不可与 TCP Redirect 端口相同。"
-
-msgid "Outbound Anti-Loop Mark"
-msgstr "出站防环路标记"
-
-msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0xff)."
-msgstr "必须为非零 32 位十六进制标记（例如 0xff）。"
-
-msgid "UDP TPROXY Routing Mark"
-msgstr "UDP TPROXY 策略路由标记"
-
-msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0x1)."
-msgstr "必须为非零 32 位十六进制标记（例如 0x1）。"
-
-msgid "TPROXY routing mark must differ from outbound anti-loop mark."
-msgstr "UDP TPROXY 路由标记不可与出站防环路标记相同。"
-
-msgid "Policy Route Table ID"
-msgstr "策略路由表 ID"
-
-msgid "Port Filter Mode"
-msgstr "目标端口过滤模式"
-
-msgid "Proxy All Ports"
-msgstr "代理全部端口"
-
-msgid "Proxy Only Listed Ports"
-msgstr "仅代理以下端口"
-
-msgid "Bypass Listed Ports"
-msgstr "排除以下端口（直连）"
-
-msgid "TCP Ports / Ranges"
-msgstr "TCP 端口 / 范围"
-
-msgid "Examples: 80, 443, 8000-8999."
-msgstr "示例：80、443、8000-8999。"
-
-msgid "Invalid port or range (expected 1-65535 or start-end)."
-msgstr "端口或端口范围无效（需为 1-65535 或 起始-结束）。"
-
-msgid "UDP Ports / Ranges"
-msgstr "UDP 端口 / 范围"
-
-msgid "Examples: 53, 443, 10000-10100."
-msgstr "示例：53、443、10000-10100。"
-
-msgid "Default LAN Device Policy"
-msgstr "默认局域网设备策略"
-
-msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
-msgstr "未命中下方「局域网设备分流规则」中任何启用条目的默认策略；设备规则按从上到下顺序优先匹配。"
-
-msgid "Proxy Unmatched Devices (Default)"
-msgstr "代理未匹配设备（默认）"
-
-msgid "Bypass Unmatched Devices (Direct)"
-msgstr "直连未匹配设备（绕行）"
-
-msgid "Inject Route Sniff Rule"
-msgstr "注入路由嗅探规则 (Sniff)"
-
-msgid "Ensure a modern route sniff action rule covers the active transparent inbounds."
-msgstr "确保在 route.rules 中为生效的透明代理入站注入现代 sniff 动作规则。"
-
-msgid "Block QUIC (UDP 443)"
-msgstr "阻断 QUIC (UDP 443)"
-
-msgid "Inject a route rule rejecting QUIC protocol traffic so browsers fall back to TCP."
-msgstr "向 route.rules 注入拒绝 QUIC 协议的规则，促使客户端回退至 TCP。"
-
-msgid "DNS Takeover (dnsmasq)"
-msgstr "DNS 托管 (dnsmasq)"
-
-msgid "DNS Mode"
-msgstr "DNS 模式"
-
-msgid "Do Not Manage (Keep Existing dnsmasq)"
-msgstr "不接管（保持现有 dnsmasq 配置）"
-
-msgid "Forward to Local sing-box DNS"
-msgstr "转发至本机 sing-box DNS 入站"
-
-msgid "Forward to Custom Upstreams"
-msgstr "转发至自定义上游"
-
-msgid "sing-box DNS Listen Port"
-msgstr "sing-box DNS 监听端口"
-
-msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
-msgstr "当模式为 \"singbox\" 且当前生效配置缺少本地 direct DNS 入站时自动补齐的端口。"
-
-msgid "DNS listen port is required."
-msgstr "必须填写 DNS 监听端口。"
-
-msgid "DNS port must not collide with TCP Redirect or UDP TPROXY port."
-msgstr "DNS 端口不可与 TCP Redirect 或 UDP TPROXY 端口冲突。"
-
-msgid "Custom Upstream Servers"
-msgstr "自定义上游服务器"
-
-msgid "dnsmasq upstream format, e.g. 127.0.0.1#5335 or 192.168.1.2#5353."
-msgstr "dnsmasq 上游格式，例如 127.0.0.1#5335 或 192.168.1.2#5353。"
-
-msgid "At least one custom DNS upstream server is required."
-msgstr "至少需要填写一个自定义 DNS 上游服务器。"
-
-msgid "DNS upstream entry cannot be empty or contain spaces."
-msgstr "DNS 上游条目不能为空且不可包含空格。"
-
-msgid "Hijack LAN External DNS (Port 53)"
-msgstr "劫持 LAN 外部 DNS (53 端口)"
-
-msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
-msgstr "在 table inet nimbus 中将受代理局域网设备发往外部 IP 的 TCP/UDP 53 查询重定向至路由器本机 53 端口（被设备分流规则或默认策略直连绕行的设备不劫持）。"
-
-msgid "LAN Device Rules"
-msgstr "局域网设备分流规则"
-
-msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
-msgstr "按从上到下顺序优先匹配（先命中者生效），均未命中时回退至上方默认设备策略；未启用行将被忽略。"
-
-msgid "Description"
-msgstr "备注"
-
-msgid "MAC Address"
-msgstr "MAC 地址"
-
-msgid "IP / CIDR"
-msgstr "IP / CIDR 网段"
-
-msgid "Specify at least a MAC address or an IP/CIDR."
-msgstr "MAC 地址与 IP/CIDR 至少需填写一项。"
-
-msgid "Policy"
-msgstr "策略"
-
-msgid "Bypass (Direct)"
-msgstr "直连绕行 (Bypass)"
-
-msgid "Proxy"
-msgstr "走代理 (Proxy)"
-
-msgid "Line %d: \"%s\" — %s"
-msgstr "第 %d 行: \"%s\" — %s"
-
-msgid "invalid entry"
-msgstr "无效条目"
-
-msgid "Validation Failed: %s"
-msgstr "校验失败: %s"
-
-msgid "Saved \"%s\" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables."
-msgstr "已保存 \"%s\"（%d 条 IPv4、%d 条 IPv6）并原子热更新 nftables 集合。"
-
-msgid "Saved \"%s\" (%d IPv4, %d IPv6)."
-msgstr "已保存 \"%s\"（%d 条 IPv4、%d 条 IPv6）。"
-
-msgid "Save & Hot-Reload"
-msgstr "保存并热更新"
-
-msgid "Content exceeds the 256 KiB inline transfer limit. Use \"Upload .txt File\" instead."
-msgstr "内容超过 256 KiB 直接传输上限，请使用“上传 .txt 文件”。"
-
-msgid "Edit Whitelist: %s"
-msgstr "编辑白名单: %s"
-
-msgid "Enter one IPv4, IPv6, or CIDR range per line. Comments beginning with \"#\", \";\", or \"//\" are supported."
-msgstr "每行填写一条 IPv4、IPv6 或 CIDR 网段；支持 \"#\"、\";\" 或 \"//\" 注释。"
-
-msgid "Upload .txt File"
-msgstr "上传 .txt 文件"
-
-msgid "IPv4: %d"
-msgstr "IPv4: %d"
-
-msgid "IPv6: %d"
-msgstr "IPv6: %d"
-
-msgid "Ignored / Comments: %d"
-msgstr "已忽略 / 注释行: %d"
-
-msgid "Invalid: %d"
-msgstr "无效行: %d"
-
-msgid "Unrecognized Lines (not loaded into nftables):"
-msgstr "未识别行（不会加载至 nftables）:"
-
-msgid "Line %d: %s"
-msgstr "第 %d 行: %s"
-
-msgid "(empty)"
-msgstr "（空）"
-
-msgid "Cleaned whitelist entries copied to clipboard."
-msgstr "清洗后的白名单条目已复制到剪贴板。"
-
-msgid "Copy Cleaned"
-msgstr "复制清洗结果"
-
-msgid "Cleaned Preview: %s"
-msgstr "清洗预览: %s"
-
-msgid "e.g. Custom Direct"
-msgstr "例如：自定义直连"
-
-msgid "Remote URL"
-msgstr "远程订阅源 (URL)"
-
-msgid "Auto (IPv4 + IPv6)"
-msgstr "自动识别 (IPv4 + IPv6)"
-
-msgid "IPv4 Only"
-msgstr "仅 IPv4"
-
-msgid "IPv6 Only"
-msgstr "仅 IPv6"
-
-msgid "Stored under /etc/nimbus/lists/local/, e.g. custom_direct.txt."
-msgstr "存储于 /etc/nimbus/lists/local/，例如 custom_direct.txt。"
-
-msgid "Source URL"
-msgstr "远程源地址 (URL)"
-
-msgid "Source name is required."
-msgstr "必须填写白名单名称。"
-
-msgid "Filename must match ^[A-Za-z0-9._-]+\\.txt$ (no path separators or \"..\")."
-msgstr "文件名必须匹配 ^[A-Za-z0-9._-]+\\.txt$（禁止路径分隔符或 \"..\"）。"
-
-msgid "Remote source requires a valid http:// or https:// URL."
-msgstr "远程白名单源必须提供合法的 http:// 或 https:// 地址。"
-
-msgid "Whitelist source saved and atomically hot-reloaded nftables."
-msgstr "白名单源已保存并原子热更新 nftables 集合。"
-
-msgid "Whitelist source saved."
-msgstr "白名单源已保存。"
-
-msgid "Edit Whitelist Source: %s"
-msgstr "编辑白名单源: %s"
-
-msgid "Add Whitelist Source"
-msgstr "新建白名单源"
-
-msgid "Address Family"
-msgstr "地址族"
-
-msgid "Remote lists updated: %d updated, %d unchanged, nftables atomically hot-reloaded."
-msgstr "远程白名单更新完成：%d 个已更新，%d 个无变化，已原子热更新 nftables。"
-
-msgid "Remote lists updated: %d updated, %d unchanged."
-msgstr "远程白名单更新完成：%d 个已更新，%d 个无变化。"
-
-msgid "Delete Whitelist Source"
-msgstr "删除白名单源"
-
-msgid "Delete whitelist source \"%s\" and its associated file/cache?"
-msgstr "确认删除白名单源 \"%s\" 及其对应的本地文件/缓存吗？"
-
-msgid "Whitelist source deleted and nftables hot-reloaded."
-msgstr "白名单源已删除并热更新 nftables。"
-
-msgid "Whitelist source deleted."
-msgstr "白名单源已删除。"
-
-msgid "Cron expression must have 5 space-separated fields (e.g. \"30 4 * * *\")."
-msgstr "Cron 表达式必须包含 5 个以空格分隔的字段（例如 \"30 4 * * *\"）。"
-
-msgid "Whitelist policy saved and atomically hot-reloaded nftables."
-msgstr "白名单全局策略已保存并原子热更新 nftables。"
-
-msgid "Whitelist policy saved."
-msgstr "白名单全局策略已保存。"
-
-msgid "Save Policy"
-msgstr "保存策略"
-
-msgid "Global Whitelist Policy"
-msgstr "白名单全局策略"
-
-msgid "Effective nftables IPv4: %d"
-msgstr "nftables 生效 IPv4 条数: %d"
-
-msgid "Effective nftables IPv6: %d"
-msgstr "nftables 生效 IPv6 条数: %d"
-
-msgid "Enable Whitelist Bypass"
-msgstr "启用白名单绕行"
-
-msgid "Built-in private, LAN, and WAN reserved subnets always bypass the proxy regardless of this switch."
-msgstr "系统内置局域网、保留段与 WAN 公网 IP 始终绕行，不受此开关影响。"
-
-msgid "Auto Update Remote Lists"
-msgstr "定时自动更新远程白名单"
-
-msgid "Cron Schedule"
-msgstr "定时计划 (Cron)"
-
-msgid "Standard 5-field cron expression, e.g. 30 4 * * *."
-msgstr "标准 5 段 Cron 表达式，例如 30 4 * * *。"
-
-msgid "Add Source"
-msgstr "新建白名单源"
-
-msgid "Update All Remote Sources"
-msgstr "更新全部远程源"
-
-msgid "Updating..."
-msgstr "正在更新..."
-
-msgid "Family"
-msgstr "地址族"
-
-msgid "Status"
-msgstr "状态"
-
-msgid "Target"
-msgstr "来源 / 文件"
-
-msgid "Entries & File"
-msgstr "条目与文件信息"
-
-msgid "No whitelist sources configured."
-msgstr "暂无白名单源配置。"
-
-msgid "IPv4: %d / IPv6: %d"
-msgstr "IPv4: %d / IPv6: %d"
-
-msgid "Not cached / missing"
-msgstr "未缓存 / 文件不存在"
-
-msgid "Edit"
-msgstr "编辑"
-
-msgid "Preview"
-msgstr "清洗预览"
-
-msgid "Upload .txt"
-msgstr "上传 .txt"
-
-msgid "Whitelist Sources"
-msgstr "白名单列表"
-
-msgid "Nimbus Whitelists"
-msgstr "Nimbus 白名单管理"
-
-msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
-msgstr "管理直连绕行 IPv4/IPv6 CIDR 白名单。编辑本地列表或刷新远程源后，将通过 nftables 原子热更新生效，无需重启 sing-box。"
-
-msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
-msgstr "无效的接口名称“%s”：长度须为 1–64 个字符，且仅包含 [A-Za-z0-9_.+-]。"
-
-msgid "Local DNS (\"local\") Handling"
-msgstr "local 类型 DNS 上游处理"
-
-msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops."
-msgstr "当 dnsmasq 转发至 sing-box 或启用路由器本机代理时，如何改写配置中的 \"local\" 类型 DNS 上游以防止解析死循环。"
-
-msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
-msgstr "自动探测 WAN 上游 DNS（不可用时回退至直连 DNS）"
-
-msgid "Always Use Configured Direct DNS"
-msgstr "始终使用下方配置的直连 DNS"
-
-msgid "Strict Reject (\"local\" Not Allowed)"
-msgstr "严格拒绝（禁止包含 \"local\" 上游）"
-
-msgid "Manual / Fallback Direct DNS"
-msgstr "手工 / 兜底直连 DNS"
-
-msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
-msgstr "在指定模式或暂未检测到安全 WAN 上游 DNS 时，用于替换 \"local\" 的非回环直连 DNS IP；留空则强制要求必须存在可用 WAN DNS。"
-
-msgid "Direct DNS server IP is required when policy is set to always use fallback."
-msgstr "选择始终使用直连 DNS 时，必须填写合法的 DNS 服务器 IP。"
-
-msgid "Direct DNS server IP must not be a loopback or unspecified address."
-msgstr "直连 DNS 服务器 IP 不能为回环地址或未指定地址。"
-
-msgid "Composer configuration has not been saved yet. "
-msgstr "编排配置尚未保存。"
-
-msgid "%d sources · %d nodes · %d groups"
-msgstr "%d 个配置源 · %d 个节点 · %d 个出站组"
-
-msgid "Not initialized"
-msgstr "尚未初始化"
-
-msgid "Config Mode"
-msgstr "配置模式"
-
-msgid "Raw Profile Mode"
-msgstr "完整配置模式"
-
-msgid "Composer Mode"
-msgstr "编排配置模式"
-
-msgid "Composer Summary"
-msgstr "编排配置摘要"
-
-msgid "An active Composer source was updated and validated. Reload Nimbus service now to apply changes?"
-msgstr "正在使用的编排配置源已更新并通过校验。是否立即重载 Nimbus 服务以应用更改？"
-
-msgid "Source JSON must be a top-level object or a non-empty array."
-msgstr "配置源 JSON 顶层必须是合法对象或非空数组。"
-
-msgid "Unsaved Changes"
-msgstr "未保存更改"
-
-msgid "You have unsaved changes in Composer Mode. Discard them and switch to Raw Profile Mode?"
-msgstr "编排配置模式中存在未保存的更改，确定放弃这些更改并切换至完整配置模式吗？"
-
-msgid "Switched to Composer Mode."
-msgstr "已切换至编排配置模式。"
-
-msgid "Switched to Raw Profile Mode."
-msgstr "已切换至完整配置模式。"
-
-msgid "Configuration mode changed while Nimbus is active. Reload service now to apply?"
-msgstr "Nimbus 运行期间配置模式已变更，是否立即重载服务以应用？"
-
-msgid "Manage structured inbounds, outbounds, DNS, routing rules, and multi-subscription node extraction."
-msgstr "可视化编排入站、出站、DNS、路由规则，并支持从多个订阅中提取与过滤节点。"
-
-msgid "Select a single complete sing-box JSON profile or subscription."
-msgstr "选择单个完整的 sing-box JSON 配置文件或远程订阅。"
-
-msgid "Configuration Mode"
-msgstr "配置模式"
-
-msgid "Switching mode..."
-msgstr "正在切换模式..."
-
 msgid "-- Select 1.14 Snippet --"
 msgstr "-- 选择 1.14 模板片段 --"
 
@@ -1293,6 +81,57 @@ msgstr "应用片段"
 
 msgid "Format JSON"
 msgstr "格式化 JSON"
+
+msgid "Synthesizing configuration and running sing-box check..."
+msgstr "正在合成配置并执行 sing-box 校验..."
+
+msgid "Preview & Check"
+msgstr "预览与校验"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "sing-box check: Passed"
+msgstr "sing-box check: 校验通过"
+
+msgid "sing-box check: Failed"
+msgstr "sing-box check: 校验失败"
+
+msgid "Preview Only (sing-box binary not installed)"
+msgstr "仅预览（未安装 sing-box 内核）"
+
+msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
+msgstr "%d 个配置源 · %d 个节点 · %d 个出站组 · %d 个入站 · %d 个 DNS · %d 条路由规则 · %d 个规则集"
+
+msgid "Effective Runtime JSON (Stage B)"
+msgstr "生效运行期 JSON（阶段 B）"
+
+msgid "Composed JSON (Stage A)"
+msgstr "编排合成 JSON（阶段 A）"
+
+msgid "JSON copied to clipboard."
+msgstr "JSON 已复制到剪贴板。"
+
+msgid "Failed to copy to clipboard."
+msgstr "复制到剪贴板失败。"
+
+msgid "Copy JSON"
+msgstr "复制 JSON"
+
+msgid "Validation Error:"
+msgstr "校验错误:"
+
+msgid "Warnings:"
+msgstr "诊断警告:"
+
+msgid "e.g. Main Router"
+msgstr "例如：主路由配置"
+
+msgid "Configuration Name"
+msgstr "配置名称"
+
+msgid "File: "
+msgstr "文件："
 
 msgid "Sources"
 msgstr "配置源"
@@ -1318,53 +157,35 @@ msgstr "复写 JSON 存在语法错误: %s"
 msgid "Composer configuration exceeds the 256 KiB inline transfer limit."
 msgstr "编排配置超过 256 KiB 直接传输上限。"
 
-msgid "Composer configuration saved, validated, and applied."
-msgstr "编排配置已保存、校验并应用生效。"
+msgid "Configuration name cannot be empty."
+msgstr "配置名称不能为空。"
 
-msgid "Composer configuration saved and validated. Reload service to apply changes."
-msgstr "编排配置已保存并通过校验，请重载服务以应用更改。"
+msgid "Composer \"%s\" saved, validated, and applied."
+msgstr "编排配置“%s”已保存、校验并生效。"
 
-msgid "Composer configuration saved and validated with sing-box."
-msgstr "编排配置已保存并通过 sing-box 校验。"
+msgid "Composer \"%s\" saved and validated. Select it as Active Configuration in Settings to apply."
+msgstr "编排配置“%s”已保存并校验。请在“设置”中将其选为活动配置以生效。"
 
-msgid "Composer configuration saved."
-msgstr "编排配置已保存。"
+msgid "Composer \"%s\" saved and validated. Reload service to apply changes."
+msgstr "编排配置“%s”已保存并校验，请重载服务使更改生效。"
+
+msgid "Composer \"%s\" saved and validated with sing-box."
+msgstr "编排配置“%s”已保存并通过 sing-box 校验。"
+
+msgid "Composer \"%s\" saved."
+msgstr "编排配置“%s”已保存。"
 
 msgid "Composer Warnings:"
 msgstr "编排配置警告:"
 
-msgid "Synthesizing configuration and running sing-box check..."
-msgstr "正在合成配置并执行 sing-box 校验..."
+msgid "Unsaved changes discarded."
+msgstr "已放弃未保存的更改。"
 
-msgid "Preview & Check"
-msgstr "预览与校验"
+msgid "Preview & Check: %s"
+msgstr "预览并校验：%s"
 
-msgid "sing-box check: Passed"
-msgstr "sing-box check: 校验通过"
-
-msgid "sing-box check: Failed"
-msgstr "sing-box check: 校验失败"
-
-msgid "Preview Only (sing-box binary not installed)"
-msgstr "仅预览（未安装 sing-box 内核）"
-
-msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
-msgstr "%d 个配置源 · %d 个节点 · %d 个出站组 · %d 个入站 · %d 个 DNS · %d 条路由规则 · %d 个规则集"
-
-msgid "Effective Runtime JSON (Stage B)"
-msgstr "生效运行期 JSON（阶段 B）"
-
-msgid "Composed JSON (Stage A)"
-msgstr "编排合成 JSON（阶段 A）"
-
-msgid "JSON copied to clipboard."
-msgstr "JSON 已复制到剪贴板。"
-
-msgid "Copy JSON"
-msgstr "复制 JSON"
-
-msgid "Validation Error:"
-msgstr "校验错误:"
+msgid "-- Select Profile --"
+msgstr "-- 请选择配置 --"
 
 msgid "Paste full sing-box JSON object here..."
 msgstr "在此粘贴完整的 sing-box JSON 对象..."
@@ -1423,6 +244,9 @@ msgstr "从现有配置导入"
 msgid "Import from Raw sing-box JSON"
 msgstr "从原始 sing-box JSON 导入"
 
+msgid "Unsaved Changes"
+msgstr "未保存更改"
+
 msgid "Not Saved Yet"
 msgstr "尚未保存"
 
@@ -1432,14 +256,20 @@ msgstr "已同步"
 msgid "%d sources · %d groups · %d manual outbounds · %d rules"
 msgstr "%d 个配置源 · %d 个出站组 · %d 个手动出站 · %d 条规则"
 
+msgid "Back to Config List"
+msgstr "返回配置列表"
+
+msgid "Active"
+msgstr "当前激活"
+
 msgid "Saved: %s"
 msgstr "已保存: %s"
 
+msgid "Processing..."
+msgstr "正在处理..."
+
 msgid "Presets / Import"
 msgstr "预设 / 导入"
-
-msgid "Save & Apply"
-msgstr "保存并应用"
 
 msgid "Matched %d node(s)."
 msgstr "共匹配 %d 个节点。"
@@ -1452,6 +282,9 @@ msgstr "最终 Tag"
 
 msgid "Original Tag"
 msgstr "原始 Tag"
+
+msgid "Type"
+msgstr "类型"
 
 msgid "Server"
 msgstr "服务器"
@@ -1476,6 +309,9 @@ msgstr "当前提取规则未匹配到任何节点。"
 
 msgid "Test Extract"
 msgstr "测试提取"
+
+msgid "Save"
+msgstr "保存"
 
 msgid "No outbound groups defined."
 msgstr "尚未定义出站组。"
@@ -1516,11 +352,14 @@ msgstr "节点属性复写 (JSON)"
 msgid "RFC 7396 Merge Patch applied to every extracted node (null deletes a field)."
 msgstr "对每个提取的节点应用 RFC 7396 Merge Patch（设为 null 可删除字段）。"
 
-msgid "Add Source / Profile"
-msgstr "添加配置源 / 配置"
+msgid "Manage Subscriptions"
+msgstr "管理订阅"
 
-msgid "Shared profiles under /etc/nimbus/profiles/. Toggle Extract to include nodes in Composer."
-msgstr "共享配置位于 /etc/nimbus/profiles/。勾选「提取」即可将节点纳入编排配置。"
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "Toggle Extract to include nodes from shared subscriptions in Composer."
+msgstr "勾选“提取”即可将对应共享订阅中的节点纳入编排配置。"
 
 msgid "Composer references %d missing profile source(s): %s"
 msgstr "编排配置引用了 %d 个缺失的配置源: %s"
@@ -1540,10 +379,22 @@ msgstr "提取规则"
 msgid "Attached Groups"
 msgstr "已关联出站组"
 
-msgid "No profiles configured yet. Click \"Add Source / Profile\" to add one."
-msgstr "暂无配置，请点击“添加配置源 / 配置”新建。"
+msgid "Actions"
+msgstr "操作"
 
-msgid "File missing"
+msgid "No subscriptions or profiles found. "
+msgstr "未找到任何订阅或配置文件。"
+
+msgid "Go to Subscriptions"
+msgstr "前往订阅管理"
+
+msgid "Subscription"
+msgstr "订阅信息"
+
+msgid "Local"
+msgstr "本地"
+
+msgid "Missing"
 msgstr "文件缺失"
 
 msgid "Prefix: %s"
@@ -1567,9 +418,6 @@ msgstr "提取设置"
 msgid "Nodes"
 msgstr "节点"
 
-msgid "Upload"
-msgstr "上传"
-
 msgid "Remove \"%s\" from the Composer draft?"
 msgstr "确认从编排草稿中移除 \"%s\" 吗？"
 
@@ -1585,20 +433,26 @@ msgstr "+ 选择已有 Tag"
 msgid "No subscription bindings configured (group uses static outbounds only)."
 msgstr "未配置订阅源绑定（该出站组仅使用静态出站）。"
 
+msgid "Source"
+msgstr "节点来源"
+
 msgid "* (All enabled sources)"
 msgstr "*（全部已启用配置源）"
 
-msgid "Include regex (e.g. HK|SG)"
-msgstr "包含正则（如 HK|SG）"
+msgid "e.g. HK|SG"
+msgstr "例如：HK|SG"
 
-msgid "Exclude regex"
-msgstr "排除正则"
+msgid "Optional"
+msgstr "可选"
 
 msgid "Matching nodes..."
 msgstr "正在匹配节点..."
 
 msgid "No nodes matched this provider binding."
 msgstr "此配置源绑定未匹配到任何节点。"
+
+msgid "Preview"
+msgstr "清洗预览"
 
 msgid "Remove"
 msgstr "移除"
@@ -1614,6 +468,9 @@ msgstr "编辑出站组: %s"
 
 msgid "Add Outbound Group"
 msgstr "新建出站组"
+
+msgid "Enabled"
+msgstr "已启用"
 
 msgid "Tag"
 msgstr "Tag"
@@ -1684,8 +541,14 @@ msgstr "配置源: %s"
 msgid "Fallback: %s"
 msgstr "兜底: %s"
 
+msgid "Edit"
+msgstr "编辑"
+
 msgid "Delete Group"
 msgstr "删除出站组"
+
+msgid "Delete"
+msgstr "删除"
 
 msgid "Manual Outbounds"
 msgstr "手动出站"
@@ -1755,6 +618,9 @@ msgstr "默认 DNS (final)"
 
 msgid "Strategy"
 msgstr "解析策略"
+
+msgid "Advanced Options"
+msgstr "高级选项"
 
 msgid "DNS Servers"
 msgstr "DNS 服务器"
@@ -2026,11 +892,23 @@ msgstr "缓存文件 + Fake-IP 持久化"
 msgid "Hysteria Realm Service"
 msgstr "Hysteria Realm 服务"
 
+msgid "Clash API"
+msgstr "Clash API"
+
 msgid "HTTP Clients"
 msgstr "HTTP 客户端 (http_clients)"
 
 msgid "Value must be a JSON object."
 msgstr "值必须是合法的 JSON 对象。"
+
+msgid "Invalid JSON syntax: %s"
+msgstr "JSON 语法错误: %s"
+
+msgid "via %s"
+msgstr "经由 %s"
+
+msgid "dev:%s"
+msgstr "接口:%s"
 
 msgid "logical (%s, %d sub-rules)"
 msgstr "逻辑规则 (%s, %d 条子规则)"
@@ -2038,8 +916,1253 @@ msgstr "逻辑规则 (%s, %d 条子规则)"
 msgid "%d inline rules"
 msgstr "%d 条内联规则"
 
-msgid "via %s"
-msgstr "经由 %s"
+msgid "Discard Unsaved Changes"
+msgstr "放弃未保存的更改"
 
-msgid "dev:%s"
-msgstr "接口:%s"
+msgid "You have unsaved changes in this Composer configuration. Discard them and return to the list?"
+msgstr "当前编排配置有未保存的更改，确定放弃并返回配置列表吗？"
+
+msgid "Auto-generated if empty, e.g. main_router.json"
+msgstr "留空自动生成，例如 main_router.json"
+
+msgid "Import from Subscription / Local File"
+msgstr "从订阅 / 本地文件导入"
+
+msgid "Source Profile"
+msgstr "来源配置"
+
+msgid "sing-box JSON"
+msgstr "sing-box JSON"
+
+msgid "Clone"
+msgstr "复制"
+
+msgid "Create"
+msgstr "创建"
+
+msgid "Configuration name is required."
+msgstr "配置名称不能为空。"
+
+msgid "Filename must match ^[A-Za-z0-9._-]+\\.json$ (no path separators or \"..\")."
+msgstr "文件名必须匹配 ^[A-Za-z0-9._-]+\\.json$（禁止路径分隔符或 \"..\"）。"
+
+msgid "Composer \"%s\" cloned."
+msgstr "编排配置“%s”已复制。"
+
+msgid "Composer \"%s\" created."
+msgstr "编排配置“%s”已创建。"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Filename"
+msgstr "文件名"
+
+msgid "Stored under /etc/nimbus/composers/. Leave empty to auto-generate."
+msgstr "保存在 /etc/nimbus/composers/ 下，留空则按名称自动生成。"
+
+msgid "Clone Source"
+msgstr "复制来源"
+
+msgid "Initialization"
+msgstr "初始化方式"
+
+msgid "Clone Composer: %s"
+msgstr "复制编排配置：%s"
+
+msgid "Add Composer Configuration"
+msgstr "新建编排配置"
+
+msgid "Delete Composer Configuration"
+msgstr "删除编排配置"
+
+msgid "Delete Composer \"%s\" (%s) and its JSON file?"
+msgstr "确定删除编排配置“%s”（%s）及其 JSON 文件吗？"
+
+msgid "Composer \"%s\" deleted."
+msgstr "编排配置“%s”已删除。"
+
+msgid "Add Composer"
+msgstr "新建编排配置"
+
+msgid "Last Updated"
+msgstr "最后更新"
+
+msgid "No Composer configurations yet. Click \"Add Composer\" to create one."
+msgstr "尚未创建编排配置，点击“新建编排配置”开始。"
+
+msgid "%d sources · %d nodes · %d groups · %d rules"
+msgstr "%d 个来源 · %d 个节点 · %d 个分组 · %d 条规则"
+
+msgid "%s (Copy)"
+msgstr "%s（副本）"
+
+msgid "Cannot delete while selected as Active Configuration in Settings."
+msgstr "当前已在“设置”中选为活动配置，无法删除。"
+
+msgid "Composer Configurations"
+msgstr "编排配置列表"
+
+msgid "Maintain multiple structured sing-box Composer blueprints under /etc/nimbus/composers/. Select the active configuration in: "
+msgstr "在 /etc/nimbus/composers/ 下维护多套结构化 sing-box 编排配置，当前生效配置请前往切换："
+
+msgid "File Status"
+msgstr "文件状态"
+
+msgid "No standalone subscriptions or local JSON configurations enabled. Enable \"Allow as Active Config\" in: "
+msgstr "暂无允许直接生效的订阅或本地 JSON 配置，请前往勾选“允许作为活动配置”："
+
+msgid "%s (Composer)"
+msgstr "%s（编排）"
+
+msgid "Import to Composer"
+msgstr "导入为编排配置"
+
+msgid "Standalone Subscriptions & Local Files"
+msgstr "可独立生效的订阅与本地配置"
+
+msgid "Complete sing-box JSON files with \"Allow as Active Config\" enabled. Manage or activate in: "
+msgstr "已启用“允许作为活动配置”的完整 sing-box JSON 文件，可直接启用或导入为编排配置，管理入口："
+
+msgid "Nimbus Configuration"
+msgstr "Nimbus 配置管理"
+
+msgid "Manage multiple sing-box Composer configurations and inspect standalone profiles. Editing any configuration never changes which configuration is currently active."
+msgstr "管理多套 sing-box 编排配置并预览可独立生效的订阅/本地配置。编辑任意配置不会影响当前正在运行的活动配置。"
+
+msgid "Idle"
+msgstr "空闲"
+
+msgid "Queued"
+msgstr "排队中"
+
+msgid "Checking Disk Space"
+msgstr "正在检查磁盘空间"
+
+msgid "Downloading"
+msgstr "正在下载"
+
+msgid "Verifying"
+msgstr "正在校验"
+
+msgid "Extracting"
+msgstr "正在解压"
+
+msgid "Installing Binary"
+msgstr "正在安装二进制文件"
+
+msgid "Reloading Service"
+msgstr "正在重载服务"
+
+msgid "Completed"
+msgstr "已完成"
+
+msgid "Failed"
+msgstr "失败"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "sing-box core %s installed successfully."
+msgstr "sing-box 内核 %s 安装成功。"
+
+msgid "Core installation failed."
+msgstr "内核安装失败。"
+
+msgid "Starting core installation..."
+msgstr "正在启动内核安装任务..."
+
+msgid "Installed: v%s"
+msgstr "已安装: v%s"
+
+msgid "unknown"
+msgstr "未知"
+
+msgid "Not Executable"
+msgstr "不可执行"
+
+msgid "Not Installed"
+msgstr "未安装"
+
+msgid "Core Status & Architecture"
+msgstr "内核状态与系统架构"
+
+msgid "Installation Status"
+msgstr "安装状态"
+
+msgid "Binary Path"
+msgstr "二进制文件路径"
+
+msgid "Binary Size"
+msgstr "二进制文件大小"
+
+msgid "Last Modified"
+msgstr "最后修改时间"
+
+msgid "OpenWrt Architecture"
+msgstr "OpenWrt 架构"
+
+msgid "sing-box Target / ABI"
+msgstr "sing-box 目标平台 / ABI"
+
+msgid "Preferred Release Asset"
+msgstr "首选发行包后缀"
+
+msgid "Free Space (/tmp)"
+msgstr "可用空间 (/tmp)"
+
+msgid "Free Space (Target Dir)"
+msgstr "可用空间（目标目录）"
+
+msgid "Update Available"
+msgstr "有可用更新"
+
+msgid "Up to Date"
+msgstr "已是最新版本"
+
+msgid "Latest Release"
+msgstr "最新发布版本"
+
+msgid "Prerelease"
+msgstr "预发布版"
+
+msgid "Published At"
+msgstr "发布时间"
+
+msgid "Matched Asset"
+msgstr "匹配的发行资产"
+
+msgid "Asset Size"
+msgstr "资产大小"
+
+msgid "SHA256 Digest"
+msgstr "SHA256 摘要"
+
+msgid "Not provided in release metadata"
+msgstr "发行元数据中未提供"
+
+msgid "Release Notes"
+msgstr "发行说明"
+
+msgid "Install v%s from GitHub"
+msgstr "从 GitHub 安装 v%s"
+
+msgid "Install & Upgrade sing-box Core"
+msgstr "安装与升级 sing-box 内核"
+
+msgid "Download verified musl releases from GitHub or upload a local .tar.gz archive or sing-box binary."
+msgstr "从 GitHub 拉取并校验 musl 发行包，或上传本地 .tar.gz 压缩包 / sing-box 二进制文件。"
+
+msgid "Checking..."
+msgstr "检查中..."
+
+msgid "Check for Updates"
+msgstr "检查更新"
+
+msgid "Install Latest from GitHub"
+msgstr "从 GitHub 安装最新版"
+
+msgid "Upload Package (.tar.gz / Binary)"
+msgstr "上传内核包 (.tar.gz / 二进制)"
+
+msgid "Core Download & Path Settings"
+msgstr "内核下载与路径设置"
+
+msgid "Absolute path where the sing-box binary is stored (may point to external storage or /tmp)."
+msgstr "sing-box 二进制文件存放的绝对路径（可指向外挂存储或 /tmp）。"
+
+msgid "Binary path must be an absolute path starting with \"/\"."
+msgstr "二进制路径必须是以 \"/\" 开头的绝对路径。"
+
+msgid "GitHub Repository"
+msgstr "GitHub 仓库"
+
+msgid "Repository must match owner/repo format (e.g. SagerNet/sing-box)."
+msgstr "仓库名称必须符合 owner/repo 格式（例如 SagerNet/sing-box）。"
+
+msgid "Release Channel"
+msgstr "版本通道"
+
+msgid "Stable"
+msgstr "稳定版 (Stable)"
+
+msgid "GitHub Mirror Prefix"
+msgstr "GitHub 下载镜像前缀"
+
+msgid "Optional http(s):// prefix prepended to GitHub asset download URLs."
+msgstr "可选的 http(s):// 加速前缀，将拼接在 GitHub 资产下载地址前。"
+
+msgid "Mirror prefix must be empty or start with http:// or https://."
+msgstr "镜像前缀必须为空或以 http:// 或 https:// 开头。"
+
+msgid "Download via Proxy"
+msgstr "通过代理下载"
+
+msgid "Route GitHub API queries and asset downloads through an active local proxy inbound when available."
+msgstr "当本地代理入站可用时，经由当前代理查询 GitHub API 并下载发行资产。"
+
+msgid "Nimbus Core"
+msgstr "Nimbus 内核管理"
+
+msgid "Last 100 lines"
+msgstr "最近 100 行"
+
+msgid "Last 200 lines"
+msgstr "最近 200 行"
+
+msgid "Last 500 lines"
+msgstr "最近 500 行"
+
+msgid "Last 1000 lines"
+msgstr "最近 1000 行"
+
+msgid "Last 2000 lines"
+msgstr "最近 2000 行"
+
+msgid "Pause"
+msgstr "暂停"
+
+msgid "(Log file is empty)"
+msgstr "（日志文件为空）"
+
+msgid "File size: %s"
+msgstr "文件大小: %s"
+
+msgid "Showing trailing %d lines"
+msgstr "显示末尾 %d 行"
+
+msgid "Resume"
+msgstr "继续"
+
+msgid "Clear Logs"
+msgstr "清空日志"
+
+msgid "Truncate /var/log/nimbus.log to 0 bytes?"
+msgstr "确定将 /var/log/nimbus.log 清空为 0 字节吗？"
+
+msgid "Log file cleared."
+msgstr "日志已清空。"
+
+msgid "Nimbus Logs"
+msgstr "Nimbus 运行日志"
+
+msgid "Live viewer for /var/log/nimbus.log in tmpfs (automatically rotated above 512 KiB)."
+msgstr "实时查看内存中的 /var/log/nimbus.log（超过 512 KiB 时自动截断轮转）。"
+
+msgid "Auto-scroll"
+msgstr "自动滚动"
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "Preparing"
+msgstr "准备中"
+
+msgid "Lockdown"
+msgstr "锁定阻断 (Lockdown)"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Endpoint URL"
+msgstr "接口地址 (URL)"
+
+msgid "Endpoint URL copied to clipboard."
+msgstr "接口地址已复制到剪贴板。"
+
+msgid "Copy"
+msgstr "复制"
+
+msgid "API Secret"
+msgstr "API 密钥"
+
+msgid "Show"
+msgstr "显示"
+
+msgid "Hide"
+msgstr "隐藏"
+
+msgid "API secret copied to clipboard."
+msgstr "API 密钥已复制到剪贴板。"
+
+msgid "Secret is not available in the current runtime configuration."
+msgstr "当前运行配置中未找到密钥。"
+
+msgid "No API secret is configured."
+msgstr "未配置 API 密钥。"
+
+msgid "Service did not start because it is disabled in Settings (global.enabled)."
+msgstr "服务未启动，因为当前在设置中已禁用（global.enabled）。"
+
+msgid "Service action \"%s\" completed."
+msgstr "服务操作 \"%s\" 已完成。"
+
+msgid "sing-box Native API Credentials"
+msgstr "sing-box 原生 API 连接凭据"
+
+msgid "Clash API Credentials"
+msgstr "Clash API 连接凭据"
+
+msgid "Fail-Closed Lockdown Active: "
+msgstr "Fail-Closed 安全锁定已触发: "
+
+msgid "Non-whitelist LAN forwarding traffic is blocked to prevent IP leaks. Router management (SSH and LuCI) remains accessible."
+msgstr "已阻断非白名单 LAN 转发流量以防真实 IP 泄漏。路由器本地管理（SSH 与 LuCI）仍保持可达。"
+
+msgid "Router DNS Notice: "
+msgstr "路由器本机 DNS 提示: "
+
+msgid "DNS mode is set to \"singbox\", so dnsmasq remains pointed at 127.0.0.1 to prevent DNS leaks. The router itself cannot resolve external domains (for core or subscription updates) until you click \"Stop\" to restore dnsmasq."
+msgstr "当前 DNS 模式为 \"singbox\"，为防止 DNS 泄漏，dnsmasq 仍指向 127.0.0.1。在锁定状态下路由器本机无法解析外部域名（无法从 GitHub 拉取内核或更新订阅），如需恢复网络解析请先点击“停止”以还原 dnsmasq。"
+
+msgid "Last Error: "
+msgstr "最近错误: "
+
+msgid "Nimbus service is currently disabled in Settings. "
+msgstr "Nimbus 服务当前在设置中处于禁用状态。"
+
+msgid "Go to Settings"
+msgstr "前往设置"
+
+msgid "sing-box core binary is not installed yet. "
+msgstr "尚未安装 sing-box 内核二进制文件。"
+
+msgid "Go to Core Management"
+msgstr "前往内核管理"
+
+msgid "No active sing-box configuration is selected. "
+msgstr "尚未选择活动 sing-box 配置。"
+
+msgid "Selected Composer configuration file is missing or not initialized. "
+msgstr "当前选中的编排配置文件缺失或尚未初始化。"
+
+msgid "Go to Config"
+msgstr "前往配置"
+
+msgid "None"
+msgstr "无"
+
+msgid "Composer"
+msgstr "编排配置"
+
+msgid "Standalone Profile"
+msgstr "独立配置"
+
+msgid "Unavailable"
+msgstr "不可用"
+
+msgid "Start"
+msgstr "启动"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Restart"
+msgstr "重启"
+
+msgid "Reload"
+msgstr "重载"
+
+msgid "Service Status"
+msgstr "服务状态"
+
+msgid "Applying action..."
+msgstr "正在执行操作..."
+
+msgid "Not installed"
+msgstr "未安装"
+
+msgid "Running (PID %d)"
+msgstr "运行中 (PID %d)"
+
+msgid "Not running"
+msgstr "未运行"
+
+msgid "%d sources · %d nodes · %d groups"
+msgstr "%d 个配置源 · %d 个节点 · %d 个出站组"
+
+msgid "Not initialized"
+msgstr "尚未初始化"
+
+msgid "Boot / UCI Enabled"
+msgstr "开机启用 (UCI)"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "Active Configuration"
+msgstr "活动配置"
+
+msgid "Composer Summary"
+msgstr "编排配置摘要"
+
+msgid "Network Topology"
+msgstr "网络拓扑"
+
+msgid "Side Router"
+msgstr "旁路由模式"
+
+msgid "Main Router"
+msgstr "主路由模式"
+
+msgid "Proxy Mode"
+msgstr "代理模式"
+
+msgid "Failure Policy"
+msgstr "异常保护策略"
+
+msgid "Fail-Open (Direct Fallback)"
+msgstr "Fail-Open（异常回落直连）"
+
+msgid "Fail-Closed (Lockdown)"
+msgstr "Fail-Closed（异常锁定阻断）"
+
+msgid "sing-box Core"
+msgstr "sing-box 内核"
+
+msgid "Process"
+msgstr "进程状态"
+
+msgid "Uptime"
+msgstr "运行时长"
+
+msgid "Memory (RSS)"
+msgstr "内存占用 (RSS)"
+
+msgid "Runtime Overview"
+msgstr "运行期概览"
+
+msgid "user inbound"
+msgstr "复用用户入站"
+
+msgid "auto-injected"
+msgstr "自动补齐"
+
+msgid "Effective Data Plane & Whitelist"
+msgstr "生效数据面与白名单"
+
+msgid "TCP Redirect Port"
+msgstr "TCP Redirect 端口"
+
+msgid "UDP TPROXY Port"
+msgstr "UDP TPROXY 端口"
+
+msgid "Outbound Mark"
+msgstr "出站防环路标记"
+
+msgid "DNS Takeover"
+msgstr "DNS 托管模式"
+
+msgid "Fake-IP Ranges"
+msgstr "Fake-IP 网段"
+
+msgid "None detected"
+msgstr "未检测到"
+
+msgid "Whitelist Bypass"
+msgstr "白名单绕行"
+
+msgid "IPv4"
+msgstr "IPv4"
+
+msgid "IPv6"
+msgstr "IPv6"
+
+msgid "TCP Proxied"
+msgstr "TCP 代理流量"
+
+msgid "%d packets (%s)"
+msgstr "%d 数据包 (%s)"
+
+msgid "UDP Proxied"
+msgstr "UDP 代理流量"
+
+msgid "Lockdown Rejected"
+msgstr "锁定阻断计数"
+
+msgid "%d packets"
+msgstr "%d 数据包"
+
+msgid "TUN Proxied"
+msgstr "TUN 代理流量"
+
+msgid "nftables Traffic Counters"
+msgstr "nftables 实时流量统计"
+
+msgid "Not configured in the active configuration."
+msgstr "当前生效配置中未定义此接口。"
+
+msgid "Loopback Only"
+msgstr "仅回环监听"
+
+msgid "No Secret Configured"
+msgstr "未配置密钥"
+
+msgid "Secret Protected"
+msgstr "已配置密钥保护"
+
+msgid "Reveal / Copy Credentials"
+msgstr "查看 / 复制凭据"
+
+msgid "Listen Address"
+msgstr "监听地址"
+
+msgid "Status Flags"
+msgstr "状态标记"
+
+msgid "Built-in Dashboard"
+msgstr "内置控制面板"
+
+msgid "Enabled (%s)"
+msgstr "已启用 (%s)"
+
+msgid "External UI"
+msgstr "外部控制面板 (External UI)"
+
+msgid "Configured"
+msgstr "已配置"
+
+msgid "Control APIs & Dashboards"
+msgstr "控制 API 与面板入口"
+
+msgid "sing-box Native API"
+msgstr "sing-box 原生 API"
+
+msgid "Open Dashboard"
+msgstr "打开 Dashboard"
+
+msgid "Open External UI"
+msgstr "打开 External UI"
+
+msgid "Nimbus Overview"
+msgstr "Nimbus 运行概览"
+
+msgid "Configuration applied and data plane reloaded."
+msgstr "配置已保存并重载数据面。"
+
+msgid "Nimbus Settings"
+msgstr "Nimbus 基础设置"
+
+msgid "Configure global routing topology, transparent proxy ports, DNS takeover, and per-device rules."
+msgstr "配置全局网络拓扑、透明代理端口、DNS 托管及局域网设备分流规则。"
+
+msgid "Global Settings"
+msgstr "全局设置"
+
+msgid "Enable Service"
+msgstr "启用服务"
+
+msgid "Select a Composer configuration or a standalone Subscription / Local file (with \"Allow as Active Config\" enabled)."
+msgstr "选择一套编排配置，或选择一个启用了“允许作为活动配置”的订阅/本地配置文件。"
+
+msgid "-- Select Configuration --"
+msgstr "-- 请选择配置 --"
+
+msgid "Side Router (Bypass Gateway)"
+msgstr "旁路由模式（透明网关）"
+
+msgid "TPROXY + Redirect (TCP REDIRECT + UDP TPROXY)"
+msgstr "TPROXY + Redirect（TCP REDIRECT + UDP TPROXY）"
+
+msgid "Fail-Open on Error"
+msgstr "故障回落直连 (Fail-Open)"
+
+msgid "When disabled (default), service failure switches to Fail-Closed Lockdown blocking non-whitelist LAN forwarding while keeping router SSH/LuCI reachable."
+msgstr "默认关闭：服务异常时切入 Fail-Closed 锁定阻断态，拦截非白名单 LAN 转发防 IP 泄漏，同时保持路由器 SSH 与 LuCI 可访问。"
+
+msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
+msgstr "无效的接口名称“%s”：长度须为 1–64 个字符，且仅包含 [A-Za-z0-9_.+-]。"
+
+msgid "LAN Interfaces"
+msgstr "LAN 逻辑接口"
+
+msgid "Logical OpenWrt network interfaces whose client traffic is intercepted."
+msgstr "需要透明代理接管流量的 OpenWrt LAN 逻辑接口。"
+
+msgid "WAN Interfaces"
+msgstr "WAN 逻辑接口"
+
+msgid "Logical WAN interfaces whose public IPv4/IPv6 prefixes are automatically bypassed in Main Router topology."
+msgstr "主路由模式下自动提取公网 IPv4/IPv6 前缀加入绕行集合的 WAN 逻辑接口。"
+
+msgid "Enable IPv4 Proxy"
+msgstr "启用 IPv4 代理"
+
+msgid "Enable IPv6 Proxy"
+msgstr "启用 IPv6 代理"
+
+msgid "IPv4 and IPv6 proxy cannot both be disabled."
+msgstr "IPv4 与 IPv6 代理不可同时禁用。"
+
+msgid "Proxy Router Outbound Traffic"
+msgstr "代理路由器本机出站流量"
+
+msgid "Intercept TCP/UDP connections initiated by the router itself."
+msgstr "接管路由器本机主动发起的 TCP/UDP 出站连接。"
+
+msgid "Log Level"
+msgstr "日志级别"
+
+msgid "Go Memory Limit (GOMEMLIMIT)"
+msgstr "Go 内存限制 (GOMEMLIMIT)"
+
+msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr "填写 \"auto\"（按总内存 40% 计算，限制在 32MiB–256MiB）或指定二进制内存值（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
+
+msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr "必须为 \"auto\" 或合法的二进制 Go 内存限制（支持单位 B、KiB、MiB、GiB、TiB，例如 128MiB）。"
+
+msgid "Data Plane & Traffic Filtering"
+msgstr "数据面与流量过滤"
+
+msgid "Used when the active configuration does not define a redirect inbound."
+msgstr "当当前生效配置未定义 redirect 入站时自动补齐的监听端口。"
+
+msgid "Used when the active configuration does not define a UDP tproxy inbound."
+msgstr "当当前生效配置未定义 UDP tproxy 入站时自动补齐的监听端口。"
+
+msgid "TPROXY port must differ from TCP Redirect port."
+msgstr "UDP TPROXY 端口不可与 TCP Redirect 端口相同。"
+
+msgid "Outbound Anti-Loop Mark"
+msgstr "出站防环路标记"
+
+msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0xff)."
+msgstr "必须为非零 32 位十六进制标记（例如 0xff）。"
+
+msgid "UDP TPROXY Routing Mark"
+msgstr "UDP TPROXY 策略路由标记"
+
+msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0x1)."
+msgstr "必须为非零 32 位十六进制标记（例如 0x1）。"
+
+msgid "TPROXY routing mark must differ from outbound anti-loop mark."
+msgstr "UDP TPROXY 路由标记不可与出站防环路标记相同。"
+
+msgid "Policy Route Table ID"
+msgstr "策略路由表 ID"
+
+msgid "Port Filter Mode"
+msgstr "目标端口过滤模式"
+
+msgid "Proxy All Ports"
+msgstr "代理全部端口"
+
+msgid "Proxy Only Listed Ports"
+msgstr "仅代理以下端口"
+
+msgid "Bypass Listed Ports"
+msgstr "排除以下端口（直连）"
+
+msgid "TCP Ports / Ranges"
+msgstr "TCP 端口 / 范围"
+
+msgid "Examples: 80, 443, 8000-8999."
+msgstr "示例：80、443、8000-8999。"
+
+msgid "Invalid port or range (expected 1-65535 or start-end)."
+msgstr "端口或端口范围无效（需为 1-65535 或 起始-结束）。"
+
+msgid "UDP Ports / Ranges"
+msgstr "UDP 端口 / 范围"
+
+msgid "Examples: 53, 443, 10000-10100."
+msgstr "示例：53、443、10000-10100。"
+
+msgid "Default LAN Device Policy"
+msgstr "默认局域网设备策略"
+
+msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
+msgstr "未命中下方「局域网设备分流规则」中任何启用条目的默认策略；设备规则按从上到下顺序优先匹配。"
+
+msgid "Proxy Unmatched Devices (Default)"
+msgstr "代理未匹配设备（默认）"
+
+msgid "Bypass Unmatched Devices (Direct)"
+msgstr "直连未匹配设备（绕行）"
+
+msgid "Inject Route Sniff Rule"
+msgstr "注入路由嗅探规则 (Sniff)"
+
+msgid "Ensure a modern route sniff action rule covers the active transparent inbounds."
+msgstr "确保在 route.rules 中为生效的透明代理入站注入现代 sniff 动作规则。"
+
+msgid "Block QUIC (UDP 443)"
+msgstr "阻断 QUIC (UDP 443)"
+
+msgid "Inject a route rule rejecting QUIC protocol traffic so browsers fall back to TCP."
+msgstr "向 route.rules 注入拒绝 QUIC 协议的规则，促使客户端回退至 TCP。"
+
+msgid "DNS Takeover (dnsmasq)"
+msgstr "DNS 托管 (dnsmasq)"
+
+msgid "DNS Mode"
+msgstr "DNS 模式"
+
+msgid "Do Not Manage (Keep Existing dnsmasq)"
+msgstr "不接管（保持现有 dnsmasq 配置）"
+
+msgid "Forward to Local sing-box DNS"
+msgstr "转发至本机 sing-box DNS 入站"
+
+msgid "Forward to Custom Upstreams"
+msgstr "转发至自定义上游"
+
+msgid "sing-box DNS Listen Port"
+msgstr "sing-box DNS 监听端口"
+
+msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
+msgstr "当模式为 \"singbox\" 且当前生效配置缺少本地 direct DNS 入站时自动补齐的端口。"
+
+msgid "DNS listen port is required."
+msgstr "必须填写 DNS 监听端口。"
+
+msgid "DNS port must not collide with TCP Redirect or UDP TPROXY port."
+msgstr "DNS 端口不可与 TCP Redirect 或 UDP TPROXY 端口冲突。"
+
+msgid "Custom Upstream Servers"
+msgstr "自定义上游服务器"
+
+msgid "dnsmasq upstream format, e.g. 127.0.0.1#5335 or 192.168.1.2#5353."
+msgstr "dnsmasq 上游格式，例如 127.0.0.1#5335 或 192.168.1.2#5353。"
+
+msgid "At least one custom DNS upstream server is required."
+msgstr "至少需要填写一个自定义 DNS 上游服务器。"
+
+msgid "DNS upstream entry cannot be empty or contain spaces."
+msgstr "DNS 上游条目不能为空且不可包含空格。"
+
+msgid "Local DNS (\"local\") Handling"
+msgstr "local 类型 DNS 上游处理"
+
+msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops."
+msgstr "当 dnsmasq 转发至 sing-box 或启用路由器本机代理时，如何改写配置中的 \"local\" 类型 DNS 上游以防止解析死循环。"
+
+msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
+msgstr "自动探测 WAN 上游 DNS（不可用时回退至直连 DNS）"
+
+msgid "Always Use Configured Direct DNS"
+msgstr "始终使用下方配置的直连 DNS"
+
+msgid "Strict Reject (\"local\" Not Allowed)"
+msgstr "严格拒绝（禁止包含 \"local\" 上游）"
+
+msgid "Manual / Fallback Direct DNS"
+msgstr "手工 / 兜底直连 DNS"
+
+msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
+msgstr "在指定模式或暂未检测到安全 WAN 上游 DNS 时，用于替换 \"local\" 的非回环直连 DNS IP；留空则强制要求必须存在可用 WAN DNS。"
+
+msgid "Direct DNS server IP is required when policy is set to always use fallback."
+msgstr "选择始终使用直连 DNS 时，必须填写合法的 DNS 服务器 IP。"
+
+msgid "Direct DNS server IP must not be a loopback or unspecified address."
+msgstr "直连 DNS 服务器 IP 不能为回环地址或未指定地址。"
+
+msgid "Hijack LAN External DNS (Port 53)"
+msgstr "劫持 LAN 外部 DNS (53 端口)"
+
+msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
+msgstr "在 table inet nimbus 中将受代理局域网设备发往外部 IP 的 TCP/UDP 53 查询重定向至路由器本机 53 端口（被设备分流规则或默认策略直连绕行的设备不劫持）。"
+
+msgid "LAN Device Rules"
+msgstr "局域网设备分流规则"
+
+msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
+msgstr "按从上到下顺序优先匹配（先命中者生效），均未命中时回退至上方默认设备策略；未启用行将被忽略。"
+
+msgid "Description"
+msgstr "备注"
+
+msgid "MAC Address"
+msgstr "MAC 地址"
+
+msgid "IP / CIDR"
+msgstr "IP / CIDR 网段"
+
+msgid "Specify at least a MAC address or an IP/CIDR."
+msgstr "MAC 地址与 IP/CIDR 至少需填写一项。"
+
+msgid "Policy"
+msgstr "策略"
+
+msgid "Bypass (Direct)"
+msgstr "直连绕行 (Bypass)"
+
+msgid "Proxy"
+msgstr "走代理 (Proxy)"
+
+msgid "Profile \"%s\" uploaded and validated with sing-box. Reload service to apply changes."
+msgstr "配置 \"%s\" 已上传并通过 sing-box 校验。重载服务后生效。"
+
+msgid "Profile \"%s\" uploaded and validated with sing-box."
+msgstr "配置 \"%s\" 已上传并通过 sing-box 校验。"
+
+msgid "Profile \"%s\" uploaded (JSON syntax checked). Reload service to apply changes."
+msgstr "配置 \"%s\" 已上传（已校验 JSON 语法）。重载服务后生效。"
+
+msgid "Profile \"%s\" uploaded (JSON syntax checked)."
+msgstr "配置 \"%s\" 已上传（已通过 JSON 语法校验）。"
+
+msgid "Profile \"%s\" saved and validated with sing-box. Reload service to apply changes."
+msgstr "配置 \"%s\" 已保存并通过 sing-box 校验。重载服务后生效。"
+
+msgid "Profile \"%s\" saved and validated with sing-box."
+msgstr "配置 \"%s\" 已保存并通过 sing-box 校验。"
+
+msgid "Profile \"%s\" saved (JSON syntax checked). Reload service to apply changes."
+msgstr "配置 \"%s\" 已保存（已校验 JSON 语法）。重载服务后生效。"
+
+msgid "Profile \"%s\" saved (JSON syntax checked)."
+msgstr "配置 \"%s\" 已保存（已通过 JSON 语法校验）。"
+
+msgid "%s / %s direct limit"
+msgstr "%s / %s 直接传输上限"
+
+msgid "Content exceeds the 256 KiB inline transfer limit. Save locally and use \"Upload .json\" instead."
+msgstr "文本大小超过 256 KiB 直接传输上限，请保存为本地文件后点击“上传 .json”。"
+
+msgid "Standalone configuration JSON must be a top-level object."
+msgstr "可独立生效的配置 JSON 必须是顶层对象。"
+
+msgid "Source JSON must be a top-level object or a non-empty array."
+msgstr "配置源 JSON 顶层必须是合法对象或非空数组。"
+
+msgid "Edit Profile JSON: %s"
+msgstr "编辑配置 JSON: %s"
+
+msgid "Validate with sing-box check before saving"
+msgstr "保存前执行 sing-box check 校验"
+
+msgid "Upload .json File"
+msgstr "上传 .json 文件"
+
+msgid "e.g. Main Profile"
+msgstr "例如：主力配置"
+
+msgid "Remote Subscription"
+msgstr "远程订阅"
+
+msgid "Local File"
+msgstr "本地配置"
+
+msgid "Subscription URL"
+msgstr "订阅链接 (URL)"
+
+msgid "User-Agent"
+msgstr "User-Agent"
+
+msgid "Fetch via Proxy"
+msgstr "通过代理拉取"
+
+msgid "Auto Update"
+msgstr "自动更新"
+
+msgid "Update Interval (Hours)"
+msgstr "更新周期（小时）"
+
+msgid "Allowed range: 1 to 720 hours."
+msgstr "允许范围：1 至 720 小时。"
+
+msgid "Profile name is required."
+msgstr "必须填写配置名称。"
+
+msgid "Subscription profile requires a valid http:// or https:// URL."
+msgstr "订阅配置必须提供合法的 http:// 或 https:// 地址。"
+
+msgid "Update interval must be an integer between 1 and 720 hours."
+msgstr "更新周期必须是 1 到 720 之间的整数。"
+
+msgid "Subscription metadata updated."
+msgstr "订阅元信息已更新。"
+
+msgid "Subscription created."
+msgstr "订阅已创建。"
+
+msgid "Edit Subscription: %s"
+msgstr "编辑订阅: %s"
+
+msgid "Add Subscription"
+msgstr "添加订阅"
+
+msgid "Stored read-only under /etc/nimbus/profiles/, e.g. main_sub.json."
+msgstr "以只读源形式存储于 /etc/nimbus/profiles/，例如 main_sub.json。"
+
+msgid "Allow as Active Config"
+msgstr "允许作为活动配置"
+
+msgid "Currently selected as the active configuration in Settings. Switch active configuration first to disable."
+msgstr "当前已在“设置”中选为活动配置，请先切换其他活动配置后再取消勾选。"
+
+msgid "Allow selecting this file directly as the Active Configuration in Settings (requires a complete sing-box JSON object)."
+msgstr "允许在“设置”中直接将其选为活动配置（要求文件内容为完整的 sing-box JSON 对象）。"
+
+msgid "failed"
+msgstr "失败"
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败，已平滑重载服务。"
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化，%d 个失败。"
+
+msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化，已平滑重载服务。"
+
+msgid "Subscription update finished: %d updated, %d unchanged."
+msgstr "订阅更新完成：%d 个已更新，%d 个无变化。"
+
+msgid "Delete Profile"
+msgstr "删除配置"
+
+msgid "Delete profile \"%s\" (%s) and its configuration file?"
+msgstr "确认删除配置 \"%s\" (%s) 及其原始配置文件吗？"
+
+msgid "Profile \"%s\" deleted."
+msgstr "配置 \"%s\" 已删除。"
+
+msgid "Update All Subscriptions"
+msgstr "更新全部订阅"
+
+msgid "No subscriptions or profiles configured. Click \"Add Subscription\" to create one."
+msgstr "尚未配置任何订阅或文件。请点击“添加订阅”创建。"
+
+msgid "Standalone Config"
+msgstr "可独立生效"
+
+msgid "Used by: %s"
+msgstr "已被以下编排引用：%s"
+
+msgid "Cannot delete while enabled as a source in Composer: %s"
+msgstr "已被编排配置启用为节点来源，无法删除：%s"
+
+msgid "Auto: %dh"
+msgstr "自动: 每 %d 小时"
+
+msgid "Manual"
+msgstr "手动"
+
+msgid "Via Proxy"
+msgstr "走代理"
+
+msgid "Edit JSON"
+msgstr "编辑 JSON"
+
+msgid "Upload .json"
+msgstr "上传 .json"
+
+msgid "Update"
+msgstr "立即更新"
+
+msgid "Meta"
+msgstr "元数据"
+
+msgid "Nimbus Subscriptions"
+msgstr "Nimbus 订阅管理"
+
+msgid "Manage remote sing-box subscriptions and local JSON files stored read-only under /etc/nimbus/profiles/. Enable \"Allow as Active Config\" to select a complete file directly in Settings, or use any item as a node source in Composer."
+msgstr "统一管理存放在 /etc/nimbus/profiles/ 下的远程 sing-box 订阅与本地 JSON 文件。勾选“允许作为活动配置”后可在“设置”中直接启用，也可在任意编排配置中作为节点来源引用。"
+
+msgid "Line %d: \"%s\" — %s"
+msgstr "第 %d 行: \"%s\" — %s"
+
+msgid "invalid entry"
+msgstr "无效条目"
+
+msgid "Validation Failed: %s"
+msgstr "校验失败: %s"
+
+msgid "Saved \"%s\" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables."
+msgstr "已保存 \"%s\"（%d 条 IPv4、%d 条 IPv6）并原子热更新 nftables 集合。"
+
+msgid "Saved \"%s\" (%d IPv4, %d IPv6)."
+msgstr "已保存 \"%s\"（%d 条 IPv4、%d 条 IPv6）。"
+
+msgid "Save & Hot-Reload"
+msgstr "保存并热更新"
+
+msgid "Content exceeds the 256 KiB inline transfer limit. Use \"Upload .txt File\" instead."
+msgstr "内容超过 256 KiB 直接传输上限，请使用“上传 .txt 文件”。"
+
+msgid "Edit Whitelist: %s"
+msgstr "编辑白名单: %s"
+
+msgid "Enter one IPv4, IPv6, or CIDR range per line. Comments beginning with \"#\", \";\", or \"//\" are supported."
+msgstr "每行填写一条 IPv4、IPv6 或 CIDR 网段；支持 \"#\"、\";\" 或 \"//\" 注释。"
+
+msgid "Upload .txt File"
+msgstr "上传 .txt 文件"
+
+msgid "IPv4: %d"
+msgstr "IPv4: %d"
+
+msgid "IPv6: %d"
+msgstr "IPv6: %d"
+
+msgid "Ignored / Comments: %d"
+msgstr "已忽略 / 注释行: %d"
+
+msgid "Invalid: %d"
+msgstr "无效行: %d"
+
+msgid "Unrecognized Lines (not loaded into nftables):"
+msgstr "未识别行（不会加载至 nftables）:"
+
+msgid "Line %d: %s"
+msgstr "第 %d 行: %s"
+
+msgid "(empty)"
+msgstr "（空）"
+
+msgid "Cleaned whitelist entries copied to clipboard."
+msgstr "清洗后的白名单条目已复制到剪贴板。"
+
+msgid "Copy Cleaned"
+msgstr "复制清洗结果"
+
+msgid "Cleaned Preview: %s"
+msgstr "清洗预览: %s"
+
+msgid "e.g. Custom Direct"
+msgstr "例如：自定义直连"
+
+msgid "Remote URL"
+msgstr "远程订阅源 (URL)"
+
+msgid "Auto (IPv4 + IPv6)"
+msgstr "自动识别 (IPv4 + IPv6)"
+
+msgid "IPv4 Only"
+msgstr "仅 IPv4"
+
+msgid "IPv6 Only"
+msgstr "仅 IPv6"
+
+msgid "Stored under /etc/nimbus/lists/local/, e.g. custom_direct.txt."
+msgstr "存储于 /etc/nimbus/lists/local/，例如 custom_direct.txt。"
+
+msgid "Source URL"
+msgstr "远程源地址 (URL)"
+
+msgid "Source name is required."
+msgstr "必须填写白名单名称。"
+
+msgid "Filename must match ^[A-Za-z0-9._-]+\\.txt$ (no path separators or \"..\")."
+msgstr "文件名必须匹配 ^[A-Za-z0-9._-]+\\.txt$（禁止路径分隔符或 \"..\"）。"
+
+msgid "Remote source requires a valid http:// or https:// URL."
+msgstr "远程白名单源必须提供合法的 http:// 或 https:// 地址。"
+
+msgid "Whitelist source saved and atomically hot-reloaded nftables."
+msgstr "白名单源已保存并原子热更新 nftables 集合。"
+
+msgid "Whitelist source saved."
+msgstr "白名单源已保存。"
+
+msgid "Edit Whitelist Source: %s"
+msgstr "编辑白名单源: %s"
+
+msgid "Add Whitelist Source"
+msgstr "新建白名单源"
+
+msgid "Address Family"
+msgstr "地址族"
+
+msgid "Remote lists updated: %d updated, %d unchanged, nftables atomically hot-reloaded."
+msgstr "远程白名单更新完成：%d 个已更新，%d 个无变化，已原子热更新 nftables。"
+
+msgid "Remote lists updated: %d updated, %d unchanged."
+msgstr "远程白名单更新完成：%d 个已更新，%d 个无变化。"
+
+msgid "Delete Whitelist Source"
+msgstr "删除白名单源"
+
+msgid "Delete whitelist source \"%s\" and its associated file/cache?"
+msgstr "确认删除白名单源 \"%s\" 及其对应的本地文件/缓存吗？"
+
+msgid "Whitelist source deleted and nftables hot-reloaded."
+msgstr "白名单源已删除并热更新 nftables。"
+
+msgid "Whitelist source deleted."
+msgstr "白名单源已删除。"
+
+msgid "Cron expression must have 5 space-separated fields (e.g. \"30 4 * * *\")."
+msgstr "Cron 表达式必须包含 5 个以空格分隔的字段（例如 \"30 4 * * *\"）。"
+
+msgid "Whitelist policy saved and atomically hot-reloaded nftables."
+msgstr "白名单全局策略已保存并原子热更新 nftables。"
+
+msgid "Whitelist policy saved."
+msgstr "白名单全局策略已保存。"
+
+msgid "Save Policy"
+msgstr "保存策略"
+
+msgid "Global Whitelist Policy"
+msgstr "白名单全局策略"
+
+msgid "Effective nftables Sets"
+msgstr "当前生效 nftables 集合"
+
+msgid "Effective nftables IPv4: %d"
+msgstr "nftables 生效 IPv4 条数: %d"
+
+msgid "Effective nftables IPv6: %d"
+msgstr "nftables 生效 IPv6 条数: %d"
+
+msgid "Enable Whitelist Bypass"
+msgstr "启用白名单绕行"
+
+msgid "Built-in private, LAN, and WAN reserved subnets always bypass the proxy regardless of this switch."
+msgstr "系统内置局域网、保留段与 WAN 公网 IP 始终绕行，不受此开关影响。"
+
+msgid "Auto Update Remote Lists"
+msgstr "定时自动更新远程白名单"
+
+msgid "Cron Schedule"
+msgstr "定时计划 (Cron)"
+
+msgid "Standard 5-field cron expression, e.g. 30 4 * * *."
+msgstr "标准 5 段 Cron 表达式，例如 30 4 * * *。"
+
+msgid "Add Source"
+msgstr "新建白名单源"
+
+msgid "Update All Remote Sources"
+msgstr "更新全部远程源"
+
+msgid "Updating..."
+msgstr "正在更新..."
+
+msgid "Family"
+msgstr "地址族"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Target"
+msgstr "来源 / 文件"
+
+msgid "Entries & File"
+msgstr "条目与文件信息"
+
+msgid "No whitelist sources configured."
+msgstr "暂无白名单源配置。"
+
+msgid "IPv4: %d / IPv6: %d"
+msgstr "IPv4: %d / IPv6: %d"
+
+msgid "Not cached / missing"
+msgstr "未缓存 / 文件不存在"
+
+msgid "Upload .txt"
+msgstr "上传 .txt"
+
+msgid "Whitelist Sources"
+msgstr "白名单列表"
+
+msgid "Nimbus Whitelists"
+msgstr "Nimbus 白名单管理"
+
+msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
+msgstr "管理直连绕行 IPv4/IPv6 CIDR 白名单。编辑本地列表或刷新远程源后，将通过 nftables 原子热更新生效，无需重启 sing-box。"

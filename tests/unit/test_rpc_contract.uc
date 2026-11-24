@@ -2,6 +2,7 @@
 'use strict';
 
 import * as fs from 'fs';
+import * as uci from 'uci';
 import * as uloop from 'uloop';
 import * as common from 'common';
 import * as cb from 'config_builder';
@@ -27,6 +28,7 @@ let work_dir = sprintf('%s/rpc_test_%d', tmp_root, time());
 let conf_dir = work_dir + '/etc_config';
 let save_dir = work_dir + '/tmp_uci';
 let run_dir = work_dir + '/run';
+let composers_dir = work_dir + '/composers';
 let profiles_dir = work_dir + '/profiles';
 let local_lists_dir = work_dir + '/lists_local';
 let cache_lists_dir = work_dir + '/lists_cache';
@@ -35,12 +37,11 @@ let core_work_dir = work_dir + '/core_dl';
 let crontab_file = work_dir + '/crontab_root';
 let upload_dir = work_dir + '/uploads';
 
-for (let d in [ work_dir, conf_dir, save_dir, run_dir, profiles_dir, local_lists_dir, cache_lists_dir, core_work_dir, upload_dir ])
+for (let d in [ work_dir, conf_dir, save_dir, run_dir, composers_dir, profiles_dir, local_lists_dir, cache_lists_dir, core_work_dir, upload_dir ])
 	check(common.ensure_dir(d, 0755), sprintf('create dir %s', d));
 
 let state_file = run_dir + '/state.json';
 let config_file = run_dir + '/config.json';
-let composer_file = work_dir + '/composer.json';
 let pid_file = run_dir + '/sing-box.pid';
 let lock_file = run_dir + '/nimbus.lock';
 let log_file = run_dir + '/nimbus.log';
@@ -55,7 +56,6 @@ let mock_curl = work_dir + '/mock-curl.sh';
 let uci_seed =
 	"config main 'global'\n" +
 	"\toption enabled '1'\n" +
-	"\toption config_mode 'profile'\n" +
 	"\toption active_profile ''\n" +
 	"\toption topology 'main'\n" +
 	"\toption proxy_mode 'tproxy_redirect'\n" +
@@ -82,12 +82,21 @@ let uci_seed =
 
 check(common.atomic_write(conf_dir + '/nimbus', uci_seed, 0644), 'seed nimbus UCI');
 
+function set_active_profile(id) {
+	let cur = uci.cursor(conf_dir, save_dir);
+	check(cur != null, 'open uci cursor for active_profile');
+	cur.set('nimbus', 'global', 'active_profile', id || '');
+	let ok = cur.commit('nimbus');
+	cur.unload('nimbus');
+	check(ok, sprintf('commit global.active_profile=%s', '' + id));
+}
+
 let rpc_cfg = {
 	uci_confdir: conf_dir,
 	uci_savedir: save_dir,
 	state_file: state_file,
 	config_file: config_file,
-	composer_file: composer_file,
+	composers_dir: composers_dir,
 	pid_file: pid_file,
 	lock_file: lock_file,
 	log_file: log_file,
@@ -157,17 +166,17 @@ function call_rpc(name, args) {
 	return out;
 }
 
-// 1. Verify exact 29 methods and 100% parity with acl.d & menu.d
+// 1. Verify exact 31 methods (15 read + 16 write) and 100% parity with acl.d & menu.d
 let expected_read = [
-	'status', 'log_read', 'profile_list', 'profile_read',
+	'status', 'log_read', 'profile_list', 'profile_read', 'profile_preview',
 	'list_status', 'list_read', 'core_info', 'core_check_update', 'core_task_status',
-	'composer_get', 'composer_nodes', 'composer_preview', 'composer_import'
+	'composer_list', 'composer_get', 'composer_nodes', 'composer_preview', 'composer_import'
 ];
 let expected_write = [
 	'api_secret', 'service_action', 'log_clear', 'profile_save',
-	'profile_meta_save', 'profile_activate', 'profile_delete', 'profile_update',
+	'profile_meta_save', 'profile_delete', 'profile_update',
 	'whitelist_config_save', 'list_source_save', 'list_save', 'list_delete',
-	'list_update', 'core_install', 'composer_save', 'composer_mode_set'
+	'list_update', 'core_install', 'composer_create', 'composer_save', 'composer_delete'
 ];
 
 let acl_doc = common.read_json(acl_path);
@@ -177,8 +186,8 @@ check(type(menu_doc?.['admin/services/nimbus']) == 'object', 'menu.d JSON is val
 
 let acl_read = acl_doc['luci-app-nimbus']?.read?.ubus?.['luci.nimbus'] || [];
 let acl_write = acl_doc['luci-app-nimbus']?.write?.ubus?.['luci.nimbus'] || [];
-check(length(acl_read) == 13 && length(acl_write) == 16, 'acl.d splits 13 read + 16 write methods');
-check(length(keys(rpc)) == 29, 'luci.nimbus exposes exact 29 methods');
+check(length(acl_read) == 15 && length(acl_write) == 16, 'acl.d splits 15 read + 16 write methods');
+check(length(keys(rpc)) == 31, 'luci.nimbus exposes exact 31 methods');
 
 for (let m in expected_read) {
 	check(index(acl_read, m) >= 0 && index(acl_write, m) < 0, sprintf('acl.d places "%s" strictly in read', m));
@@ -197,7 +206,7 @@ check(exists(write_files, '/tmp/nimbus-upload.json') &&
 	exists(write_files, '/tmp/nimbus-upload.bin'),
 	'acl.d authorizes exact 3 fixed /tmp/nimbus-upload.* paths');
 
-let expected_views = [ 'overview', 'settings', 'profiles', 'whitelists', 'core', 'logs' ];
+let expected_views = [ 'overview', 'settings', 'subscriptions', 'config', 'whitelists', 'core', 'logs' ];
 for (let i = 0; i < length(expected_views); i++) {
 	let v = expected_views[i];
 	let item = menu_doc['admin/services/nimbus/' + v];
@@ -251,7 +260,7 @@ rpc_cfg.mock_counters = {
 let st_res = call_rpc('status', {});
 let st_raw_str = sprintf('%J', st_res);
 check(st_res.ok === true && st_res.state == 'running' &&
-	st_res.config_mode == 'profile' && st_res.composer === null &&
+	!exists(st_res, 'config_mode') && st_res.active_kind === null && st_res.composer === null &&
 	st_res.process.running === true && st_res.process.pid == int(self_pid, 10) && st_res.process.rss_kb > 0 &&
 	st_res.core.installed === true && st_res.core.version == '1.14.4' &&
 	st_res.effective.outbound_mark == '0xff' &&
@@ -278,8 +287,7 @@ let locked_calls = [
 	[ 'service_action', { action: 'reload' } ],
 	[ 'log_clear', {} ],
 	[ 'profile_save', { filename: 'x.json', content: '{}', validate: false } ],
-	[ 'profile_meta_save', { name: 'X', type: 'local', filename: 'x.json' } ],
-	[ 'profile_activate', { section_id: 'x', reload: false } ],
+	[ 'profile_meta_save', { name: 'X', type: 'local', filename: 'x.json', as_config: true } ],
 	[ 'profile_delete', { section_id: 'x' } ],
 	[ 'profile_update', {} ],
 	[ 'whitelist_config_save', { enabled: true, auto_update: true, update_cron: '30 4 * * *' } ],
@@ -288,8 +296,9 @@ let locked_calls = [
 	[ 'list_delete', { section_id: 'x' } ],
 	[ 'list_update', {} ],
 	[ 'core_install', { source: 'upload' } ],
-	[ 'composer_save', { composer_json: '{}', validate: false, reload: false } ],
-	[ 'composer_mode_set', { mode: 'composer', reload: false } ]
+	[ 'composer_create', { name: 'X', init_mode: 'blank' } ],
+	[ 'composer_save', { section_id: 'x', composer_json: '{}', validate: false, reload: false } ],
+	[ 'composer_delete', { section_id: 'x' } ]
 ];
 
 let t_lock0 = clock(true);
@@ -322,10 +331,14 @@ for (let bad_list in [ '../etc/passwd', '../bad.txt', 'a/b.txt', 'test.sh', '.tx
 }
 
 for (let bad_id in [ '../bad', 'bad-id', 'a/b', 'x;rm' ]) {
-	let r1 = call_rpc('profile_activate', { section_id: bad_id });
+	let r1 = call_rpc('profile_preview', { section_id: bad_id });
 	let r2 = call_rpc('profile_delete', { section_id: bad_id });
 	let r3 = call_rpc('list_delete', { section_id: bad_id });
-	check(r1.code == common.ERR_INVALID_ARG && r2.code == common.ERR_INVALID_ARG && r3.code == common.ERR_INVALID_ARG,
+	let r4 = call_rpc('composer_get', { section_id: bad_id });
+	let r5 = call_rpc('composer_delete', { section_id: bad_id });
+	check(r1.code == common.ERR_INVALID_ARG && r2.code == common.ERR_INVALID_ARG &&
+		r3.code == common.ERR_INVALID_ARG && r4.code == common.ERR_INVALID_ARG &&
+		r5.code == common.ERR_INVALID_ARG,
 		sprintf('malicious section_id "%s" rejected with E_INVALID_ARG', bad_id));
 }
 
@@ -375,7 +388,7 @@ let st_log_after = fs.stat(log_file);
 check(lc_ok.ok === true && st_log_after != null && st_log_after.size == 0 && st_log_after.inode == st_log_before.inode,
 	'log_clear truncates log to 0 bytes while preserving inode');
 
-// 6. Test profile CRUD, real sing-box check validation, activation, conflict & atomic delete
+// 6. Test profile CRUD, as_config, real sing-box check validation, profile_preview, conflict & atomic delete
 let modern_raw = fs.readfile(repo_root + '/tests/fixtures/v114_modern.json');
 let legacy_raw = fs.readfile(repo_root + '/tests/fixtures/v111_legacy.json');
 
@@ -383,15 +396,17 @@ let pm1 = call_rpc('profile_meta_save', {
 	section_id: '',
 	name: 'Local One',
 	type: 'local',
-	filename: 'local_one.json'
+	filename: 'local_one.json',
+	as_config: true
 });
-check(pm1.ok === true && pm1.section_id == 'local_one', 'profile_meta_save creates new local profile section');
+check(pm1.ok === true && pm1.section_id == 'local_one', 'profile_meta_save creates new local standalone profile section');
 
 let pm_dup = call_rpc('profile_meta_save', {
 	section_id: '',
 	name: 'Duplicate File',
 	type: 'local',
-	filename: 'local_one.json'
+	filename: 'local_one.json',
+	as_config: true
 });
 check(pm_dup.ok === false && pm_dup.code == common.ERR_CONFLICT, 'profile_meta_save rejects duplicate filename with E_CONFLICT');
 
@@ -407,9 +422,17 @@ let ps_bad_sb = call_rpc('profile_save', {
 check(ps_bad_sb.ok === false && ps_bad_sb.code == common.ERR_VALIDATE_FAILED && fs.stat(profiles_dir + '/local_one.json') == null,
 	'profile_save rejects config failing real sing-box check without writing file');
 
-let pa1 = call_rpc('profile_activate', { section_id: 'local_one', reload: false });
-check(pa1.ok === true && pa1.active_profile == 'local_one' && pa1.reloaded === false,
-	'profile_activate switches global.active_profile');
+set_active_profile('local_one');
+
+let pm_disable_active = call_rpc('profile_meta_save', {
+	section_id: 'local_one',
+	name: 'Local One',
+	type: 'local',
+	filename: 'local_one.json',
+	as_config: false
+});
+check(pm_disable_active.ok === false && pm_disable_active.code == common.ERR_CONFLICT,
+	'profile_meta_save rejects disabling as_config while profile is active');
 
 let ps_ok = call_rpc('profile_save', { filename: 'local_one.json', content: modern_raw, validate: true });
 check(ps_ok.ok === true && ps_ok.checked === true && ps_ok.reload_required === true &&
@@ -418,6 +441,12 @@ check(ps_ok.ok === true && ps_ok.checked === true && ps_ok.reload_required === t
 
 let pr_ok = call_rpc('profile_read', { filename: 'local_one.json' });
 check(pr_ok.ok === true && pr_ok.content == modern_raw, 'profile_read returns raw profile content');
+
+let pp_ok = call_rpc('profile_preview', { section_id: 'local_one', validate: true });
+check(pp_ok.ok === true && pp_ok.checked === true && pp_ok.check_ok === true &&
+	pp_ok.check_error === null && type(pp_ok.effective_json) == 'string' &&
+	type(pp_ok.effective) == 'object',
+	'profile_preview synthesizes standalone profile and passes real sing-box check');
 
 let del_conflict = call_rpc('profile_delete', { section_id: 'local_one' });
 check(del_conflict.ok === false && del_conflict.code == common.ERR_CONFLICT,
@@ -428,22 +457,23 @@ let pm_sub = call_rpc('profile_meta_save', {
 	name: 'Main Sub',
 	type: 'subscription',
 	filename: 'main_sub.json',
+	as_config: true,
 	url: 'https://example.com/sub.json',
 	user_agent: 'sing-box/nimbus-rpc',
 	via_proxy: false,
 	auto_update: true,
 	update_interval_hours: 12
 });
-check(pm_sub.ok === true && pm_sub.section_id == 'main_sub', 'profile_meta_save creates subscription profile');
+check(pm_sub.ok === true && pm_sub.section_id == 'main_sub', 'profile_meta_save creates standalone subscription profile');
 check(index(fs.readfile(crontab_file) || '', '# nimbus-profile') >= 0,
 	'profile_meta_save syncs # nimbus-profile cron job');
 
 let plist = call_rpc('profile_list', {});
-check(plist.ok === true && plist.active_profile == 'local_one' && length(plist.profiles) == 2,
-	'profile_list enumerates profiles and active_profile');
+check(plist.ok === true && plist.active_profile == 'local_one' && length(plist.profiles) == 2 &&
+	plist.profiles[0].as_config === true && type(plist.profiles[0].used_by_composers) == 'array',
+	'profile_list enumerates profiles with as_config and used_by_composers');
 
-let pa2 = call_rpc('profile_activate', { section_id: 'main_sub', reload: false });
-check(pa2.ok === true && pa2.active_profile == 'main_sub', 'activate second profile');
+set_active_profile('main_sub');
 
 let del_ok = call_rpc('profile_delete', { section_id: 'local_one' });
 check(del_ok.ok === true && fs.stat(profiles_dir + '/local_one.json') == null,
@@ -639,7 +669,7 @@ let cinfo2 = call_rpc('core_info', {});
 check(cinfo2.ok === true && cinfo2.installed.exists === true && cinfo2.installed.version == '1.14.4',
 	'core_info reflects newly installed sing-box binary');
 
-// 11. Test valid from_upload on profile_save & list_save, profile_activate(reload=true), stale PID, and async status_probe
+// 11. Test valid from_upload on profile_save & list_save, stale PID, and async status_probe
 check(common.atomic_write(upload_profile_path, modern_raw, 0600), 'stage valid upload profile');
 let ps_up = call_rpc('profile_save', { filename: 'uploaded_ok.json', from_upload: true, validate: true });
 check(ps_up.ok === true && ps_up.checked === true && fs.stat(upload_profile_path) == null &&
@@ -651,17 +681,6 @@ let ls_up = call_rpc('list_save', { filename: 'custom_direct.txt', from_upload: 
 check(ls_up.ok === true && ls_up.v4_count == 1 && fs.stat(upload_list_path) == null &&
 	fs.readfile(local_lists_dir + '/custom_direct.txt') == '223.5.5.5\n',
 	'list_save(from_upload=true) validates, writes file, and removes upload temp file');
-
-// Test profile_activate(reload=true) when service is running
-check(common.write_state({ state: 'running', warnings: [], last_error: null }, state_file), 'seed running state for activate reload');
-check(common.atomic_write(init_script, sprintf(
-	'#!/bin/sh\n' +
-	'if [ "$1" = "reload" ]; then printf \'{"state":"running","last_error":null,"warnings":[]}\\n\' > "%s"; exit 0; fi\n' +
-	'exit 0\n',
-	state_file
-), 0755), 'update mock init script for reload');
-let pa_rel = call_rpc('profile_activate', { section_id: 'main_sub', reload: true });
-check(pa_rel.ok === true && pa_rel.reloaded === true, 'profile_activate(reload=true) triggers async reload when running');
 
 // Test stale PID + async status_probe (nft -j counters & core version)
 check(common.atomic_write(pid_file, '999999\n', 0644), 'seed dead pid');
@@ -678,8 +697,8 @@ rpc_cfg.nft_bin = mock_nft_bin;
 let st_probe = call_rpc('status', {});
 check(st_probe.ok === true && st_probe.process.running === false && st_probe.process.pid == null &&
 	st_probe.counters.tcp_packets == 77 && st_probe.counters.udp_packets == 11 &&
-	st_probe.core.version == '1.14.4',
-	'status detects stale dead PID and asynchronously probes nft counters + core version');
+	st_probe.core.version == '1.14.4' && st_probe.active_kind == 'profile' && st_probe.active_name == 'Main Sub',
+	'status detects stale dead PID, resolves active standalone profile, and probes nft counters + core version');
 
 // Test profile_meta_save edit existing + disable auto_update removes cron
 let pm_edit = call_rpc('profile_meta_save', {
@@ -687,6 +706,7 @@ let pm_edit = call_rpc('profile_meta_save', {
 	name: 'Main Sub Edited',
 	type: 'subscription',
 	filename: 'main_sub.json',
+	as_config: true,
 	url: 'https://example.com/sub2.json',
 	auto_update: false,
 	update_interval_hours: 48
@@ -713,17 +733,16 @@ let st_err = call_rpc('status', {});
 check(st_err.ok === true && st_err.state == 'stopped' && st_err.last_error == 'crash exhausted',
 	'status normalizes state="error" to "stopped" while preserving last_error');
 
-// 12. Test Phase 3A Composer RPCs & dual-mode profile_save / profile_delete / status
+// 12. Test Multi-Instance Composer RPCs, profile_preview, as_config=false sources, and reference protection
 rpc_cfg.bin_path = singbox_bin;
 
-// 12.1 composer_get when composer.json does not exist yet
-let cg0 = call_rpc('composer_get', {});
-check(cg0.ok === true && cg0.config_mode == 'profile' && cg0.exists === false && cg0.mtime === null &&
-	type(cg0.composer) == 'object' && type(cg0.composer_json) == 'string' &&
-	type(cg0.profiles) == 'array' &&
-	cg0.auto_inbounds?.redirect_port == 7891 && cg0.auto_inbounds?.tproxy_port == 7892 &&
-	cg0.auto_inbounds?.singbox_dns_port == 5353,
-	'composer_get returns empty skeleton, profiles, and auto_inbounds when uninitialized');
+// 12.1 composer_list initially empty & composer_get returns E_NOT_FOUND for unknown section
+let cl0 = call_rpc('composer_list', {});
+check(cl0.ok === true && type(cl0.composers) == 'array' && length(cl0.composers) == 0,
+	'composer_list initially returns empty list');
+let cg_miss = call_rpc('composer_get', { section_id: 'no_such_comp' });
+check(cg_miss.ok === false && cg_miss.code == common.ERR_NOT_FOUND,
+	'composer_get returns E_NOT_FOUND for missing composer section');
 
 // 12.2 composer_import (from profile and json, plus validation errors)
 let ci_bad_src = call_rpc('composer_import', { source: 'ftp' });
@@ -739,7 +758,8 @@ let pm_imp = call_rpc('profile_meta_save', {
 	section_id: '',
 	name: 'Uploaded OK',
 	type: 'local',
-	filename: 'uploaded_ok.json'
+	filename: 'uploaded_ok.json',
+	as_config: true
 });
 check(pm_imp.ok === true, 'create profile metadata for uploaded_ok.json');
 let ci_prof = call_rpc('composer_import', { source: 'profile', profile_id: pm_imp.section_id });
@@ -747,23 +767,87 @@ check(ci_prof.ok === true && type(ci_prof.composer) == 'object' && type(ci_prof.
 	type(ci_prof.warnings) == 'array',
 	'composer_import imports existing profile without touching disk');
 let ci_json = call_rpc('composer_import', { source: 'json', content: modern_raw });
-check(ci_json.ok === true && length(ci_json.composer.outbounds) >= 1 && fs.stat(composer_file) == null,
-	'composer_import imports raw JSON without creating composer.json on disk');
+check(ci_json.ok === true && length(ci_json.composer.outbounds) >= 1,
+	'composer_import imports raw JSON without touching disk');
 let ci_big = call_rpc('composer_import', { source: 'json', content: huge_buf });
 check(ci_big.ok === false && ci_big.code == common.ERR_INVALID_ARG,
 	'composer_import enforces 256KB direct transfer limit');
 
-// 12.3 composer_mode_set
-let cms_bad = call_rpc('composer_mode_set', { mode: 'invalid' });
-check(cms_bad.ok === false && cms_bad.code == common.ERR_INVALID_ARG,
-	'composer_mode_set rejects invalid mode');
+// 12.3 composer_create (standard, blank, clone, import_profile, import_json, conflict & validation errors)
+let cc_bad_mode = call_rpc('composer_create', { name: 'Bad Mode', init_mode: 'invalid' });
+check(cc_bad_mode.ok === false && cc_bad_mode.code == common.ERR_INVALID_ARG,
+	'composer_create rejects invalid init_mode');
+let cc_empty_name = call_rpc('composer_create', { name: '   ', init_mode: 'standard' });
+check(cc_empty_name.ok === false && cc_empty_name.code == common.ERR_INVALID_ARG,
+	'composer_create rejects empty name');
 
+let cc_main = call_rpc('composer_create', {
+	name: 'Main Router',
+	filename: 'main_router.json',
+	init_mode: 'standard'
+});
+check(cc_main.ok === true && cc_main.section_id == 'main_router' && cc_main.filename == 'main_router.json' &&
+	fs.lstat(composers_dir + '/main_router.json') != null &&
+	(fs.lstat(composers_dir + '/main_router.json').mode & 0777) == 0600,
+	'composer_create(standard) creates UCI section and 0600 JSON file');
+
+let cc_dup = call_rpc('composer_create', {
+	name: 'Duplicate File',
+	filename: 'main_router.json',
+	init_mode: 'blank'
+});
+check(cc_dup.ok === false && cc_dup.code == common.ERR_CONFLICT,
+	'composer_create rejects duplicate composer filename with E_CONFLICT');
+
+let cc_blank = call_rpc('composer_create', { name: 'Side Test', init_mode: 'blank' });
+let cc_clone = call_rpc('composer_create', { name: 'Cloned Router', init_mode: 'clone', clone_from: cc_main.section_id });
+let cc_imp_p = call_rpc('composer_create', { name: 'Imported Prof', init_mode: 'import_profile', import_profile_id: pm_imp.section_id });
+let cc_imp_j = call_rpc('composer_create', { name: 'Imported JSON', init_mode: 'import_json', content: modern_raw });
+check(cc_blank.ok === true && cc_clone.ok === true && cc_imp_p.ok === true && cc_imp_j.ok === true,
+	'composer_create supports blank, clone, import_profile, and import_json init modes');
+
+// Clean up extra test composers except main_router and side_test
+check(call_rpc('composer_delete', { section_id: cc_clone.section_id }).ok === true &&
+	call_rpc('composer_delete', { section_id: cc_imp_p.section_id }).ok === true &&
+	call_rpc('composer_delete', { section_id: cc_imp_j.section_id }).ok === true,
+	'composer_delete cleans up inactive test composers');
+
+// 12.4 Seed node-only sources (as_config=false) & test profile_preview rejection + composer_save
+let sub_a_raw = fs.readfile(repo_root + '/tests/fixtures/sub_nodes_a.json');
+let sub_b_raw = fs.readfile(repo_root + '/tests/fixtures/sub_nodes_b.json');
+let pm_src_a = call_rpc('profile_meta_save', {
+	section_id: '', name: 'Source A', type: 'local', filename: 'source_a.json', as_config: false
+});
+let pm_src_b = call_rpc('profile_meta_save', {
+	section_id: '', name: 'Source B', type: 'local', filename: 'source_b.json', as_config: false
+});
+check(pm_src_a.ok === true && pm_src_b.ok === true, 'create node-only profile sections (as_config=false)');
+
+let pp_denied = call_rpc('profile_preview', { section_id: pm_src_a.section_id });
+check(pp_denied.ok === false && pp_denied.code == common.ERR_VALIDATE_FAILED,
+	'profile_preview rejects profile with as_config=false');
+
+// profile_save on as_config=false: reject empty object & empty outbounds, accept object & bare array
+let ps_comp_empty = call_rpc('profile_save', { filename: 'source_a.json', content: '{}', validate: true });
+check(ps_comp_empty.ok === false && ps_comp_empty.code == common.ERR_VALIDATE_FAILED,
+	'profile_save on as_config=false rejects empty object with zero outbounds');
+let ps_comp_zero = call_rpc('profile_save', { filename: 'source_a.json', content: '{"outbounds":[]}', validate: true });
+check(ps_comp_zero.ok === false && ps_comp_zero.code == common.ERR_VALIDATE_FAILED,
+	'profile_save on as_config=false rejects empty outbounds array');
+
+let ps_comp_a = call_rpc('profile_save', { filename: 'source_a.json', content: sub_a_raw, validate: true });
+check(ps_comp_a.ok === true && ps_comp_a.checked === false && ps_comp_a.reload_required === false &&
+	fs.readfile(profiles_dir + '/source_a.json') == sub_a_raw,
+	'profile_save on as_config=false saves unenabled source without sing-box check');
+let ps_comp_b = call_rpc('profile_save', { filename: 'source_b.json', content: sub_b_raw, validate: true });
+check(ps_comp_b.ok === true && ps_comp_b.checked === false &&
+	fs.readfile(profiles_dir + '/source_b.json') == sub_b_raw,
+	'profile_save on as_config=false accepts bare JSON array of outbounds');
+
+// Activate main_router via UCI (Settings flow)
+set_active_profile(cc_main.section_id);
 check(common.write_state({ state: 'running', warnings: [], last_error: null }, state_file),
-	'seed running state for composer_mode_set');
-let cms_norel = call_rpc('composer_mode_set', { mode: 'composer', reload: false });
-check(cms_norel.ok === true && cms_norel.config_mode == 'composer' &&
-	cms_norel.reload_required === true && cms_norel.reloaded === false,
-	'composer_mode_set updates UCI config_mode and flags reload_required without reloading when reload=false');
+	'seed running state for active composer tests');
 
 let lock_probe_flag = work_dir + '/reload_lock_probe.txt';
 check(common.atomic_write(init_script, sprintf(
@@ -779,40 +863,6 @@ check(common.atomic_write(init_script, sprintf(
 	'exit 0\n',
 	repo_root, lock_file, lock_probe_flag, state_file
 ), 0755), 'write mock init script verifying nimbus.lock is released before reload');
-
-let cms_rel = call_rpc('composer_mode_set', { mode: 'composer', reload: true });
-check(cms_rel.ok === true && cms_rel.config_mode == 'composer' &&
-	cms_rel.reload_required === true && cms_rel.reloaded === true &&
-	trim(fs.readfile(lock_probe_flag) || '') == '0',
-	'composer_mode_set(reload=true) releases nimbus.lock before reload and completes reload');
-
-// 12.4 Seed subscription sources in composer mode & test composer_save + RFC 7396 null override
-let sub_a_raw = fs.readfile(repo_root + '/tests/fixtures/sub_nodes_a.json');
-let sub_b_raw = fs.readfile(repo_root + '/tests/fixtures/sub_nodes_b.json');
-let pm_src_a = call_rpc('profile_meta_save', {
-	section_id: '', name: 'Source A', type: 'local', filename: 'source_a.json'
-});
-let pm_src_b = call_rpc('profile_meta_save', {
-	section_id: '', name: 'Source B', type: 'local', filename: 'source_b.json'
-});
-check(pm_src_a.ok === true && pm_src_b.ok === true, 'create profile sections for composer sources');
-
-// profile_save in composer mode: reject empty object & reject invalid structure, accept JSON object and JSON array
-let ps_comp_empty = call_rpc('profile_save', { filename: 'source_a.json', content: '{}', validate: true });
-check(ps_comp_empty.ok === false && ps_comp_empty.code == common.ERR_VALIDATE_FAILED,
-	'profile_save in composer mode rejects empty object with zero outbounds');
-let ps_comp_zero = call_rpc('profile_save', { filename: 'source_a.json', content: '{"outbounds":[]}', validate: true });
-check(ps_comp_zero.ok === false && ps_comp_zero.code == common.ERR_VALIDATE_FAILED,
-	'profile_save in composer mode rejects empty outbounds array');
-
-let ps_comp_a = call_rpc('profile_save', { filename: 'source_a.json', content: sub_a_raw, validate: true });
-check(ps_comp_a.ok === true && ps_comp_a.checked === false && ps_comp_a.reload_required === false &&
-	fs.readfile(profiles_dir + '/source_a.json') == sub_a_raw,
-	'profile_save in composer mode saves unenabled source profile without sing-box check');
-let ps_comp_b = call_rpc('profile_save', { filename: 'source_b.json', content: sub_b_raw, validate: true });
-check(ps_comp_b.ok === true && ps_comp_b.checked === false &&
-	fs.readfile(profiles_dir + '/source_b.json') == sub_b_raw,
-	'profile_save in composer mode accepts JSON array of outbounds');
 
 let comp_draft = {
 	schema_version: 1,
@@ -870,33 +920,45 @@ let comp_draft = {
 	}
 };
 
-let cs_bad_json = call_rpc('composer_save', { composer_json: '{bad', validate: false, reload: false });
+let main_comp_path = composers_dir + '/main_router.json';
+let before_bad_save = fs.readfile(main_comp_path);
+
+let cs_bad_json = call_rpc('composer_save', { section_id: cc_main.section_id, composer_json: '{bad', validate: false, reload: false });
 check(cs_bad_json.ok === false && cs_bad_json.code == common.ERR_VALIDATE_FAILED,
 	'composer_save rejects malformed composer_json');
-let cs_big = call_rpc('composer_save', { composer_json: huge_buf, validate: false, reload: false });
+let cs_big = call_rpc('composer_save', { section_id: cc_main.section_id, composer_json: huge_buf, validate: false, reload: false });
 check(cs_big.ok === false && cs_big.code == common.ERR_INVALID_ARG,
 	'composer_save rejects >256KB composer_json');
-let cs_missing = call_rpc('composer_save', { composer_json: '', validate: false, reload: false });
+let cs_missing = call_rpc('composer_save', { section_id: cc_main.section_id, composer_json: '', validate: false, reload: false });
 check(cs_missing.ok === false && cs_missing.code == common.ERR_INVALID_ARG,
 	'composer_save requires composer or composer_json');
 
 let bad_comp_draft = { ...comp_draft, outbounds: [ { id: 'bad1', enabled: true, type: 'nonexistent_proto_xyz', tag: 'bad', config: {} } ] };
-let cs_bad_sb = call_rpc('composer_save', { composer_json: sprintf('%.2J', bad_comp_draft), validate: true, reload: false });
-check(cs_bad_sb.ok === false && cs_bad_sb.code == common.ERR_VALIDATE_FAILED && fs.stat(composer_file) == null,
-	'composer_save fails real sing-box check and does not write composer.json');
+let cs_bad_sb = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
+	composer_json: sprintf('%.2J', bad_comp_draft),
+	validate: true,
+	reload: false
+});
+check(cs_bad_sb.ok === false && cs_bad_sb.code == common.ERR_VALIDATE_FAILED && fs.readfile(main_comp_path) == before_bad_save,
+	'composer_save fails real sing-box check and preserves existing composer file');
 
 let cs_ok = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
+	name: 'Main Router Renamed',
 	composer_json: sprintf('%.2J', comp_draft),
 	validate: true,
 	reload: false
 });
-let st_comp_file = fs.lstat(composer_file);
-check(cs_ok.ok === true && cs_ok.checked === true && cs_ok.changed === true &&
+let st_comp_file = fs.lstat(main_comp_path);
+check(cs_ok.ok === true && cs_ok.section_id == cc_main.section_id && cs_ok.name == 'Main Router Renamed' &&
+	cs_ok.checked === true && cs_ok.changed === true &&
 	cs_ok.reload_required === true && cs_ok.reloaded === false &&
 	st_comp_file != null && (st_comp_file.mode & 0777) == 0600,
-	'composer_save validates via real sing-box check, writes 0600 composer.json, and sets reload_required=true');
+	'composer_save validates via real sing-box check, renames section, writes 0600 file, and sets reload_required=true');
 
 let cs_unchanged = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
 	composer_json: sprintf('%.2J', comp_draft),
 	validate: false,
 	reload: false
@@ -905,33 +967,54 @@ check(cs_unchanged.ok === true && cs_unchanged.checked === false &&
 	cs_unchanged.changed === false && cs_unchanged.reload_required === false,
 	'composer_save detects unchanged SHA256 and sets changed=false, reload_required=false');
 
+// Saving inactive composer with reload=true MUST NOT trigger reload
 fs.unlink(lock_probe_flag);
+let cs_inactive = call_rpc('composer_save', {
+	section_id: cc_blank.section_id,
+	composer_json: sprintf('%.2J', comp_draft),
+	validate: true,
+	reload: true
+});
+check(cs_inactive.ok === true && cs_inactive.reloaded === false && cs_inactive.reload_required === false &&
+	fs.stat(lock_probe_flag) == null,
+	'composer_save(reload=true) on inactive composer saves cleanly without reloading running service');
+
+// Saving active composer with reload=true releases nimbus.lock before reload
 let cs_reload = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
 	composer_json: sprintf('%.2J', comp_draft),
 	validate: true,
 	reload: true
 });
 check(cs_reload.ok === true && cs_reload.reloaded === true && cs_reload.reload_required === true &&
 	trim(fs.readfile(lock_probe_flag) || '') == '0',
-	'composer_save(reload=true) releases nimbus.lock before init_script reload and replies reloaded=true');
+	'composer_save(reload=true) on active composer releases nimbus.lock before reload and replies reloaded=true');
 
-// 12.5 composer_get & status in composer mode
-let cg1 = call_rpc('composer_get', {});
-check(cg1.ok === true && cg1.config_mode == 'composer' && cg1.exists === true && cg1.mtime != null &&
-	cg1.composer.override?.dns?.disable_cache === null,
-	'composer_get returns saved composer preserving RFC 7396 null patch keys');
+// 12.5 composer_list, composer_get & status with active composer
+let cl1 = call_rpc('composer_list', {});
+check(cl1.ok === true && cl1.active_profile == cc_main.section_id && length(cl1.composers) == 2 &&
+	cl1.composers[0].id == cc_main.section_id && cl1.composers[0].name == 'Main Router Renamed' &&
+	cl1.composers[0].active === true && cl1.composers[0].summary?.extracted_nodes == 3,
+	'composer_list returns multi-instance metadata, active flag, and live summary');
+
+let cg1 = call_rpc('composer_get', { section_id: cc_main.section_id });
+check(cg1.ok === true && cg1.id == cc_main.section_id && cg1.name == 'Main Router Renamed' &&
+	cg1.active === true && cg1.exists === true && cg1.mtime != null &&
+	cg1.composer.override?.dns?.disable_cache === null &&
+	cg1.auto_inbounds?.redirect_port == 7891 && cg1.auto_inbounds?.tproxy_port == 7892,
+	'composer_get returns saved composer preserving RFC 7396 null patch keys and auto_inbounds');
 
 let st_comp = call_rpc('status', {});
-check(st_comp.ok === true && st_comp.config_mode == 'composer' &&
+check(st_comp.ok === true && st_comp.active_kind == 'composer' && st_comp.active_name == 'Main Router Renamed' &&
 	st_comp.composer != null && st_comp.composer.initialized === true &&
 	st_comp.composer.enabled_sources == 1 && st_comp.composer.extracted_nodes == 3,
-	'status in composer mode includes live composer summary');
+	'status resolves active composer and includes live composer summary');
 
 // 12.6 composer_nodes
-let cn_all = call_rpc('composer_nodes', {});
+let cn_all = call_rpc('composer_nodes', { section_id: cc_main.section_id });
 check(cn_all.ok === true && length(cn_all.nodes) == 3 && cn_all.per_source_counts[pm_src_a.section_id] == 3,
-	'composer_nodes extracts nodes from enabled sources');
-let cn_filt = call_rpc('composer_nodes', { include_regex: 'HK|JP', exclude_regex: 'JP' });
+	'composer_nodes extracts nodes from enabled sources of specified composer');
+let cn_filt = call_rpc('composer_nodes', { section_id: cc_main.section_id, include_regex: 'HK|JP', exclude_regex: 'JP' });
 check(cn_filt.ok === true && length(cn_filt.nodes) == 1 && cn_filt.nodes[0].tag == '[A] HK-01',
 	'composer_nodes filters nodes by include_regex and exclude_regex');
 let cn_draft = call_rpc('composer_nodes', {
@@ -942,7 +1025,7 @@ check(cn_draft.ok === true && length(cn_draft.nodes) == 2 && cn_draft.nodes[0].t
 	'composer_nodes supports req.args.composer draft object for specific profile_id');
 
 // 12.7 composer_preview (saved, draft with RFC 7396 null, and failing sing-box check still returning preview)
-let cp_ok = call_rpc('composer_preview', { validate: true });
+let cp_ok = call_rpc('composer_preview', { section_id: cc_main.section_id, validate: true });
 check(cp_ok.ok === true && cp_ok.checked === true && cp_ok.check_ok === true && cp_ok.check_error === null &&
 	!exists(cp_ok.composed?.dns || {}, 'disable_cache') &&
 	type(cp_ok.composed_json) == 'string' && type(cp_ok.effective_json) == 'string' &&
@@ -958,12 +1041,12 @@ check(cp_bad_sb.ok === true && cp_bad_sb.checked === true && cp_bad_sb.check_ok 
 	type(cp_bad_sb.composed) == 'object' && type(cp_bad_sb.effective) == 'object',
 	'composer_preview returns ok=true with check_ok=false and check_error when sing-box check fails');
 
-let cp_nocheck = call_rpc('composer_preview', { validate: false });
+let cp_nocheck = call_rpc('composer_preview', { section_id: cc_main.section_id, validate: false });
 check(cp_nocheck.ok === true && cp_nocheck.checked === false && cp_nocheck.check_ok === null &&
 	cp_nocheck.check_error === null,
 	'composer_preview with validate=false skips sing-box check');
 
-// 12.8 profile_save & profile_delete in composer mode
+// 12.8 profile_save, profile_delete (multi-composer ref check), and composer_delete (active protection)
 let ps_enabled_bad = call_rpc('profile_save', {
 	filename: 'source_a.json',
 	content: '[{"type":"nonexistent_proto_xyz","tag":"bad-node"}]',
@@ -971,31 +1054,41 @@ let ps_enabled_bad = call_rpc('profile_save', {
 });
 check(ps_enabled_bad.ok === false && ps_enabled_bad.code == common.ERR_VALIDATE_FAILED &&
 	fs.readfile(profiles_dir + '/source_a.json') == sub_a_raw,
-	'profile_save in composer mode rejects enabled source failing sing-box check without overwriting');
+	'profile_save rejects enabled source of active composer failing sing-box check without overwriting');
 
 let ps_enabled_src = call_rpc('profile_save', { filename: 'source_a.json', content: sub_a_raw, validate: true });
 check(ps_enabled_src.ok === true && ps_enabled_src.checked === true && ps_enabled_src.reload_required === true,
-	'profile_save in composer mode runs sing-box check and flags reload_required=true for enabled source');
+	'profile_save runs sing-box check and flags reload_required=true for source enabled in active composer');
 
 let pdel_conflict = call_rpc('profile_delete', { section_id: pm_src_a.section_id });
-check(pdel_conflict.ok === false && pdel_conflict.code == common.ERR_CONFLICT,
-	'profile_delete in composer mode rejects deleting source enabled in composer.json');
+check(pdel_conflict.ok === false && pdel_conflict.code == common.ERR_CONFLICT &&
+	index(pdel_conflict.error || '', 'Main Router Renamed') >= 0,
+	'profile_delete rejects deleting source enabled in any composer and lists composer name');
 
-// Set active_profile to unenabled source_b, then delete source_b in composer mode -> clears active_profile
-let pa_b = call_rpc('profile_activate', { section_id: pm_src_b.section_id, reload: false });
-check(pa_b.ok === true, 'activate source_b before deleting in composer mode');
+let plist_refs = call_rpc('profile_list', {});
+let src_a_item = filter(plist_refs.profiles || [], (p) => p.id == pm_src_a.section_id)[0];
+check(src_a_item != null && length(src_a_item.used_by_composers || []) == 2,
+	'profile_list reports all composers referencing source_a in used_by_composers');
+
 let pdel_b = call_rpc('profile_delete', { section_id: pm_src_b.section_id });
 check(pdel_b.ok === true && fs.stat(profiles_dir + '/source_b.json') == null,
-	'profile_delete deletes unenabled source in composer mode');
-let plist_after = call_rpc('profile_list', {});
-check(plist_after.ok === true && plist_after.active_profile == '',
-	'profile_delete in composer mode clears dangling global.active_profile');
+	'profile_delete deletes unreferenced source cleanly');
+
+let cdel_active = call_rpc('composer_delete', { section_id: cc_main.section_id });
+check(cdel_active.ok === false && cdel_active.code == common.ERR_CONFLICT,
+	'composer_delete rejects deleting active composer with E_CONFLICT');
+
+let blank_comp_file = composers_dir + '/' + cc_blank.filename;
+let cdel_ok = call_rpc('composer_delete', { section_id: cc_blank.section_id });
+check(cdel_ok.ok === true && fs.stat(blank_comp_file) == null,
+	'composer_delete atomically removes inactive composer UCI section and file');
 
 // 13. Regression assertions: args schema parity, composer_save(validate=false) warnings, lockdown reload_required, lock cleanup
 for (let m in [ 'composer_nodes', 'composer_preview', 'composer_save' ]) {
-	check(exists(rpc[m].args, 'composer') && type(rpc[m].args.composer) == 'object' &&
+	check(exists(rpc[m].args, 'section_id') && type(rpc[m].args.section_id) == 'string' &&
+		exists(rpc[m].args, 'composer') && type(rpc[m].args.composer) == 'object' &&
 		exists(rpc[m].args, 'composer_json') && type(rpc[m].args.composer_json) == 'string',
-		sprintf('%s args schema declares both composer (object) and composer_json (string)', m));
+		sprintf('%s args schema declares section_id, composer, and composer_json', m));
 }
 
 let warn_draft = {
@@ -1006,6 +1099,7 @@ let warn_draft = {
 	}
 };
 let cs_warn_nocheck = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
 	composer_json: sprintf('%.2J', warn_draft),
 	validate: false,
 	reload: false
@@ -1015,23 +1109,22 @@ check(cs_warn_nocheck.ok === true && cs_warn_nocheck.checked === false &&
 	length(filter(cs_warn_nocheck.warnings, (w) => index(w, 'missing_src') >= 0)) == 1,
 	'composer_save({ validate: false }) still returns Stage A warnings');
 
-// Restore clean composer_file and test profile_save reload_required in lockdown (composer + profile modes)
+// Test profile_save reload_required in lockdown (active composer source & active standalone profile)
 check(common.write_json_atomic(state_file, { state: 'lockdown' }, 0600), 'set state=lockdown for profile_save check');
 let ps_lockdown_comp = call_rpc('profile_save', { filename: 'source_a.json', content: sub_a_raw, validate: true });
 check(ps_lockdown_comp.ok === true && ps_lockdown_comp.reload_required === true,
-	'profile_save in composer mode flags reload_required=true when service state is lockdown');
+	'profile_save flags reload_required=true for active composer source in lockdown');
 
-let mode_prof_back = call_rpc('composer_mode_set', { mode: 'profile', reload: false });
-let act_main = call_rpc('profile_activate', { section_id: 'main_sub', reload: false });
+set_active_profile('main_sub');
 let ps_lockdown_prof = call_rpc('profile_save', { filename: 'main_sub.json', content: legacy_raw, validate: true });
-check(mode_prof_back.ok === true && act_main.ok === true &&
-	ps_lockdown_prof.ok === true && ps_lockdown_prof.reload_required === true,
-	'profile_save in profile mode flags reload_required=true when service state is lockdown');
+check(ps_lockdown_prof.ok === true && ps_lockdown_prof.reload_required === true,
+	'profile_save flags reload_required=true for active standalone profile in lockdown');
 
 // Verify worker failure releases in_flight_write and nimbus.lock cleanly
 let saved_ucode_bin = rpc_cfg.ucode_bin;
 rpc_cfg.ucode_bin = '/nonexistent/ucode_bin_xyz';
 let cs_worker_fail = call_rpc('composer_save', {
+	section_id: cc_main.section_id,
 	composer_json: sprintf('%.2J', comp_draft),
 	validate: false,
 	reload: false

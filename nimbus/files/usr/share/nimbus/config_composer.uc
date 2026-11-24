@@ -821,8 +821,9 @@ function normalize_composer(raw) {
 }
 
 function read_composer(path) {
-	let target = path || common.COMPOSER_FILE;
-	let raw = common.read_json(target);
+	if (type(path) != 'string' || length(trim(path)) == 0)
+		return null;
+	let raw = common.read_json(path);
 	if (raw == null)
 		return null;
 	let norm = normalize_composer(raw);
@@ -830,19 +831,21 @@ function read_composer(path) {
 }
 
 function save_composer(composer, path) {
+	if (type(path) != 'string' || length(trim(path)) == 0)
+		return fail(common.ERR_INVALID_ARG, 'composer file path is required');
+
 	let norm = normalize_composer(composer);
 	if (!norm.ok)
 		return norm;
 
-	let target = path || common.COMPOSER_FILE;
 	let text = sprintf('%.2J\n', norm.composer);
 	let new_sha = common.sha256_str(text);
 	if (!new_sha)
 		return fail(common.ERR_INTERNAL, 'failed to compute composer SHA256');
 
-	let st_old = fs.stat(target);
+	let st_old = fs.stat(path);
 	if (st_old && st_old.type == 'file') {
-		let old_sha = common.sha256_file(target);
+		let old_sha = common.sha256_file(path);
 		if (old_sha != null && old_sha == new_sha) {
 			return {
 				ok: true,
@@ -854,10 +857,10 @@ function save_composer(composer, path) {
 		}
 	}
 
-	if (!common.atomic_write(target, text, 0600))
-		return fail(common.ERR_INTERNAL, sprintf('failed to save composer file: %s', target));
+	if (!common.atomic_write(path, text, 0600))
+		return fail(common.ERR_INTERNAL, sprintf('failed to save composer file: %s', path));
 
-	let st_new = fs.stat(target);
+	let st_new = fs.stat(path);
 	return {
 		ok: true,
 		changed: true,
@@ -970,13 +973,13 @@ function extract_source_nodes(doc, source_cfg, existing_tags_map) {
 	};
 }
 
-function get_ordered_profiles(uci_cfg) {
+function get_ordered_sections(uci_cfg, sec_type) {
 	let out = [];
 	if (type(uci_cfg) != 'object')
 		return out;
 
 	for (let k, sec in uci_cfg) {
-		if (type(sec) != 'object' || sec['.type'] != 'profile')
+		if (type(sec) != 'object' || sec['.type'] != sec_type)
 			continue;
 		let raw_idx = sec['.index'];
 		let ord = (type(raw_idx) == 'int') ? raw_idx : 999999;
@@ -1008,6 +1011,60 @@ function get_ordered_profiles(uci_cfg) {
 	return clean;
 }
 
+function get_ordered_profiles(uci_cfg) {
+	return get_ordered_sections(uci_cfg, 'profile');
+}
+
+function get_ordered_composers(uci_cfg) {
+	return get_ordered_sections(uci_cfg, 'composer');
+}
+
+function resolve_composer_path(uci_cfg, composer_id, composers_dir) {
+	if (type(composer_id) != 'string' || length(trim(composer_id)) == 0)
+		return fail(common.ERR_INVALID_ARG, 'composer section_id is required');
+
+	let id = trim(composer_id);
+	let sec = uci_cfg?.[id];
+	if (type(sec) != 'object' || sec['.type'] != 'composer')
+		return fail(common.ERR_NOT_FOUND, sprintf('composer section "%s" not found', id));
+
+	if (!common.is_valid_profile_filename(sec.filename))
+		return fail(common.ERR_INVALID_ARG, sprintf('invalid composer filename: %s', '' + sec.filename));
+
+	return {
+		ok: true,
+		id: id,
+		name: sec.name || id,
+		section: sec,
+		path: (composers_dir || common.COMPOSERS_DIR) + '/' + sec.filename
+	};
+}
+
+function find_composers_using_profile(uci_cfg, profile_id, opts) {
+	let options = opts || {};
+	let out = [];
+	if (type(profile_id) != 'string' || length(trim(profile_id)) == 0)
+		return out;
+
+	let composers_dir = options.composers_dir || common.COMPOSERS_DIR;
+	for (let item in get_ordered_composers(uci_cfg)) {
+		let sec = item.section;
+		if (!common.is_valid_profile_filename(sec.filename))
+			continue;
+		let fpath = composers_dir + '/' + sec.filename;
+		let comp = read_composer(fpath);
+		if (comp?.sources?.[profile_id]?.enabled === true) {
+			push(out, {
+				id: item.id,
+				name: sec.name || item.id,
+				filename: sec.filename,
+				path: fpath
+			});
+		}
+	}
+	return out;
+}
+
 function load_source_doc(id, sec, options, profiles_dir) {
 	if (type(options.override_profile_docs) == 'object' && exists(options.override_profile_docs, id)) {
 		let ov = options.override_profile_docs[id];
@@ -1027,14 +1084,35 @@ function load_source_doc(id, sec, options, profiles_dir) {
 	return common.read_json(profiles_dir + '/' + sec.filename);
 }
 
-function load_normalized_composer(options) {
+function resolve_composer_file_from_opts(uci_cfg, options) {
+	if (type(options.composer_file) == 'string' && length(trim(options.composer_file)) > 0)
+		return { ok: true, path: options.composer_file };
+
+	if (type(options.composer_id) == 'string' && length(trim(options.composer_id)) > 0)
+		return resolve_composer_path(uci_cfg, options.composer_id, options.composers_dir);
+
+	let active = common.resolve_active_target(uci_cfg, {
+		composers_dir: options.composers_dir,
+		profiles_dir: options.profiles_dir
+	});
+	if (active.ok && active.kind == 'composer')
+		return { ok: true, path: active.path };
+
+	return fail(common.ERR_NOT_FOUND, 'composer configuration not specified or active');
+}
+
+function load_normalized_composer(uci_cfg, options) {
 	if (options.composer != null)
 		return normalize_composer(options.composer);
 
-	let cpath = options.composer_file || common.COMPOSER_FILE;
+	let p_res = resolve_composer_file_from_opts(uci_cfg, options);
+	if (!p_res.ok)
+		return p_res;
+
+	let cpath = p_res.path;
 	let st = fs.stat(cpath);
 	if (!st)
-		return fail(common.ERR_NOT_FOUND, 'composer configuration not initialized; save configuration in Config page first');
+		return fail(common.ERR_NOT_FOUND, sprintf('composer configuration file not found: %s', cpath));
 
 	let raw = common.read_json(cpath);
 	if (raw == null)
@@ -1045,7 +1123,7 @@ function load_normalized_composer(options) {
 
 function compose(uci_cfg, opts) {
 	let options = opts || {};
-	let norm = load_normalized_composer(options);
+	let norm = load_normalized_composer(uci_cfg, options);
 	if (!norm.ok)
 		return norm;
 
@@ -1311,7 +1389,8 @@ function query_nodes(uci_cfg, opts) {
 			return norm;
 		comp = norm.composer;
 	} else {
-		comp = read_composer(options.composer_file || common.COMPOSER_FILE) || create_empty_composer();
+		let p_res = resolve_composer_file_from_opts(uci_cfg, options);
+		comp = (p_res.ok ? read_composer(p_res.path) : null) || create_empty_composer();
 	}
 
 	let re_inc = compile_regex(options.include_regex ?? '', 'include_regex');
@@ -1754,10 +1833,10 @@ function summarize_composer(uci_cfg, opts) {
 			return empty_summary;
 		comp = norm.composer;
 	} else {
-		let cpath = options.composer_file || common.COMPOSER_FILE;
-		if (!fs.stat(cpath))
+		let p_res = resolve_composer_file_from_opts(uci_cfg, options);
+		if (!p_res.ok || !fs.stat(p_res.path))
 			return empty_summary;
-		comp = read_composer(cpath);
+		comp = read_composer(p_res.path);
 		if (!comp)
 			return empty_summary;
 	}
@@ -1795,6 +1874,55 @@ function summarize_composer(uci_cfg, opts) {
 	};
 }
 
+function list_composers(uci_cfg, opts) {
+	let options = opts || {};
+	let uci_data = uci_cfg || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
+	let composers_dir = options.composers_dir || common.COMPOSERS_DIR;
+	let profiles_dir = options.profiles_dir || common.PROFILES_DIR;
+	let active_id = uci_data?.global?.active_profile || '';
+	let out = [];
+
+	for (let item in get_ordered_composers(uci_data)) {
+		let id = item.id;
+		let sec = item.section;
+		let fname = sec.filename || '';
+		let valid_name = common.is_valid_profile_filename(fname);
+		let fpath = valid_name ? (composers_dir + '/' + fname) : null;
+		let st = fpath ? fs.stat(fpath) : null;
+		let exists_file = (st != null && st.type == 'file');
+		let summary = exists_file
+			? summarize_composer(uci_data, { composer_file: fpath, profiles_dir: profiles_dir })
+			: {
+				initialized: false,
+				enabled_sources: 0,
+				extracted_nodes: 0,
+				groups: 0,
+				manual_outbounds: 0,
+				inbounds: 0,
+				dns_servers: 0,
+				route_rules: 0,
+				rule_sets: 0
+			};
+
+		push(out, {
+			id: id,
+			name: sec.name || id,
+			filename: fname,
+			exists: exists_file,
+			size_bytes: exists_file ? st.size : 0,
+			mtime: exists_file ? st.mtime : null,
+			active: (id == active_id),
+			summary: summary
+		});
+	}
+
+	return {
+		ok: true,
+		active_profile: active_id,
+		composers: out
+	};
+}
+
 export {
 	SCHEMA_VERSION,
 	DEFAULT_EXCLUDE_TYPES,
@@ -1809,6 +1937,10 @@ export {
 	save_composer,
 	extract_source_nodes,
 	get_ordered_profiles,
+	get_ordered_composers,
+	resolve_composer_path,
+	find_composers_using_profile,
+	list_composers,
 	compose,
 	query_nodes,
 	import_from_singbox,

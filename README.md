@@ -10,10 +10,10 @@
 - **独立防火墙表（零污染 `fw4`）**：全部透明代理规则、白名单 Set 与阻断规则均位于独立 `table inet nimbus`，不修改 `/etc/config/firewall` 与 `table inet fw4`，白名单流量完整保留 `fw4` 软/硬件 Flow Offloading 加速。
 - **双栈透明代理与主/旁路由原生适配**：采用 `tproxy_redirect`（TCP REDIRECT + UDP TPROXY）与 IPv4/IPv6 策略路由；自动提取 LAN/WAN 动态前缀，旁路由自动关闭 `send_redirects`，`hotplug.d` 自动响应接口变更与表/路由自愈。
 - **默认 Fail-Closed 安全基线（Lockdown）**：`fail_open` 默认为 `0`。启动校验失败、配置重载失败或内核崩溃耗尽重试窗口时自动切入 `lockdown` 阻断态（仅拦截 `forward` 链非白名单转发，始终放行 LAN 访问路由器的 SSH / LuCI / DHCP / NDP 管理流量）。
-- **双模式配置管理与共享订阅（`sing-box` 1.14 标准）**：
-  - **编排模式（Composer，新装默认）**：通过 `/etc/nimbus/composer.json` 自主管理入站、手动出站、多订阅节点筛选提取、出站组（`selector`/`urltest`）挂载、DNS、路由规则、规则集与 RFC 7396 顶层复写 JSON，内置官方 Schema 片段模板与实时合成预览；
-  - **完整配置模式（Profile）**：直接选用 `/etc/nimbus/profiles/` 下的整份只读本地或远程订阅 JSON，两种模式共享同一套订阅源，无需重复维护；
-  - **智能透明代理合成**：两种模式统一经运行期合成至 `tmpfs`（`/var/run/nimbus/config.json`），优先复用已有 `redirect`/`tproxy` 入站、缺失自动补齐、剥离冲突 `tun` 并重映射规则、自动识别 Fake-IP 网段优先导流，自动探测 `sing-box` 原生 API 与 `clash_api` Dashboard 入口。
+- **多套配置管理与共享订阅（`sing-box` 1.14 标准）**：
+  - **多套编排配置（Composer）**：支持创建、克隆与维护多套独立的 `/etc/nimbus/composers/*.json` 配置蓝图，自主管理入站、手动出站、多订阅节点筛选提取、出站组（`selector`/`urltest`）挂载、DNS、路由规则、规则集与 RFC 7396 顶层复写 JSON，内置官方 Schema 片段模板与实时合成预览；
+  - **统一订阅与本地文件管理**：远程订阅与本地 JSON 文件统一只读存放于 `/etc/nimbus/profiles/`，既可供任意编排配置提取节点，开启「允许直接作为活动配置」后亦可直接在「设置」中选为活动配置运行；
+  - **智能透明代理合成**：在「设置」中只需选择 `active_profile` 即可在多套编排配置与独立订阅/本地配置间自由切换；运行期统一合成至 `tmpfs`（`/var/run/nimbus/config.json`），优先复用已有 `redirect`/`tproxy` 入站、缺失自动补齐、剥离冲突 `tun` 并重映射规则、自动识别 Fake-IP 网段优先导流，自动探测 `sing-box` 原生 API 与 `clash_api` Dashboard 入口。
 - **无损 `dnsmasq` 托管**：通过 OpenWrt UCI 备份与接管 `dnsmasq`，服务停止或包卸载（`prerm`）时自动无损还原。
 - **多源白名单原子热更新**：支持多个远程 CIDR 列表与本地手动白名单，`curl -z` 增量拉取、自动清洗校验并通过单事务 `nft -f` 原子刷新 Set，无需重启 `sing-box`。
 - **内置 `sing-box` 内核管理**：直接从 `sing-box` GitHub Releases（支持自定义镜像前缀）拉取对应架构的 `musl` 发行包，校验 `SHA256` 后原子替换安装。
@@ -79,9 +79,10 @@ apk upgrade nimbus luci-app-nimbus luci-i18n-nimbus-zh-cn
 安装完成后，刷新 LuCI 页面并进入 **服务 -> Nimbus**：
 
 1. **Core（内核管理）**：点击拉取并安装与当前路由器架构匹配的 `sing-box` 内核（网络受限时可配置镜像前缀）。
-2. **Config（配置管理）**：按需选择 **编排模式（Composer）**（共享订阅只提取出站节点、自由编排出站组/DNS/路由/复写 JSON 并支持实时预览校验）或 **完整配置模式（Profile）**（上传/订阅并激活整份 `sing-box` JSON）。从 `v0.1.0-beta.1` 升级且已配置旧 Profile 的路由器会自动保持在 Profile 模式，可随时无痛切换体验编排模式。
-3. **Settings（基础设置）**：按实际拓扑选择 **主路由 / 旁路由**、LAN 接口、DNS 托管模式与设备/端口策略，勾选启用并保存应用。
-4. **Overview / Whitelists / Logs**：在总览页查看运行状态、流量计数与 Dashboard 快捷入口；在白名单页按需添加或热更新直连列表；在日志页查看 `sing-box` 实时输出。
+2. **Subscriptions（订阅管理）**：添加远程订阅或上传/编辑本地 `sing-box` JSON 文件（只读存储于 `/etc/nimbus/profiles/`）；勾选「允许直接作为活动配置」后可直接运行，所有条目均可作为编排配置的节点源。
+3. **Config（配置管理）**：创建、克隆并编辑多套 **Composer 编排配置**（从订阅提取出站节点、自由编排出站组/DNS/路由/复写 JSON 并支持实时预览校验），亦可在此预览已启用为独立配置的订阅或一键导入为编排配置。
+4. **Settings（基础设置）**：选择 **活动配置**（包含全部编排配置与启用了独立配置的订阅/本地文件），按实际拓扑选择 **主路由 / 旁路由**、LAN 接口、DNS 托管模式与设备/端口策略，勾选启用并保存应用。
+5. **Overview / Whitelists / Logs**：在总览页查看运行状态、流量计数与 Dashboard 快捷入口；在白名单页按需添加或热更新直连列表；在日志页查看 `sing-box` 实时输出。
 
 ### 关于 `LOCKDOWN` 状态下的本机 DNS
 

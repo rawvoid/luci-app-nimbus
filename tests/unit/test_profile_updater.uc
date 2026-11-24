@@ -33,7 +33,6 @@ check(common.ensure_dir(profiles_dir, 0755), 'create profiles_dir');
 let uci_text =
 	"config main 'global'\n" +
 	"\toption enabled '1'\n" +
-	"\toption config_mode 'profile'\n" +
 	"\toption active_profile 'main_sub'\n" +
 	"\toption topology 'main'\n" +
 	"\toption proxy_mode 'tproxy_redirect'\n" +
@@ -50,15 +49,25 @@ let uci_text =
 	"\toption name 'Main Subscription'\n" +
 	"\toption type 'subscription'\n" +
 	"\toption filename 'main_sub.json'\n" +
+	"\toption as_config '1'\n" +
 	"\toption url 'https://example.com/sub.json'\n" +
 	"\toption user_agent 'sing-box/nimbus-test'\n" +
 	"\toption via_proxy '0'\n" +
 	"\toption auto_update '1'\n" +
 	"\toption update_interval_hours '24'\n\n" +
+	"config profile 'nodes_sub'\n" +
+	"\toption name 'Nodes Only Sub'\n" +
+	"\toption type 'subscription'\n" +
+	"\toption filename 'nodes_sub.json'\n" +
+	"\toption as_config '0'\n" +
+	"\toption url 'https://example.com/nodes.json'\n" +
+	"\toption via_proxy '0'\n" +
+	"\toption auto_update '0'\n\n" +
 	"config profile 'local_p'\n" +
 	"\toption name 'Local Profile'\n" +
 	"\toption type 'local'\n" +
-	"\toption filename 'local_p.json'\n";
+	"\toption filename 'local_p.json'\n" +
+	"\toption as_config '1'\n";
 
 check(common.atomic_write(conf_dir + '/nimbus', uci_text, 0644), 'seed nimbus uci');
 let uci_hash_before = common.sha256_file(conf_dir + '/nimbus');
@@ -283,5 +292,35 @@ let res_locked = pu.update_profiles('main_sub', {
 check(res_locked.ok === false && res_locked.code == common.ERR_LOCKED && res_locked.reloaded === false,
 	'update_profiles returns E_LOCKED when nimbus.lock is held');
 common.release_lock(held_fh);
+
+// 6. Verify as_config=0 bare-array subscription update & list_profiles metadata
+let nodes_arr_raw = '[{"type":"shadowsocks","tag":"N1","server":"198.51.100.1","server_port":8388,"method":"aes-128-gcm","password":"pw"}]\n';
+let reload_before_nodes = reload_count;
+let res_nodes_sub = pu.update_profiles('nodes_sub', {
+	...base_opts,
+	runner: (argv) => {
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], nodes_arr_raw, 0600);
+		return 0;
+	}
+});
+check(res_nodes_sub.ok === true && res_nodes_sub.reloaded === false && reload_count == reload_before_nodes &&
+	fs.readfile(profiles_dir + '/nodes_sub.json') == nodes_arr_raw,
+	'as_config=0 subscription accepts bare outbound array and skips reloading unrelated active profile');
+
+let plist = pu.list_profiles(null, {
+	uci_confdir: conf_dir,
+	profiles_dir: profiles_dir,
+	composers_dir: work_dir + '/composers'
+});
+let by_id = {};
+for (let p in (plist?.profiles || []))
+	by_id[p.id] = p;
+check(plist.ok === true &&
+	by_id.main_sub?.as_config === true && by_id.main_sub?.active === true &&
+	by_id.nodes_sub?.as_config === false && by_id.nodes_sub?.active === false &&
+	type(by_id.nodes_sub?.used_by_composers) == 'array' &&
+	by_id.local_p?.as_config === true,
+	'list_profiles exposes as_config, active, and used_by_composers metadata');
 
 printf('test_profile_updater.uc: %d assertions passed\n', passed);

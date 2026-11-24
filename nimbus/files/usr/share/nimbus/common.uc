@@ -17,10 +17,8 @@ const CORE_TASK_FILE = '/var/run/nimbus/core_task.json';
 const LOG_FILE = '/var/log/nimbus.log';
 
 const ETC_DIR = '/etc/nimbus';
-const COMPOSER_FILE = '/etc/nimbus/composer.json';
+const COMPOSERS_DIR = '/etc/nimbus/composers';
 const PROFILES_DIR = '/etc/nimbus/profiles';
-const CONFIG_MODE_COMPOSER = 'composer';
-const CONFIG_MODE_PROFILE = 'profile';
 const LISTS_DIR = '/etc/nimbus/lists';
 const LOCAL_LISTS_DIR = '/etc/nimbus/lists/local';
 const CACHE_LISTS_DIR = '/etc/nimbus/lists/cache';
@@ -534,13 +532,47 @@ function is_valid_list_filename(name) {
 	return true;
 }
 
-function normalize_config_mode(uci_or_mode) {
-	let raw = (type(uci_or_mode) == 'object')
-		? uci_or_mode?.global?.config_mode
-		: uci_or_mode;
-	if (type(raw) == 'string' && lc(trim(raw)) == CONFIG_MODE_PROFILE)
-		return CONFIG_MODE_PROFILE;
-	return CONFIG_MODE_COMPOSER;
+function resolve_active_target(uci_cfg, opts) {
+	let options = opts || {};
+	let active = uci_cfg?.global?.active_profile;
+	if (type(active) != 'string' || length(trim(active)) == 0)
+		return { ok: false, code: ERR_NOT_FOUND, error: 'global.active_profile is not configured' };
+
+	let id = trim(active);
+	let sec = uci_cfg?.[id];
+	if (type(sec) != 'object')
+		return { ok: false, code: ERR_NOT_FOUND, error: sprintf('active configuration "%s" not found', id) };
+
+	let stype = sec['.type'];
+	if (stype == 'composer') {
+		if (!is_valid_profile_filename(sec.filename))
+			return { ok: false, code: ERR_INVALID_ARG, error: sprintf('invalid composer filename: %s', '' + sec.filename) };
+		return {
+			ok: true,
+			kind: 'composer',
+			id: id,
+			name: sec.name || id,
+			section: sec,
+			path: (options.composers_dir || COMPOSERS_DIR) + '/' + sec.filename
+		};
+	}
+
+	if (stype == 'profile') {
+		if (sec.as_config != '1' && sec.as_config !== true)
+			return { ok: false, code: ERR_VALIDATE_FAILED, error: sprintf('profile "%s" is not enabled as a standalone configuration (as_config=0)', id) };
+		if (!is_valid_profile_filename(sec.filename))
+			return { ok: false, code: ERR_INVALID_ARG, error: sprintf('invalid profile filename: %s', '' + sec.filename) };
+		return {
+			ok: true,
+			kind: 'profile',
+			id: id,
+			name: sec.name || id,
+			section: sec,
+			path: (options.profiles_dir || PROFILES_DIR) + '/' + sec.filename
+		};
+	}
+
+	return { ok: false, code: ERR_NOT_FOUND, error: sprintf('active configuration "%s" has unsupported type "%s"', id, '' + stype) };
 }
 
 function hex_u32_parse(val) {
@@ -604,10 +636,8 @@ export {
 	CORE_TASK_FILE,
 	LOG_FILE,
 	ETC_DIR,
-	COMPOSER_FILE,
+	COMPOSERS_DIR,
 	PROFILES_DIR,
-	CONFIG_MODE_COMPOSER,
-	CONFIG_MODE_PROFILE,
 	LISTS_DIR,
 	LOCAL_LISTS_DIR,
 	CACHE_LISTS_DIR,
@@ -664,7 +694,7 @@ export {
 	truncate_log_hysteresis,
 	is_valid_profile_filename,
 	is_valid_list_filename,
-	normalize_config_mode,
+	resolve_active_target,
 	hex_u32_parse,
 	format_hex_u32,
 	log_msg

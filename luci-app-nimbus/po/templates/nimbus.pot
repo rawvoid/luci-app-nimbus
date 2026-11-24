@@ -14,6 +14,9 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
+msgid "Subscriptions"
+msgstr ""
+
 msgid "Config"
 msgstr ""
 
@@ -65,1221 +68,6 @@ msgstr ""
 msgid "Confirm"
 msgstr ""
 
-msgid "Idle"
-msgstr ""
-
-msgid "Queued"
-msgstr ""
-
-msgid "Checking Disk Space"
-msgstr ""
-
-msgid "Downloading"
-msgstr ""
-
-msgid "Verifying"
-msgstr ""
-
-msgid "Extracting"
-msgstr ""
-
-msgid "Installing Binary"
-msgstr ""
-
-msgid "Reloading Service"
-msgstr ""
-
-msgid "Completed"
-msgstr ""
-
-msgid "Failed"
-msgstr ""
-
-msgid "Unknown"
-msgstr ""
-
-msgid "sing-box core %s installed successfully."
-msgstr ""
-
-msgid "Core installation failed."
-msgstr ""
-
-msgid "Starting core installation..."
-msgstr ""
-
-msgid "Installed: v%s"
-msgstr ""
-
-msgid "unknown"
-msgstr ""
-
-msgid "Not Executable"
-msgstr ""
-
-msgid "Not Installed"
-msgstr ""
-
-msgid "Core Status & Architecture"
-msgstr ""
-
-msgid "Installation Status"
-msgstr ""
-
-msgid "Binary Path"
-msgstr ""
-
-msgid "Binary Size"
-msgstr ""
-
-msgid "Last Modified"
-msgstr ""
-
-msgid "OpenWrt Architecture"
-msgstr ""
-
-msgid "sing-box Target / ABI"
-msgstr ""
-
-msgid "Preferred Release Asset"
-msgstr ""
-
-msgid "Free Space (/tmp)"
-msgstr ""
-
-msgid "Free Space (Target Dir)"
-msgstr ""
-
-msgid "Update Available"
-msgstr ""
-
-msgid "Up to Date"
-msgstr ""
-
-msgid "Latest Release"
-msgstr ""
-
-msgid "Prerelease"
-msgstr ""
-
-msgid "Published At"
-msgstr ""
-
-msgid "Matched Asset"
-msgstr ""
-
-msgid "Asset Size"
-msgstr ""
-
-msgid "SHA256 Digest"
-msgstr ""
-
-msgid "Not provided in release metadata"
-msgstr ""
-
-msgid "Release Notes"
-msgstr ""
-
-msgid "Install v%s from GitHub"
-msgstr ""
-
-msgid "Install & Upgrade sing-box Core"
-msgstr ""
-
-msgid "Download verified musl releases from GitHub or upload a local .tar.gz archive or sing-box binary."
-msgstr ""
-
-msgid "Checking..."
-msgstr ""
-
-msgid "Check for Updates"
-msgstr ""
-
-msgid "Install Latest from GitHub"
-msgstr ""
-
-msgid "Upload Package (.tar.gz / Binary)"
-msgstr ""
-
-msgid "Core Download & Path Settings"
-msgstr ""
-
-msgid "Absolute path where the sing-box binary is stored (may point to external storage or /tmp)."
-msgstr ""
-
-msgid "Binary path must be an absolute path starting with \"/\"."
-msgstr ""
-
-msgid "GitHub Repository"
-msgstr ""
-
-msgid "Repository must match owner/repo format (e.g. SagerNet/sing-box)."
-msgstr ""
-
-msgid "Release Channel"
-msgstr ""
-
-msgid "Stable"
-msgstr ""
-
-msgid "GitHub Mirror Prefix"
-msgstr ""
-
-msgid "Optional http(s):// prefix prepended to GitHub asset download URLs."
-msgstr ""
-
-msgid "Mirror prefix must be empty or start with http:// or https://."
-msgstr ""
-
-msgid "Download via Proxy"
-msgstr ""
-
-msgid "Route GitHub API queries and asset downloads through an active local proxy inbound when available."
-msgstr ""
-
-msgid "Nimbus Core"
-msgstr ""
-
-msgid "Last 100 lines"
-msgstr ""
-
-msgid "Last 200 lines"
-msgstr ""
-
-msgid "Last 500 lines"
-msgstr ""
-
-msgid "Last 1000 lines"
-msgstr ""
-
-msgid "Last 2000 lines"
-msgstr ""
-
-msgid "Pause"
-msgstr ""
-
-msgid "(Log file is empty)"
-msgstr ""
-
-msgid "File size: %s"
-msgstr ""
-
-msgid "Showing trailing %d lines"
-msgstr ""
-
-msgid "Resume"
-msgstr ""
-
-msgid "Refresh"
-msgstr ""
-
-msgid "Clear Logs"
-msgstr ""
-
-msgid "Truncate /var/log/nimbus.log to 0 bytes?"
-msgstr ""
-
-msgid "Log file cleared."
-msgstr ""
-
-msgid "Nimbus Logs"
-msgstr ""
-
-msgid "Live viewer for /var/log/nimbus.log in tmpfs (automatically rotated above 512 KiB)."
-msgstr ""
-
-msgid "Auto-scroll"
-msgstr ""
-
-msgid "Running"
-msgstr ""
-
-msgid "Preparing"
-msgstr ""
-
-msgid "Lockdown"
-msgstr ""
-
-msgid "Stopped"
-msgstr ""
-
-msgid "Endpoint URL"
-msgstr ""
-
-msgid "Endpoint URL copied to clipboard."
-msgstr ""
-
-msgid "Failed to copy to clipboard."
-msgstr ""
-
-msgid "Copy"
-msgstr ""
-
-msgid "API Secret"
-msgstr ""
-
-msgid "Show"
-msgstr ""
-
-msgid "Hide"
-msgstr ""
-
-msgid "API secret copied to clipboard."
-msgstr ""
-
-msgid "Secret is not available in the current runtime configuration."
-msgstr ""
-
-msgid "No API secret is configured."
-msgstr ""
-
-msgid "Close"
-msgstr ""
-
-msgid "Service did not start because it is disabled in Settings (global.enabled)."
-msgstr ""
-
-msgid "Service action \"%s\" completed."
-msgstr ""
-
-msgid "sing-box Native API Credentials"
-msgstr ""
-
-msgid "Clash API Credentials"
-msgstr ""
-
-msgid "Fail-Closed Lockdown Active: "
-msgstr ""
-
-msgid "Non-whitelist LAN forwarding traffic is blocked to prevent IP leaks. Router management (SSH and LuCI) remains accessible."
-msgstr ""
-
-msgid "Router DNS Notice: "
-msgstr ""
-
-msgid "DNS mode is set to \"singbox\", so dnsmasq remains pointed at 127.0.0.1 to prevent DNS leaks. The router itself cannot resolve external domains (for core or subscription updates) until you click \"Stop\" to restore dnsmasq."
-msgstr ""
-
-msgid "Last Error: "
-msgstr ""
-
-msgid "Nimbus service is currently disabled in Settings. "
-msgstr ""
-
-msgid "Go to Settings"
-msgstr ""
-
-msgid "sing-box core binary is not installed yet. "
-msgstr ""
-
-msgid "Go to Core Management"
-msgstr ""
-
-msgid "No active sing-box profile is selected. "
-msgstr ""
-
-msgid "Go to Config"
-msgstr ""
-
-msgid "Warnings:"
-msgstr ""
-
-msgid "None"
-msgstr ""
-
-msgid "Start"
-msgstr ""
-
-msgid "Stop"
-msgstr ""
-
-msgid "Restart"
-msgstr ""
-
-msgid "Reload"
-msgstr ""
-
-msgid "Service Status"
-msgstr ""
-
-msgid "Applying action..."
-msgstr ""
-
-msgid "Not installed"
-msgstr ""
-
-msgid "Running (PID %d)"
-msgstr ""
-
-msgid "Not running"
-msgstr ""
-
-msgid "Runtime Overview"
-msgstr ""
-
-msgid "Boot / UCI Enabled"
-msgstr ""
-
-msgid "Enabled"
-msgstr ""
-
-msgid "Disabled"
-msgstr ""
-
-msgid "Active Profile"
-msgstr ""
-
-msgid "Network Topology"
-msgstr ""
-
-msgid "Side Router"
-msgstr ""
-
-msgid "Main Router"
-msgstr ""
-
-msgid "Proxy Mode"
-msgstr ""
-
-msgid "Failure Policy"
-msgstr ""
-
-msgid "Fail-Open (Direct Fallback)"
-msgstr ""
-
-msgid "Fail-Closed (Lockdown)"
-msgstr ""
-
-msgid "sing-box Core"
-msgstr ""
-
-msgid "Process"
-msgstr ""
-
-msgid "Uptime"
-msgstr ""
-
-msgid "Memory (RSS)"
-msgstr ""
-
-msgid "user inbound"
-msgstr ""
-
-msgid "auto-injected"
-msgstr ""
-
-msgid "Effective Data Plane & Whitelist"
-msgstr ""
-
-msgid "TCP Redirect Port"
-msgstr ""
-
-msgid "UDP TPROXY Port"
-msgstr ""
-
-msgid "Outbound Mark"
-msgstr ""
-
-msgid "DNS Takeover"
-msgstr ""
-
-msgid "Fake-IP Ranges"
-msgstr ""
-
-msgid "None detected"
-msgstr ""
-
-msgid "Whitelist Bypass"
-msgstr ""
-
-msgid "IPv4"
-msgstr ""
-
-msgid "IPv6"
-msgstr ""
-
-msgid "TCP Proxied"
-msgstr ""
-
-msgid "%d packets (%s)"
-msgstr ""
-
-msgid "UDP Proxied"
-msgstr ""
-
-msgid "Lockdown Rejected"
-msgstr ""
-
-msgid "%d packets"
-msgstr ""
-
-msgid "TUN Proxied"
-msgstr ""
-
-msgid "nftables Traffic Counters"
-msgstr ""
-
-msgid "Not configured in the active configuration."
-msgstr ""
-
-msgid "Loopback Only"
-msgstr ""
-
-msgid "No Secret Configured"
-msgstr ""
-
-msgid "Secret Protected"
-msgstr ""
-
-msgid "Reveal / Copy Credentials"
-msgstr ""
-
-msgid "Listen Address"
-msgstr ""
-
-msgid "Status Flags"
-msgstr ""
-
-msgid "Built-in Dashboard"
-msgstr ""
-
-msgid "Enabled (%s)"
-msgstr ""
-
-msgid "External UI"
-msgstr ""
-
-msgid "Configured"
-msgstr ""
-
-msgid "Actions"
-msgstr ""
-
-msgid "Control APIs & Dashboards"
-msgstr ""
-
-msgid "sing-box Native API"
-msgstr ""
-
-msgid "Open Dashboard"
-msgstr ""
-
-msgid "Clash API"
-msgstr ""
-
-msgid "Open External UI"
-msgstr ""
-
-msgid "Nimbus Overview"
-msgstr ""
-
-msgid "Reload Service"
-msgstr ""
-
-msgid "The active profile was updated and validated. Reload Nimbus service now to apply changes?"
-msgstr ""
-
-msgid "Service reloaded successfully."
-msgstr ""
-
-msgid "Profile \"%s\" uploaded and validated with sing-box."
-msgstr ""
-
-msgid "Profile \"%s\" uploaded (JSON syntax checked)."
-msgstr ""
-
-msgid "Save"
-msgstr ""
-
-msgid "%s / %s direct limit"
-msgstr ""
-
-msgid "Content exceeds the 256 KiB inline transfer limit. Save locally and use \"Upload .json\" instead."
-msgstr ""
-
-msgid "Profile JSON must be a top-level object."
-msgstr ""
-
-msgid "Invalid JSON syntax: %s"
-msgstr ""
-
-msgid "Profile \"%s\" saved and validated with sing-box."
-msgstr ""
-
-msgid "Profile \"%s\" saved (JSON syntax checked)."
-msgstr ""
-
-msgid "Edit Profile JSON: %s"
-msgstr ""
-
-msgid "Validate with sing-box check before saving"
-msgstr ""
-
-msgid "Upload .json File"
-msgstr ""
-
-msgid "e.g. Main Profile"
-msgstr ""
-
-msgid "Local File"
-msgstr ""
-
-msgid "Remote Subscription"
-msgstr ""
-
-msgid "Subscription URL"
-msgstr ""
-
-msgid "User-Agent"
-msgstr ""
-
-msgid "Fetch via Proxy"
-msgstr ""
-
-msgid "Auto Update"
-msgstr ""
-
-msgid "Update Interval (Hours)"
-msgstr ""
-
-msgid "Allowed range: 1 to 720 hours."
-msgstr ""
-
-msgid "Profile name is required."
-msgstr ""
-
-msgid "Filename must match ^[A-Za-z0-9._-]+\\.json$ (no path separators or \"..\")."
-msgstr ""
-
-msgid "Subscription profile requires a valid http:// or https:// URL."
-msgstr ""
-
-msgid "Update interval must be an integer between 1 and 720 hours."
-msgstr ""
-
-msgid "Profile metadata updated."
-msgstr ""
-
-msgid "Profile created."
-msgstr ""
-
-msgid "Edit Profile: %s"
-msgstr ""
-
-msgid "Add Profile"
-msgstr ""
-
-msgid "Name"
-msgstr ""
-
-msgid "Type"
-msgstr ""
-
-msgid "Filename"
-msgstr ""
-
-msgid "Stored read-only under /etc/nimbus/profiles/, e.g. main_sub.json."
-msgstr ""
-
-msgid "failed"
-msgstr ""
-
-msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
-msgstr ""
-
-msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
-msgstr ""
-
-msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
-msgstr ""
-
-msgid "Subscription update finished: %d updated, %d unchanged."
-msgstr ""
-
-msgid "Activated profile \"%s\" and reloaded service."
-msgstr ""
-
-msgid "Activated profile \"%s\"."
-msgstr ""
-
-msgid "Delete Profile"
-msgstr ""
-
-msgid "Delete profile \"%s\" (%s) and its configuration file?"
-msgstr ""
-
-msgid "Profile \"%s\" deleted."
-msgstr ""
-
-msgid "Update All Subscriptions"
-msgstr ""
-
-msgid "Processing..."
-msgstr ""
-
-msgid "File Status"
-msgstr ""
-
-msgid "Subscription"
-msgstr ""
-
-msgid "No profiles configured. Click \"Add Profile\" to create one."
-msgstr ""
-
-msgid "Active"
-msgstr ""
-
-msgid "Missing"
-msgstr ""
-
-msgid "Auto: %dh"
-msgstr ""
-
-msgid "Manual"
-msgstr ""
-
-msgid "Via Proxy"
-msgstr ""
-
-msgid "Activate"
-msgstr ""
-
-msgid "Edit JSON"
-msgstr ""
-
-msgid "Upload .json"
-msgstr ""
-
-msgid "Update"
-msgstr ""
-
-msgid "Meta"
-msgstr ""
-
-msgid "Delete"
-msgstr ""
-
-msgid "Local"
-msgstr ""
-
-msgid "Nimbus Configuration"
-msgstr ""
-
-msgid "Choose between structured Composer Mode and single-file Raw Profile Mode. Shared JSON files and subscriptions in /etc/nimbus/profiles/ remain read-only."
-msgstr ""
-
-msgid "Configuration applied and data plane reloaded."
-msgstr ""
-
-msgid "Nimbus Settings"
-msgstr ""
-
-msgid "Configure global routing topology, transparent proxy ports, DNS takeover, and per-device rules."
-msgstr ""
-
-msgid "Global Settings"
-msgstr ""
-
-msgid "Enable Service"
-msgstr ""
-
-msgid "-- Select Profile --"
-msgstr ""
-
-msgid "Side Router (Bypass Gateway)"
-msgstr ""
-
-msgid "TPROXY + Redirect (TCP REDIRECT + UDP TPROXY)"
-msgstr ""
-
-msgid "Fail-Open on Error"
-msgstr ""
-
-msgid "When disabled (default), service failure switches to Fail-Closed Lockdown blocking non-whitelist LAN forwarding while keeping router SSH/LuCI reachable."
-msgstr ""
-
-msgid "LAN Interfaces"
-msgstr ""
-
-msgid "Logical OpenWrt network interfaces whose client traffic is intercepted."
-msgstr ""
-
-msgid "WAN Interfaces"
-msgstr ""
-
-msgid "Logical WAN interfaces whose public IPv4/IPv6 prefixes are automatically bypassed in Main Router topology."
-msgstr ""
-
-msgid "Enable IPv4 Proxy"
-msgstr ""
-
-msgid "Enable IPv6 Proxy"
-msgstr ""
-
-msgid "IPv4 and IPv6 proxy cannot both be disabled."
-msgstr ""
-
-msgid "Proxy Router Outbound Traffic"
-msgstr ""
-
-msgid "Intercept TCP/UDP connections initiated by the router itself."
-msgstr ""
-
-msgid "Log Level"
-msgstr ""
-
-msgid "Go Memory Limit (GOMEMLIMIT)"
-msgstr ""
-
-msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
-msgstr ""
-
-msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
-msgstr ""
-
-msgid "Data Plane & Traffic Filtering"
-msgstr ""
-
-msgid "Used when the active configuration does not define a redirect inbound."
-msgstr ""
-
-msgid "Used when the active configuration does not define a UDP tproxy inbound."
-msgstr ""
-
-msgid "TPROXY port must differ from TCP Redirect port."
-msgstr ""
-
-msgid "Outbound Anti-Loop Mark"
-msgstr ""
-
-msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0xff)."
-msgstr ""
-
-msgid "UDP TPROXY Routing Mark"
-msgstr ""
-
-msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0x1)."
-msgstr ""
-
-msgid "TPROXY routing mark must differ from outbound anti-loop mark."
-msgstr ""
-
-msgid "Policy Route Table ID"
-msgstr ""
-
-msgid "Port Filter Mode"
-msgstr ""
-
-msgid "Proxy All Ports"
-msgstr ""
-
-msgid "Proxy Only Listed Ports"
-msgstr ""
-
-msgid "Bypass Listed Ports"
-msgstr ""
-
-msgid "TCP Ports / Ranges"
-msgstr ""
-
-msgid "Examples: 80, 443, 8000-8999."
-msgstr ""
-
-msgid "Invalid port or range (expected 1-65535 or start-end)."
-msgstr ""
-
-msgid "UDP Ports / Ranges"
-msgstr ""
-
-msgid "Examples: 53, 443, 10000-10100."
-msgstr ""
-
-msgid "Default LAN Device Policy"
-msgstr ""
-
-msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
-msgstr ""
-
-msgid "Proxy Unmatched Devices (Default)"
-msgstr ""
-
-msgid "Bypass Unmatched Devices (Direct)"
-msgstr ""
-
-msgid "Inject Route Sniff Rule"
-msgstr ""
-
-msgid "Ensure a modern route sniff action rule covers the active transparent inbounds."
-msgstr ""
-
-msgid "Block QUIC (UDP 443)"
-msgstr ""
-
-msgid "Inject a route rule rejecting QUIC protocol traffic so browsers fall back to TCP."
-msgstr ""
-
-msgid "DNS Takeover (dnsmasq)"
-msgstr ""
-
-msgid "DNS Mode"
-msgstr ""
-
-msgid "Do Not Manage (Keep Existing dnsmasq)"
-msgstr ""
-
-msgid "Forward to Local sing-box DNS"
-msgstr ""
-
-msgid "Forward to Custom Upstreams"
-msgstr ""
-
-msgid "sing-box DNS Listen Port"
-msgstr ""
-
-msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
-msgstr ""
-
-msgid "DNS listen port is required."
-msgstr ""
-
-msgid "DNS port must not collide with TCP Redirect or UDP TPROXY port."
-msgstr ""
-
-msgid "Custom Upstream Servers"
-msgstr ""
-
-msgid "dnsmasq upstream format, e.g. 127.0.0.1#5335 or 192.168.1.2#5353."
-msgstr ""
-
-msgid "At least one custom DNS upstream server is required."
-msgstr ""
-
-msgid "DNS upstream entry cannot be empty or contain spaces."
-msgstr ""
-
-msgid "Hijack LAN External DNS (Port 53)"
-msgstr ""
-
-msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
-msgstr ""
-
-msgid "LAN Device Rules"
-msgstr ""
-
-msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
-msgstr ""
-
-msgid "Description"
-msgstr ""
-
-msgid "MAC Address"
-msgstr ""
-
-msgid "IP / CIDR"
-msgstr ""
-
-msgid "Specify at least a MAC address or an IP/CIDR."
-msgstr ""
-
-msgid "Policy"
-msgstr ""
-
-msgid "Bypass (Direct)"
-msgstr ""
-
-msgid "Proxy"
-msgstr ""
-
-msgid "Line %d: \"%s\" — %s"
-msgstr ""
-
-msgid "invalid entry"
-msgstr ""
-
-msgid "Validation Failed: %s"
-msgstr ""
-
-msgid "Saved \"%s\" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables."
-msgstr ""
-
-msgid "Saved \"%s\" (%d IPv4, %d IPv6)."
-msgstr ""
-
-msgid "Save & Hot-Reload"
-msgstr ""
-
-msgid "Content exceeds the 256 KiB inline transfer limit. Use \"Upload .txt File\" instead."
-msgstr ""
-
-msgid "Edit Whitelist: %s"
-msgstr ""
-
-msgid "Enter one IPv4, IPv6, or CIDR range per line. Comments beginning with \"#\", \";\", or \"//\" are supported."
-msgstr ""
-
-msgid "Upload .txt File"
-msgstr ""
-
-msgid "IPv4: %d"
-msgstr ""
-
-msgid "IPv6: %d"
-msgstr ""
-
-msgid "Ignored / Comments: %d"
-msgstr ""
-
-msgid "Invalid: %d"
-msgstr ""
-
-msgid "Unrecognized Lines (not loaded into nftables):"
-msgstr ""
-
-msgid "Line %d: %s"
-msgstr ""
-
-msgid "(empty)"
-msgstr ""
-
-msgid "Cleaned whitelist entries copied to clipboard."
-msgstr ""
-
-msgid "Copy Cleaned"
-msgstr ""
-
-msgid "Cleaned Preview: %s"
-msgstr ""
-
-msgid "e.g. Custom Direct"
-msgstr ""
-
-msgid "Remote URL"
-msgstr ""
-
-msgid "Auto (IPv4 + IPv6)"
-msgstr ""
-
-msgid "IPv4 Only"
-msgstr ""
-
-msgid "IPv6 Only"
-msgstr ""
-
-msgid "Stored under /etc/nimbus/lists/local/, e.g. custom_direct.txt."
-msgstr ""
-
-msgid "Source URL"
-msgstr ""
-
-msgid "Source name is required."
-msgstr ""
-
-msgid "Filename must match ^[A-Za-z0-9._-]+\\.txt$ (no path separators or \"..\")."
-msgstr ""
-
-msgid "Remote source requires a valid http:// or https:// URL."
-msgstr ""
-
-msgid "Whitelist source saved and atomically hot-reloaded nftables."
-msgstr ""
-
-msgid "Whitelist source saved."
-msgstr ""
-
-msgid "Edit Whitelist Source: %s"
-msgstr ""
-
-msgid "Add Whitelist Source"
-msgstr ""
-
-msgid "Address Family"
-msgstr ""
-
-msgid "Remote lists updated: %d updated, %d unchanged, nftables atomically hot-reloaded."
-msgstr ""
-
-msgid "Remote lists updated: %d updated, %d unchanged."
-msgstr ""
-
-msgid "Delete Whitelist Source"
-msgstr ""
-
-msgid "Delete whitelist source \"%s\" and its associated file/cache?"
-msgstr ""
-
-msgid "Whitelist source deleted and nftables hot-reloaded."
-msgstr ""
-
-msgid "Whitelist source deleted."
-msgstr ""
-
-msgid "Cron expression must have 5 space-separated fields (e.g. \"30 4 * * *\")."
-msgstr ""
-
-msgid "Whitelist policy saved and atomically hot-reloaded nftables."
-msgstr ""
-
-msgid "Whitelist policy saved."
-msgstr ""
-
-msgid "Save Policy"
-msgstr ""
-
-msgid "Global Whitelist Policy"
-msgstr ""
-
-msgid "Effective nftables IPv4: %d"
-msgstr ""
-
-msgid "Effective nftables IPv6: %d"
-msgstr ""
-
-msgid "Enable Whitelist Bypass"
-msgstr ""
-
-msgid "Built-in private, LAN, and WAN reserved subnets always bypass the proxy regardless of this switch."
-msgstr ""
-
-msgid "Auto Update Remote Lists"
-msgstr ""
-
-msgid "Cron Schedule"
-msgstr ""
-
-msgid "Standard 5-field cron expression, e.g. 30 4 * * *."
-msgstr ""
-
-msgid "Add Source"
-msgstr ""
-
-msgid "Update All Remote Sources"
-msgstr ""
-
-msgid "Updating..."
-msgstr ""
-
-msgid "Family"
-msgstr ""
-
-msgid "Status"
-msgstr ""
-
-msgid "Target"
-msgstr ""
-
-msgid "Entries & File"
-msgstr ""
-
-msgid "No whitelist sources configured."
-msgstr ""
-
-msgid "IPv4: %d / IPv6: %d"
-msgstr ""
-
-msgid "Not cached / missing"
-msgstr ""
-
-msgid "Edit"
-msgstr ""
-
-msgid "Preview"
-msgstr ""
-
-msgid "Upload .txt"
-msgstr ""
-
-msgid "Whitelist Sources"
-msgstr ""
-
-msgid "Nimbus Whitelists"
-msgstr ""
-
-msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
-msgstr ""
-
-msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
-msgstr ""
-
-msgid "Local DNS (\"local\") Handling"
-msgstr ""
-
-msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops."
-msgstr ""
-
-msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
-msgstr ""
-
-msgid "Always Use Configured Direct DNS"
-msgstr ""
-
-msgid "Strict Reject (\"local\" Not Allowed)"
-msgstr ""
-
-msgid "Manual / Fallback Direct DNS"
-msgstr ""
-
-msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
-msgstr ""
-
-msgid "Direct DNS server IP is required when policy is set to always use fallback."
-msgstr ""
-
-msgid "Direct DNS server IP must not be a loopback or unspecified address."
-msgstr ""
-
-msgid "Composer configuration has not been saved yet. "
-msgstr ""
-
-msgid "%d sources · %d nodes · %d groups"
-msgstr ""
-
-msgid "Not initialized"
-msgstr ""
-
-msgid "Config Mode"
-msgstr ""
-
-msgid "Raw Profile Mode"
-msgstr ""
-
-msgid "Composer Mode"
-msgstr ""
-
-msgid "Composer Summary"
-msgstr ""
-
-msgid "An active Composer source was updated and validated. Reload Nimbus service now to apply changes?"
-msgstr ""
-
-msgid "Source JSON must be a top-level object or a non-empty array."
-msgstr ""
-
-msgid "Unsaved Changes"
-msgstr ""
-
-msgid "You have unsaved changes in Composer Mode. Discard them and switch to Raw Profile Mode?"
-msgstr ""
-
-msgid "Switched to Composer Mode."
-msgstr ""
-
-msgid "Switched to Raw Profile Mode."
-msgstr ""
-
-msgid "Configuration mode changed while Nimbus is active. Reload service now to apply?"
-msgstr ""
-
-msgid "Manage structured inbounds, outbounds, DNS, routing rules, and multi-subscription node extraction."
-msgstr ""
-
-msgid "Select a single complete sing-box JSON profile or subscription."
-msgstr ""
-
-msgid "Configuration Mode"
-msgstr ""
-
-msgid "Switching mode..."
-msgstr ""
-
 msgid "-- Select 1.14 Snippet --"
 msgstr ""
 
@@ -1287,6 +75,57 @@ msgid "Apply Snippet"
 msgstr ""
 
 msgid "Format JSON"
+msgstr ""
+
+msgid "Synthesizing configuration and running sing-box check..."
+msgstr ""
+
+msgid "Preview & Check"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "sing-box check: Passed"
+msgstr ""
+
+msgid "sing-box check: Failed"
+msgstr ""
+
+msgid "Preview Only (sing-box binary not installed)"
+msgstr ""
+
+msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
+msgstr ""
+
+msgid "Effective Runtime JSON (Stage B)"
+msgstr ""
+
+msgid "Composed JSON (Stage A)"
+msgstr ""
+
+msgid "JSON copied to clipboard."
+msgstr ""
+
+msgid "Failed to copy to clipboard."
+msgstr ""
+
+msgid "Copy JSON"
+msgstr ""
+
+msgid "Validation Error:"
+msgstr ""
+
+msgid "Warnings:"
+msgstr ""
+
+msgid "e.g. Main Router"
+msgstr ""
+
+msgid "Configuration Name"
+msgstr ""
+
+msgid "File: "
 msgstr ""
 
 msgid "Sources"
@@ -1313,52 +152,34 @@ msgstr ""
 msgid "Composer configuration exceeds the 256 KiB inline transfer limit."
 msgstr ""
 
-msgid "Composer configuration saved, validated, and applied."
+msgid "Configuration name cannot be empty."
 msgstr ""
 
-msgid "Composer configuration saved and validated. Reload service to apply changes."
+msgid "Composer \"%s\" saved, validated, and applied."
 msgstr ""
 
-msgid "Composer configuration saved and validated with sing-box."
+msgid "Composer \"%s\" saved and validated. Select it as Active Configuration in Settings to apply."
 msgstr ""
 
-msgid "Composer configuration saved."
+msgid "Composer \"%s\" saved and validated. Reload service to apply changes."
+msgstr ""
+
+msgid "Composer \"%s\" saved and validated with sing-box."
+msgstr ""
+
+msgid "Composer \"%s\" saved."
 msgstr ""
 
 msgid "Composer Warnings:"
 msgstr ""
 
-msgid "Synthesizing configuration and running sing-box check..."
+msgid "Unsaved changes discarded."
 msgstr ""
 
-msgid "Preview & Check"
+msgid "Preview & Check: %s"
 msgstr ""
 
-msgid "sing-box check: Passed"
-msgstr ""
-
-msgid "sing-box check: Failed"
-msgstr ""
-
-msgid "Preview Only (sing-box binary not installed)"
-msgstr ""
-
-msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
-msgstr ""
-
-msgid "Effective Runtime JSON (Stage B)"
-msgstr ""
-
-msgid "Composed JSON (Stage A)"
-msgstr ""
-
-msgid "JSON copied to clipboard."
-msgstr ""
-
-msgid "Copy JSON"
-msgstr ""
-
-msgid "Validation Error:"
+msgid "-- Select Profile --"
 msgstr ""
 
 msgid "Paste full sing-box JSON object here..."
@@ -1418,6 +239,9 @@ msgstr ""
 msgid "Import from Raw sing-box JSON"
 msgstr ""
 
+msgid "Unsaved Changes"
+msgstr ""
+
 msgid "Not Saved Yet"
 msgstr ""
 
@@ -1427,13 +251,19 @@ msgstr ""
 msgid "%d sources · %d groups · %d manual outbounds · %d rules"
 msgstr ""
 
+msgid "Back to Config List"
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
 msgid "Saved: %s"
 msgstr ""
 
-msgid "Presets / Import"
+msgid "Processing..."
 msgstr ""
 
-msgid "Save & Apply"
+msgid "Presets / Import"
 msgstr ""
 
 msgid "Matched %d node(s)."
@@ -1446,6 +276,9 @@ msgid "Final Tag"
 msgstr ""
 
 msgid "Original Tag"
+msgstr ""
+
+msgid "Type"
 msgstr ""
 
 msgid "Server"
@@ -1470,6 +303,9 @@ msgid "No nodes matched these extraction rules."
 msgstr ""
 
 msgid "Test Extract"
+msgstr ""
+
+msgid "Save"
 msgstr ""
 
 msgid "No outbound groups defined."
@@ -1511,10 +347,13 @@ msgstr ""
 msgid "RFC 7396 Merge Patch applied to every extracted node (null deletes a field)."
 msgstr ""
 
-msgid "Add Source / Profile"
+msgid "Manage Subscriptions"
 msgstr ""
 
-msgid "Shared profiles under /etc/nimbus/profiles/. Toggle Extract to include nodes in Composer."
+msgid "Refresh"
+msgstr ""
+
+msgid "Toggle Extract to include nodes from shared subscriptions in Composer."
 msgstr ""
 
 msgid "Composer references %d missing profile source(s): %s"
@@ -1535,10 +374,22 @@ msgstr ""
 msgid "Attached Groups"
 msgstr ""
 
-msgid "No profiles configured yet. Click \"Add Source / Profile\" to add one."
+msgid "Actions"
 msgstr ""
 
-msgid "File missing"
+msgid "No subscriptions or profiles found. "
+msgstr ""
+
+msgid "Go to Subscriptions"
+msgstr ""
+
+msgid "Subscription"
+msgstr ""
+
+msgid "Local"
+msgstr ""
+
+msgid "Missing"
 msgstr ""
 
 msgid "Prefix: %s"
@@ -1562,9 +413,6 @@ msgstr ""
 msgid "Nodes"
 msgstr ""
 
-msgid "Upload"
-msgstr ""
-
 msgid "Remove \"%s\" from the Composer draft?"
 msgstr ""
 
@@ -1580,19 +428,25 @@ msgstr ""
 msgid "No subscription bindings configured (group uses static outbounds only)."
 msgstr ""
 
+msgid "Source"
+msgstr ""
+
 msgid "* (All enabled sources)"
 msgstr ""
 
-msgid "Include regex (e.g. HK|SG)"
+msgid "e.g. HK|SG"
 msgstr ""
 
-msgid "Exclude regex"
+msgid "Optional"
 msgstr ""
 
 msgid "Matching nodes..."
 msgstr ""
 
 msgid "No nodes matched this provider binding."
+msgstr ""
+
+msgid "Preview"
 msgstr ""
 
 msgid "Remove"
@@ -1608,6 +462,9 @@ msgid "Edit Outbound Group: %s"
 msgstr ""
 
 msgid "Add Outbound Group"
+msgstr ""
+
+msgid "Enabled"
 msgstr ""
 
 msgid "Tag"
@@ -1679,7 +536,13 @@ msgstr ""
 msgid "Fallback: %s"
 msgstr ""
 
+msgid "Edit"
+msgstr ""
+
 msgid "Delete Group"
+msgstr ""
+
+msgid "Delete"
 msgstr ""
 
 msgid "Manual Outbounds"
@@ -1749,6 +612,9 @@ msgid "Final Server"
 msgstr ""
 
 msgid "Strategy"
+msgstr ""
+
+msgid "Advanced Options"
 msgstr ""
 
 msgid "DNS Servers"
@@ -2021,10 +887,22 @@ msgstr ""
 msgid "Hysteria Realm Service"
 msgstr ""
 
+msgid "Clash API"
+msgstr ""
+
 msgid "HTTP Clients"
 msgstr ""
 
 msgid "Value must be a JSON object."
+msgstr ""
+
+msgid "Invalid JSON syntax: %s"
+msgstr ""
+
+msgid "via %s"
+msgstr ""
+
+msgid "dev:%s"
 msgstr ""
 
 msgid "logical (%s, %d sub-rules)"
@@ -2033,8 +911,1253 @@ msgstr ""
 msgid "%d inline rules"
 msgstr ""
 
-msgid "via %s"
+msgid "Discard Unsaved Changes"
 msgstr ""
 
-msgid "dev:%s"
+msgid "You have unsaved changes in this Composer configuration. Discard them and return to the list?"
+msgstr ""
+
+msgid "Auto-generated if empty, e.g. main_router.json"
+msgstr ""
+
+msgid "Import from Subscription / Local File"
+msgstr ""
+
+msgid "Source Profile"
+msgstr ""
+
+msgid "sing-box JSON"
+msgstr ""
+
+msgid "Clone"
+msgstr ""
+
+msgid "Create"
+msgstr ""
+
+msgid "Configuration name is required."
+msgstr ""
+
+msgid "Filename must match ^[A-Za-z0-9._-]+\\.json$ (no path separators or \"..\")."
+msgstr ""
+
+msgid "Composer \"%s\" cloned."
+msgstr ""
+
+msgid "Composer \"%s\" created."
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Filename"
+msgstr ""
+
+msgid "Stored under /etc/nimbus/composers/. Leave empty to auto-generate."
+msgstr ""
+
+msgid "Clone Source"
+msgstr ""
+
+msgid "Initialization"
+msgstr ""
+
+msgid "Clone Composer: %s"
+msgstr ""
+
+msgid "Add Composer Configuration"
+msgstr ""
+
+msgid "Delete Composer Configuration"
+msgstr ""
+
+msgid "Delete Composer \"%s\" (%s) and its JSON file?"
+msgstr ""
+
+msgid "Composer \"%s\" deleted."
+msgstr ""
+
+msgid "Add Composer"
+msgstr ""
+
+msgid "Last Updated"
+msgstr ""
+
+msgid "No Composer configurations yet. Click \"Add Composer\" to create one."
+msgstr ""
+
+msgid "%d sources · %d nodes · %d groups · %d rules"
+msgstr ""
+
+msgid "%s (Copy)"
+msgstr ""
+
+msgid "Cannot delete while selected as Active Configuration in Settings."
+msgstr ""
+
+msgid "Composer Configurations"
+msgstr ""
+
+msgid "Maintain multiple structured sing-box Composer blueprints under /etc/nimbus/composers/. Select the active configuration in: "
+msgstr ""
+
+msgid "File Status"
+msgstr ""
+
+msgid "No standalone subscriptions or local JSON configurations enabled. Enable \"Allow as Active Config\" in: "
+msgstr ""
+
+msgid "%s (Composer)"
+msgstr ""
+
+msgid "Import to Composer"
+msgstr ""
+
+msgid "Standalone Subscriptions & Local Files"
+msgstr ""
+
+msgid "Complete sing-box JSON files with \"Allow as Active Config\" enabled. Manage or activate in: "
+msgstr ""
+
+msgid "Nimbus Configuration"
+msgstr ""
+
+msgid "Manage multiple sing-box Composer configurations and inspect standalone profiles. Editing any configuration never changes which configuration is currently active."
+msgstr ""
+
+msgid "Idle"
+msgstr ""
+
+msgid "Queued"
+msgstr ""
+
+msgid "Checking Disk Space"
+msgstr ""
+
+msgid "Downloading"
+msgstr ""
+
+msgid "Verifying"
+msgstr ""
+
+msgid "Extracting"
+msgstr ""
+
+msgid "Installing Binary"
+msgstr ""
+
+msgid "Reloading Service"
+msgstr ""
+
+msgid "Completed"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "sing-box core %s installed successfully."
+msgstr ""
+
+msgid "Core installation failed."
+msgstr ""
+
+msgid "Starting core installation..."
+msgstr ""
+
+msgid "Installed: v%s"
+msgstr ""
+
+msgid "unknown"
+msgstr ""
+
+msgid "Not Executable"
+msgstr ""
+
+msgid "Not Installed"
+msgstr ""
+
+msgid "Core Status & Architecture"
+msgstr ""
+
+msgid "Installation Status"
+msgstr ""
+
+msgid "Binary Path"
+msgstr ""
+
+msgid "Binary Size"
+msgstr ""
+
+msgid "Last Modified"
+msgstr ""
+
+msgid "OpenWrt Architecture"
+msgstr ""
+
+msgid "sing-box Target / ABI"
+msgstr ""
+
+msgid "Preferred Release Asset"
+msgstr ""
+
+msgid "Free Space (/tmp)"
+msgstr ""
+
+msgid "Free Space (Target Dir)"
+msgstr ""
+
+msgid "Update Available"
+msgstr ""
+
+msgid "Up to Date"
+msgstr ""
+
+msgid "Latest Release"
+msgstr ""
+
+msgid "Prerelease"
+msgstr ""
+
+msgid "Published At"
+msgstr ""
+
+msgid "Matched Asset"
+msgstr ""
+
+msgid "Asset Size"
+msgstr ""
+
+msgid "SHA256 Digest"
+msgstr ""
+
+msgid "Not provided in release metadata"
+msgstr ""
+
+msgid "Release Notes"
+msgstr ""
+
+msgid "Install v%s from GitHub"
+msgstr ""
+
+msgid "Install & Upgrade sing-box Core"
+msgstr ""
+
+msgid "Download verified musl releases from GitHub or upload a local .tar.gz archive or sing-box binary."
+msgstr ""
+
+msgid "Checking..."
+msgstr ""
+
+msgid "Check for Updates"
+msgstr ""
+
+msgid "Install Latest from GitHub"
+msgstr ""
+
+msgid "Upload Package (.tar.gz / Binary)"
+msgstr ""
+
+msgid "Core Download & Path Settings"
+msgstr ""
+
+msgid "Absolute path where the sing-box binary is stored (may point to external storage or /tmp)."
+msgstr ""
+
+msgid "Binary path must be an absolute path starting with \"/\"."
+msgstr ""
+
+msgid "GitHub Repository"
+msgstr ""
+
+msgid "Repository must match owner/repo format (e.g. SagerNet/sing-box)."
+msgstr ""
+
+msgid "Release Channel"
+msgstr ""
+
+msgid "Stable"
+msgstr ""
+
+msgid "GitHub Mirror Prefix"
+msgstr ""
+
+msgid "Optional http(s):// prefix prepended to GitHub asset download URLs."
+msgstr ""
+
+msgid "Mirror prefix must be empty or start with http:// or https://."
+msgstr ""
+
+msgid "Download via Proxy"
+msgstr ""
+
+msgid "Route GitHub API queries and asset downloads through an active local proxy inbound when available."
+msgstr ""
+
+msgid "Nimbus Core"
+msgstr ""
+
+msgid "Last 100 lines"
+msgstr ""
+
+msgid "Last 200 lines"
+msgstr ""
+
+msgid "Last 500 lines"
+msgstr ""
+
+msgid "Last 1000 lines"
+msgstr ""
+
+msgid "Last 2000 lines"
+msgstr ""
+
+msgid "Pause"
+msgstr ""
+
+msgid "(Log file is empty)"
+msgstr ""
+
+msgid "File size: %s"
+msgstr ""
+
+msgid "Showing trailing %d lines"
+msgstr ""
+
+msgid "Resume"
+msgstr ""
+
+msgid "Clear Logs"
+msgstr ""
+
+msgid "Truncate /var/log/nimbus.log to 0 bytes?"
+msgstr ""
+
+msgid "Log file cleared."
+msgstr ""
+
+msgid "Nimbus Logs"
+msgstr ""
+
+msgid "Live viewer for /var/log/nimbus.log in tmpfs (automatically rotated above 512 KiB)."
+msgstr ""
+
+msgid "Auto-scroll"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Preparing"
+msgstr ""
+
+msgid "Lockdown"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "Endpoint URL"
+msgstr ""
+
+msgid "Endpoint URL copied to clipboard."
+msgstr ""
+
+msgid "Copy"
+msgstr ""
+
+msgid "API Secret"
+msgstr ""
+
+msgid "Show"
+msgstr ""
+
+msgid "Hide"
+msgstr ""
+
+msgid "API secret copied to clipboard."
+msgstr ""
+
+msgid "Secret is not available in the current runtime configuration."
+msgstr ""
+
+msgid "No API secret is configured."
+msgstr ""
+
+msgid "Service did not start because it is disabled in Settings (global.enabled)."
+msgstr ""
+
+msgid "Service action \"%s\" completed."
+msgstr ""
+
+msgid "sing-box Native API Credentials"
+msgstr ""
+
+msgid "Clash API Credentials"
+msgstr ""
+
+msgid "Fail-Closed Lockdown Active: "
+msgstr ""
+
+msgid "Non-whitelist LAN forwarding traffic is blocked to prevent IP leaks. Router management (SSH and LuCI) remains accessible."
+msgstr ""
+
+msgid "Router DNS Notice: "
+msgstr ""
+
+msgid "DNS mode is set to \"singbox\", so dnsmasq remains pointed at 127.0.0.1 to prevent DNS leaks. The router itself cannot resolve external domains (for core or subscription updates) until you click \"Stop\" to restore dnsmasq."
+msgstr ""
+
+msgid "Last Error: "
+msgstr ""
+
+msgid "Nimbus service is currently disabled in Settings. "
+msgstr ""
+
+msgid "Go to Settings"
+msgstr ""
+
+msgid "sing-box core binary is not installed yet. "
+msgstr ""
+
+msgid "Go to Core Management"
+msgstr ""
+
+msgid "No active sing-box configuration is selected. "
+msgstr ""
+
+msgid "Selected Composer configuration file is missing or not initialized. "
+msgstr ""
+
+msgid "Go to Config"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "Composer"
+msgstr ""
+
+msgid "Standalone Profile"
+msgstr ""
+
+msgid "Unavailable"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Stop"
+msgstr ""
+
+msgid "Restart"
+msgstr ""
+
+msgid "Reload"
+msgstr ""
+
+msgid "Service Status"
+msgstr ""
+
+msgid "Applying action..."
+msgstr ""
+
+msgid "Not installed"
+msgstr ""
+
+msgid "Running (PID %d)"
+msgstr ""
+
+msgid "Not running"
+msgstr ""
+
+msgid "%d sources · %d nodes · %d groups"
+msgstr ""
+
+msgid "Not initialized"
+msgstr ""
+
+msgid "Boot / UCI Enabled"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Active Configuration"
+msgstr ""
+
+msgid "Composer Summary"
+msgstr ""
+
+msgid "Network Topology"
+msgstr ""
+
+msgid "Side Router"
+msgstr ""
+
+msgid "Main Router"
+msgstr ""
+
+msgid "Proxy Mode"
+msgstr ""
+
+msgid "Failure Policy"
+msgstr ""
+
+msgid "Fail-Open (Direct Fallback)"
+msgstr ""
+
+msgid "Fail-Closed (Lockdown)"
+msgstr ""
+
+msgid "sing-box Core"
+msgstr ""
+
+msgid "Process"
+msgstr ""
+
+msgid "Uptime"
+msgstr ""
+
+msgid "Memory (RSS)"
+msgstr ""
+
+msgid "Runtime Overview"
+msgstr ""
+
+msgid "user inbound"
+msgstr ""
+
+msgid "auto-injected"
+msgstr ""
+
+msgid "Effective Data Plane & Whitelist"
+msgstr ""
+
+msgid "TCP Redirect Port"
+msgstr ""
+
+msgid "UDP TPROXY Port"
+msgstr ""
+
+msgid "Outbound Mark"
+msgstr ""
+
+msgid "DNS Takeover"
+msgstr ""
+
+msgid "Fake-IP Ranges"
+msgstr ""
+
+msgid "None detected"
+msgstr ""
+
+msgid "Whitelist Bypass"
+msgstr ""
+
+msgid "IPv4"
+msgstr ""
+
+msgid "IPv6"
+msgstr ""
+
+msgid "TCP Proxied"
+msgstr ""
+
+msgid "%d packets (%s)"
+msgstr ""
+
+msgid "UDP Proxied"
+msgstr ""
+
+msgid "Lockdown Rejected"
+msgstr ""
+
+msgid "%d packets"
+msgstr ""
+
+msgid "TUN Proxied"
+msgstr ""
+
+msgid "nftables Traffic Counters"
+msgstr ""
+
+msgid "Not configured in the active configuration."
+msgstr ""
+
+msgid "Loopback Only"
+msgstr ""
+
+msgid "No Secret Configured"
+msgstr ""
+
+msgid "Secret Protected"
+msgstr ""
+
+msgid "Reveal / Copy Credentials"
+msgstr ""
+
+msgid "Listen Address"
+msgstr ""
+
+msgid "Status Flags"
+msgstr ""
+
+msgid "Built-in Dashboard"
+msgstr ""
+
+msgid "Enabled (%s)"
+msgstr ""
+
+msgid "External UI"
+msgstr ""
+
+msgid "Configured"
+msgstr ""
+
+msgid "Control APIs & Dashboards"
+msgstr ""
+
+msgid "sing-box Native API"
+msgstr ""
+
+msgid "Open Dashboard"
+msgstr ""
+
+msgid "Open External UI"
+msgstr ""
+
+msgid "Nimbus Overview"
+msgstr ""
+
+msgid "Configuration applied and data plane reloaded."
+msgstr ""
+
+msgid "Nimbus Settings"
+msgstr ""
+
+msgid "Configure global routing topology, transparent proxy ports, DNS takeover, and per-device rules."
+msgstr ""
+
+msgid "Global Settings"
+msgstr ""
+
+msgid "Enable Service"
+msgstr ""
+
+msgid "Select a Composer configuration or a standalone Subscription / Local file (with \"Allow as Active Config\" enabled)."
+msgstr ""
+
+msgid "-- Select Configuration --"
+msgstr ""
+
+msgid "Side Router (Bypass Gateway)"
+msgstr ""
+
+msgid "TPROXY + Redirect (TCP REDIRECT + UDP TPROXY)"
+msgstr ""
+
+msgid "Fail-Open on Error"
+msgstr ""
+
+msgid "When disabled (default), service failure switches to Fail-Closed Lockdown blocking non-whitelist LAN forwarding while keeping router SSH/LuCI reachable."
+msgstr ""
+
+msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
+msgstr ""
+
+msgid "LAN Interfaces"
+msgstr ""
+
+msgid "Logical OpenWrt network interfaces whose client traffic is intercepted."
+msgstr ""
+
+msgid "WAN Interfaces"
+msgstr ""
+
+msgid "Logical WAN interfaces whose public IPv4/IPv6 prefixes are automatically bypassed in Main Router topology."
+msgstr ""
+
+msgid "Enable IPv4 Proxy"
+msgstr ""
+
+msgid "Enable IPv6 Proxy"
+msgstr ""
+
+msgid "IPv4 and IPv6 proxy cannot both be disabled."
+msgstr ""
+
+msgid "Proxy Router Outbound Traffic"
+msgstr ""
+
+msgid "Intercept TCP/UDP connections initiated by the router itself."
+msgstr ""
+
+msgid "Log Level"
+msgstr ""
+
+msgid "Go Memory Limit (GOMEMLIMIT)"
+msgstr ""
+
+msgid "Use \"auto\" (40% of MemTotal, clamped 32MiB–256MiB) or an explicit binary value using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr ""
+
+msgid "Must be \"auto\" or a binary Go memory limit using B, KiB, MiB, GiB, or TiB (e.g. 128MiB)."
+msgstr ""
+
+msgid "Data Plane & Traffic Filtering"
+msgstr ""
+
+msgid "Used when the active configuration does not define a redirect inbound."
+msgstr ""
+
+msgid "Used when the active configuration does not define a UDP tproxy inbound."
+msgstr ""
+
+msgid "TPROXY port must differ from TCP Redirect port."
+msgstr ""
+
+msgid "Outbound Anti-Loop Mark"
+msgstr ""
+
+msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0xff)."
+msgstr ""
+
+msgid "UDP TPROXY Routing Mark"
+msgstr ""
+
+msgid "Must be a non-zero 32-bit hexadecimal mark (e.g. 0x1)."
+msgstr ""
+
+msgid "TPROXY routing mark must differ from outbound anti-loop mark."
+msgstr ""
+
+msgid "Policy Route Table ID"
+msgstr ""
+
+msgid "Port Filter Mode"
+msgstr ""
+
+msgid "Proxy All Ports"
+msgstr ""
+
+msgid "Proxy Only Listed Ports"
+msgstr ""
+
+msgid "Bypass Listed Ports"
+msgstr ""
+
+msgid "TCP Ports / Ranges"
+msgstr ""
+
+msgid "Examples: 80, 443, 8000-8999."
+msgstr ""
+
+msgid "Invalid port or range (expected 1-65535 or start-end)."
+msgstr ""
+
+msgid "UDP Ports / Ranges"
+msgstr ""
+
+msgid "Examples: 53, 443, 10000-10100."
+msgstr ""
+
+msgid "Default LAN Device Policy"
+msgstr ""
+
+msgid "Fallback policy for LAN devices not matched by any enabled rule in LAN Device Rules below. Device rules take priority in top-to-bottom order."
+msgstr ""
+
+msgid "Proxy Unmatched Devices (Default)"
+msgstr ""
+
+msgid "Bypass Unmatched Devices (Direct)"
+msgstr ""
+
+msgid "Inject Route Sniff Rule"
+msgstr ""
+
+msgid "Ensure a modern route sniff action rule covers the active transparent inbounds."
+msgstr ""
+
+msgid "Block QUIC (UDP 443)"
+msgstr ""
+
+msgid "Inject a route rule rejecting QUIC protocol traffic so browsers fall back to TCP."
+msgstr ""
+
+msgid "DNS Takeover (dnsmasq)"
+msgstr ""
+
+msgid "DNS Mode"
+msgstr ""
+
+msgid "Do Not Manage (Keep Existing dnsmasq)"
+msgstr ""
+
+msgid "Forward to Local sing-box DNS"
+msgstr ""
+
+msgid "Forward to Custom Upstreams"
+msgstr ""
+
+msgid "sing-box DNS Listen Port"
+msgstr ""
+
+msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
+msgstr ""
+
+msgid "DNS listen port is required."
+msgstr ""
+
+msgid "DNS port must not collide with TCP Redirect or UDP TPROXY port."
+msgstr ""
+
+msgid "Custom Upstream Servers"
+msgstr ""
+
+msgid "dnsmasq upstream format, e.g. 127.0.0.1#5335 or 192.168.1.2#5353."
+msgstr ""
+
+msgid "At least one custom DNS upstream server is required."
+msgstr ""
+
+msgid "DNS upstream entry cannot be empty or contain spaces."
+msgstr ""
+
+msgid "Local DNS (\"local\") Handling"
+msgstr ""
+
+msgid "How to rewrite sing-box DNS servers of type \"local\" when dnsmasq forwards to sing-box or Router Outbound Proxy is enabled, preventing DNS loops."
+msgstr ""
+
+msgid "Auto-detect WAN DNS (Fallback to Direct DNS)"
+msgstr ""
+
+msgid "Always Use Configured Direct DNS"
+msgstr ""
+
+msgid "Strict Reject (\"local\" Not Allowed)"
+msgstr ""
+
+msgid "Manual / Fallback Direct DNS"
+msgstr ""
+
+msgid "Non-loopback direct DNS IP used when policy is \"fallback\", or when no safe WAN DNS is available yet. Leave empty to require WAN DNS."
+msgstr ""
+
+msgid "Direct DNS server IP is required when policy is set to always use fallback."
+msgstr ""
+
+msgid "Direct DNS server IP must not be a loopback or unspecified address."
+msgstr ""
+
+msgid "Hijack LAN External DNS (Port 53)"
+msgstr ""
+
+msgid "Redirect external TCP/UDP port 53 queries from proxied LAN devices back to router port 53 (devices bypassed by LAN Device Rules or Default LAN Device Policy are excluded)."
+msgstr ""
+
+msgid "LAN Device Rules"
+msgstr ""
+
+msgid "Matched top-to-bottom (first match wins) before applying Default LAN Device Policy above. Disabled rows are ignored."
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "MAC Address"
+msgstr ""
+
+msgid "IP / CIDR"
+msgstr ""
+
+msgid "Specify at least a MAC address or an IP/CIDR."
+msgstr ""
+
+msgid "Policy"
+msgstr ""
+
+msgid "Bypass (Direct)"
+msgstr ""
+
+msgid "Proxy"
+msgstr ""
+
+msgid "Profile \"%s\" uploaded and validated with sing-box. Reload service to apply changes."
+msgstr ""
+
+msgid "Profile \"%s\" uploaded and validated with sing-box."
+msgstr ""
+
+msgid "Profile \"%s\" uploaded (JSON syntax checked). Reload service to apply changes."
+msgstr ""
+
+msgid "Profile \"%s\" uploaded (JSON syntax checked)."
+msgstr ""
+
+msgid "Profile \"%s\" saved and validated with sing-box. Reload service to apply changes."
+msgstr ""
+
+msgid "Profile \"%s\" saved and validated with sing-box."
+msgstr ""
+
+msgid "Profile \"%s\" saved (JSON syntax checked). Reload service to apply changes."
+msgstr ""
+
+msgid "Profile \"%s\" saved (JSON syntax checked)."
+msgstr ""
+
+msgid "%s / %s direct limit"
+msgstr ""
+
+msgid "Content exceeds the 256 KiB inline transfer limit. Save locally and use \"Upload .json\" instead."
+msgstr ""
+
+msgid "Standalone configuration JSON must be a top-level object."
+msgstr ""
+
+msgid "Source JSON must be a top-level object or a non-empty array."
+msgstr ""
+
+msgid "Edit Profile JSON: %s"
+msgstr ""
+
+msgid "Validate with sing-box check before saving"
+msgstr ""
+
+msgid "Upload .json File"
+msgstr ""
+
+msgid "e.g. Main Profile"
+msgstr ""
+
+msgid "Remote Subscription"
+msgstr ""
+
+msgid "Local File"
+msgstr ""
+
+msgid "Subscription URL"
+msgstr ""
+
+msgid "User-Agent"
+msgstr ""
+
+msgid "Fetch via Proxy"
+msgstr ""
+
+msgid "Auto Update"
+msgstr ""
+
+msgid "Update Interval (Hours)"
+msgstr ""
+
+msgid "Allowed range: 1 to 720 hours."
+msgstr ""
+
+msgid "Profile name is required."
+msgstr ""
+
+msgid "Subscription profile requires a valid http:// or https:// URL."
+msgstr ""
+
+msgid "Update interval must be an integer between 1 and 720 hours."
+msgstr ""
+
+msgid "Subscription metadata updated."
+msgstr ""
+
+msgid "Subscription created."
+msgstr ""
+
+msgid "Edit Subscription: %s"
+msgstr ""
+
+msgid "Add Subscription"
+msgstr ""
+
+msgid "Stored read-only under /etc/nimbus/profiles/, e.g. main_sub.json."
+msgstr ""
+
+msgid "Allow as Active Config"
+msgstr ""
+
+msgid "Currently selected as the active configuration in Settings. Switch active configuration first to disable."
+msgstr ""
+
+msgid "Allow selecting this file directly as the Active Configuration in Settings (requires a complete sing-box JSON object)."
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed, service reloaded."
+msgstr ""
+
+msgid "Subscription update finished: %d updated, %d unchanged, %d failed."
+msgstr ""
+
+msgid "Subscription update finished: %d updated, %d unchanged, service reloaded."
+msgstr ""
+
+msgid "Subscription update finished: %d updated, %d unchanged."
+msgstr ""
+
+msgid "Delete Profile"
+msgstr ""
+
+msgid "Delete profile \"%s\" (%s) and its configuration file?"
+msgstr ""
+
+msgid "Profile \"%s\" deleted."
+msgstr ""
+
+msgid "Update All Subscriptions"
+msgstr ""
+
+msgid "No subscriptions or profiles configured. Click \"Add Subscription\" to create one."
+msgstr ""
+
+msgid "Standalone Config"
+msgstr ""
+
+msgid "Used by: %s"
+msgstr ""
+
+msgid "Cannot delete while enabled as a source in Composer: %s"
+msgstr ""
+
+msgid "Auto: %dh"
+msgstr ""
+
+msgid "Manual"
+msgstr ""
+
+msgid "Via Proxy"
+msgstr ""
+
+msgid "Edit JSON"
+msgstr ""
+
+msgid "Upload .json"
+msgstr ""
+
+msgid "Update"
+msgstr ""
+
+msgid "Meta"
+msgstr ""
+
+msgid "Nimbus Subscriptions"
+msgstr ""
+
+msgid "Manage remote sing-box subscriptions and local JSON files stored read-only under /etc/nimbus/profiles/. Enable \"Allow as Active Config\" to select a complete file directly in Settings, or use any item as a node source in Composer."
+msgstr ""
+
+msgid "Line %d: \"%s\" — %s"
+msgstr ""
+
+msgid "invalid entry"
+msgstr ""
+
+msgid "Validation Failed: %s"
+msgstr ""
+
+msgid "Saved \"%s\" (%d IPv4, %d IPv6) and atomically hot-reloaded nftables."
+msgstr ""
+
+msgid "Saved \"%s\" (%d IPv4, %d IPv6)."
+msgstr ""
+
+msgid "Save & Hot-Reload"
+msgstr ""
+
+msgid "Content exceeds the 256 KiB inline transfer limit. Use \"Upload .txt File\" instead."
+msgstr ""
+
+msgid "Edit Whitelist: %s"
+msgstr ""
+
+msgid "Enter one IPv4, IPv6, or CIDR range per line. Comments beginning with \"#\", \";\", or \"//\" are supported."
+msgstr ""
+
+msgid "Upload .txt File"
+msgstr ""
+
+msgid "IPv4: %d"
+msgstr ""
+
+msgid "IPv6: %d"
+msgstr ""
+
+msgid "Ignored / Comments: %d"
+msgstr ""
+
+msgid "Invalid: %d"
+msgstr ""
+
+msgid "Unrecognized Lines (not loaded into nftables):"
+msgstr ""
+
+msgid "Line %d: %s"
+msgstr ""
+
+msgid "(empty)"
+msgstr ""
+
+msgid "Cleaned whitelist entries copied to clipboard."
+msgstr ""
+
+msgid "Copy Cleaned"
+msgstr ""
+
+msgid "Cleaned Preview: %s"
+msgstr ""
+
+msgid "e.g. Custom Direct"
+msgstr ""
+
+msgid "Remote URL"
+msgstr ""
+
+msgid "Auto (IPv4 + IPv6)"
+msgstr ""
+
+msgid "IPv4 Only"
+msgstr ""
+
+msgid "IPv6 Only"
+msgstr ""
+
+msgid "Stored under /etc/nimbus/lists/local/, e.g. custom_direct.txt."
+msgstr ""
+
+msgid "Source URL"
+msgstr ""
+
+msgid "Source name is required."
+msgstr ""
+
+msgid "Filename must match ^[A-Za-z0-9._-]+\\.txt$ (no path separators or \"..\")."
+msgstr ""
+
+msgid "Remote source requires a valid http:// or https:// URL."
+msgstr ""
+
+msgid "Whitelist source saved and atomically hot-reloaded nftables."
+msgstr ""
+
+msgid "Whitelist source saved."
+msgstr ""
+
+msgid "Edit Whitelist Source: %s"
+msgstr ""
+
+msgid "Add Whitelist Source"
+msgstr ""
+
+msgid "Address Family"
+msgstr ""
+
+msgid "Remote lists updated: %d updated, %d unchanged, nftables atomically hot-reloaded."
+msgstr ""
+
+msgid "Remote lists updated: %d updated, %d unchanged."
+msgstr ""
+
+msgid "Delete Whitelist Source"
+msgstr ""
+
+msgid "Delete whitelist source \"%s\" and its associated file/cache?"
+msgstr ""
+
+msgid "Whitelist source deleted and nftables hot-reloaded."
+msgstr ""
+
+msgid "Whitelist source deleted."
+msgstr ""
+
+msgid "Cron expression must have 5 space-separated fields (e.g. \"30 4 * * *\")."
+msgstr ""
+
+msgid "Whitelist policy saved and atomically hot-reloaded nftables."
+msgstr ""
+
+msgid "Whitelist policy saved."
+msgstr ""
+
+msgid "Save Policy"
+msgstr ""
+
+msgid "Global Whitelist Policy"
+msgstr ""
+
+msgid "Effective nftables Sets"
+msgstr ""
+
+msgid "Effective nftables IPv4: %d"
+msgstr ""
+
+msgid "Effective nftables IPv6: %d"
+msgstr ""
+
+msgid "Enable Whitelist Bypass"
+msgstr ""
+
+msgid "Built-in private, LAN, and WAN reserved subnets always bypass the proxy regardless of this switch."
+msgstr ""
+
+msgid "Auto Update Remote Lists"
+msgstr ""
+
+msgid "Cron Schedule"
+msgstr ""
+
+msgid "Standard 5-field cron expression, e.g. 30 4 * * *."
+msgstr ""
+
+msgid "Add Source"
+msgstr ""
+
+msgid "Update All Remote Sources"
+msgstr ""
+
+msgid "Updating..."
+msgstr ""
+
+msgid "Family"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Target"
+msgstr ""
+
+msgid "Entries & File"
+msgstr ""
+
+msgid "No whitelist sources configured."
+msgstr ""
+
+msgid "IPv4: %d / IPv6: %d"
+msgstr ""
+
+msgid "Not cached / missing"
+msgstr ""
+
+msgid "Upload .txt"
+msgstr ""
+
+msgid "Whitelist Sources"
+msgstr ""
+
+msgid "Nimbus Whitelists"
+msgstr ""
+
+msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
 msgstr ""

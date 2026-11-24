@@ -25,25 +25,14 @@ function parse_interval_hours(val) {
 }
 
 function get_profile_sections(uci_cfg) {
-	let out = [];
-	if (type(uci_cfg) != 'object')
-		return out;
-
-	for (let k, sec in uci_cfg) {
-		if (type(sec) != 'object' || sec['.type'] != 'profile')
-			continue;
-		push(out, {
-			id: sec['.name'] || k,
-			section: sec
-		});
-	}
-	return out;
+	return cc.get_ordered_profiles(uci_cfg);
 }
 
 function list_profiles(uci_cfg, opts) {
 	let options = opts || {};
 	let uci_data = uci_cfg || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
 	let profiles_dir = options.profiles_dir || common.PROFILES_DIR;
+	let composers_dir = options.composers_dir || common.COMPOSERS_DIR;
 	let active_id = uci_data?.global?.active_profile || '';
 	let out = [];
 
@@ -55,12 +44,17 @@ function list_profiles(uci_cfg, opts) {
 		let fpath = valid_name ? (profiles_dir + '/' + fname) : null;
 		let st = fpath ? fs.stat(fpath) : null;
 		let exists_file = (st != null && st.type == 'file');
+		let refs = cc.find_composers_using_profile(uci_data, id, { composers_dir: composers_dir });
+		let used_by = [];
+		for (let r in refs)
+			push(used_by, { id: r.id, name: r.name });
 
 		push(out, {
 			id: id,
 			name: sec.name || id,
 			type: sec.type || 'local',
 			filename: fname,
+			as_config: (sec.as_config == '1' || sec.as_config === true),
 			url: sec.url || '',
 			user_agent: sec.user_agent || DEFAULT_USER_AGENT,
 			via_proxy: (sec.via_proxy == '1' || sec.via_proxy === true),
@@ -69,7 +63,8 @@ function list_profiles(uci_cfg, opts) {
 			exists: exists_file,
 			size_bytes: exists_file ? st.size : 0,
 			mtime: exists_file ? st.mtime : null,
-			active: (id == active_id)
+			active: (id == active_id),
+			used_by_composers: used_by
 		});
 	}
 
@@ -175,7 +170,6 @@ function update_profiles(section_id, opts) {
 	let profiles_dir = options.profiles_dir || common.PROFILES_DIR;
 	let bin_path = options.bin_path || uci_data?.core?.bin_path || '/etc/nimbus/bin/sing-box';
 	let check_dir = options.check_dir || common.CHECK_DIR;
-	let active_profile = uci_data?.global?.active_profile || '';
 	let sections = get_profile_sections(uci_data);
 	let targets = [];
 
@@ -228,17 +222,21 @@ function update_profiles(section_id, opts) {
 	common.ensure_dir(profiles_dir, 0755);
 
 	let state_path = options.state_file || common.STATE_FILE;
+	let composers_dir = options.composers_dir || common.COMPOSERS_DIR;
 	let sub_meta_updates = {};
-	let config_mode = common.normalize_config_mode(uci_data);
-	let composer_obj = null;
-	if (config_mode == common.CONFIG_MODE_COMPOSER) {
+	let active_target = common.resolve_active_target(uci_data, {
+		composers_dir: composers_dir,
+		profiles_dir: profiles_dir
+	});
+	let active_composer = null;
+	if (active_target.ok && active_target.kind == 'composer') {
 		if (options.composer != null) {
 			let norm = cc.normalize_composer(options.composer);
 			if (!norm.ok)
 				return { ok: false, code: norm.code, error: norm.error, reloaded: false, results: [] };
-			composer_obj = norm.composer;
+			active_composer = norm.composer;
 		} else {
-			composer_obj = cc.read_composer(options.composer_file || common.COMPOSER_FILE);
+			active_composer = cc.read_composer(options.composer_file || active_target.path);
 		}
 	}
 
@@ -269,6 +267,7 @@ function update_profiles(section_id, opts) {
 		let sec = item.section;
 		let fname = sec.filename || '';
 		let url = trim('' + (sec.url || ''));
+		let as_cfg = (sec.as_config == '1' || sec.as_config === true);
 
 		if (!common.is_valid_profile_filename(fname)) {
 			push_fail(id, sprintf('invalid profile filename: %s', '' + fname));
@@ -299,62 +298,55 @@ function update_profiles(section_id, opts) {
 			parsed_json = null;
 		}
 
-		let is_used = false;
-		if (config_mode == common.CONFIG_MODE_PROFILE) {
+		let used_as_active_profile = (active_target.ok && active_target.kind == 'profile' && active_target.id == id);
+		let active_comp_src = (active_target.ok && active_target.kind == 'composer' && active_composer?.sources?.[id]?.enabled === true)
+			? active_composer.sources[id]
+			: null;
+		let used_by_active_composer = (active_comp_src != null);
+		let is_used = (used_as_active_profile || used_by_active_composer);
+		let val_err = null;
+
+		if (as_cfg) {
 			if (type(parsed_json) != 'object') {
-				fs.unlink(tmp_path);
-				push_fail(id, 'downloaded subscription is not a valid JSON object');
-				continue;
-			}
-
-			let bres = cb.build_config({
-				uci: uci_data,
-				uci_confdir: options.uci_confdir,
-				uci_savedir: options.uci_savedir,
-				raw_config: parsed_json,
-				bin_path: bin_path,
-				check_dir: check_dir,
-				validate_only: true,
-				skip_check: (options.skip_check === true)
-			});
-
-			if (!bres.ok) {
-				fs.unlink(tmp_path);
-				push_fail(id, bres.error || 'sing-box check validation failed');
-				continue;
-			}
-
-			is_used = (id == active_profile);
-		} else {
-			if (type(parsed_json) != 'object' && type(parsed_json) != 'array') {
-				fs.unlink(tmp_path);
-				push_fail(id, 'downloaded subscription is not a valid JSON object or array');
-				continue;
-			}
-
-			let src_cfg = composer_obj?.sources?.[id] || {};
-			is_used = (src_cfg.enabled === true);
-
-			let ext_struct = cc.extract_source_nodes(parsed_json, { exclude_types: [] }, {});
-			let val_err = null;
-			if (!ext_struct.ok)
-				val_err = ext_struct.error;
-			else if (length(ext_struct.nodes) == 0)
-				val_err = 'downloaded subscription contains no valid outbound entries';
-
-			if (!val_err) {
-				let ext_src = cc.extract_source_nodes(parsed_json, src_cfg, {});
-				if (!ext_src.ok)
-					val_err = ext_src.error;
-			}
-
-			if (!val_err && is_used && composer_obj != null) {
+				val_err = 'downloaded subscription is not a valid JSON object';
+			} else {
 				let bres = cb.build_config({
 					uci: uci_data,
 					uci_confdir: options.uci_confdir,
 					uci_savedir: options.uci_savedir,
-					composer: composer_obj,
-					composer_file: options.composer_file,
+					raw_config: parsed_json,
+					bin_path: bin_path,
+					check_dir: check_dir,
+					validate_only: true,
+					skip_check: (options.skip_check === true)
+				});
+				if (!bres.ok)
+					val_err = bres.error || 'sing-box check validation failed';
+			}
+		} else {
+			if (type(parsed_json) != 'object' && type(parsed_json) != 'array') {
+				val_err = 'downloaded subscription is not a valid JSON object or array';
+			} else {
+				let ext_struct = cc.extract_source_nodes(parsed_json, { exclude_types: [] }, {});
+				if (!ext_struct.ok)
+					val_err = ext_struct.error;
+				else if (length(ext_struct.nodes) == 0)
+					val_err = 'downloaded subscription contains no valid outbound entries';
+			}
+		}
+
+		if (!val_err && used_by_active_composer) {
+			let ext_src = cc.extract_source_nodes(parsed_json, active_comp_src, {});
+			if (!ext_src.ok) {
+				val_err = ext_src.error;
+			} else {
+				let bres = cb.build_config({
+					uci: uci_data,
+					uci_confdir: options.uci_confdir,
+					uci_savedir: options.uci_savedir,
+					compose_from_composer: true,
+					composer: active_composer,
+					composers_dir: composers_dir,
 					profiles_dir: profiles_dir,
 					override_profile_docs: { [id]: parsed_json },
 					bin_path: bin_path,
@@ -365,12 +357,12 @@ function update_profiles(section_id, opts) {
 				if (!bres.ok)
 					val_err = bres.error || 'sing-box check validation failed';
 			}
+		}
 
-			if (val_err) {
-				fs.unlink(tmp_path);
-				push_fail(id, val_err);
-				continue;
-			}
+		if (val_err) {
+			fs.unlink(tmp_path);
+			push_fail(id, val_err);
+			continue;
 		}
 
 		let new_hash = common.sha256_file(tmp_path);

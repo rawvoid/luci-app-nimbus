@@ -25,10 +25,8 @@ check(common.CONFIG_FILE == '/var/run/nimbus/config.json', 'CONFIG_FILE constant
 check(common.PID_FILE == '/var/run/nimbus/sing-box.pid', 'PID_FILE constant');
 check(common.LOCK_FILE == '/var/run/nimbus/nimbus.lock', 'LOCK_FILE constant');
 check(common.LOG_FILE == '/var/log/nimbus.log', 'LOG_FILE constant');
-check(common.COMPOSER_FILE == '/etc/nimbus/composer.json', 'COMPOSER_FILE constant');
+check(common.COMPOSERS_DIR == '/etc/nimbus/composers', 'COMPOSERS_DIR constant');
 check(common.PROFILES_DIR == '/etc/nimbus/profiles', 'PROFILES_DIR constant');
-check(common.CONFIG_MODE_COMPOSER == 'composer', 'CONFIG_MODE_COMPOSER constant');
-check(common.CONFIG_MODE_PROFILE == 'profile', 'CONFIG_MODE_PROFILE constant');
 check(common.LOCAL_LISTS_DIR == '/etc/nimbus/lists/local', 'LOCAL_LISTS_DIR constant');
 check(common.CACHE_LISTS_DIR == '/etc/nimbus/lists/cache', 'CACHE_LISTS_DIR constant');
 check(common.DNS_BACKUP_FILE == '/etc/nimbus/dns_backup.json', 'DNS_BACKUP_FILE constant');
@@ -140,7 +138,7 @@ let sample_uci = fs.readfile(repo_root + '/nimbus/files/etc/config/nimbus');
 check(type(sample_uci) == 'string' && length(sample_uci) > 0, 'repo default uci config readable');
 common.atomic_write(uci_conf + '/nimbus', sample_uci, 0644);
 let all_uci = common.uci_get_all('nimbus', uci_conf, uci_save);
-check(all_uci?.global?.config_mode == 'composer', 'uci_get_all reads default global.config_mode');
+check(!exists(all_uci?.global || {}, 'config_mode'), 'default UCI omits legacy global.config_mode');
 check(all_uci?.global?.proxy_mode == 'tproxy_redirect', 'uci_get_all reads global.proxy_mode');
 check(all_uci?.global?.fail_open == '0', 'uci_get_all reads global.fail_open');
 check(all_uci?.proxy?.outbound_mark == '0xff', 'uci_get_all reads proxy.outbound_mark');
@@ -185,15 +183,49 @@ check(!common.is_valid_list_filename('dir/list.txt'), 'rejects slash in list');
 check(!common.is_valid_list_filename('list.json'), 'rejects non-txt list');
 check(!common.is_valid_list_filename('.txt'), 'rejects bare .txt');
 
-// 9b. Config mode normalization
-check(common.normalize_config_mode('profile') == 'profile', 'normalize_config_mode profile');
-check(common.normalize_config_mode(' PROFILE ') == 'profile', 'normalize_config_mode uppercase padded profile');
-check(common.normalize_config_mode('composer') == 'composer', 'normalize_config_mode composer');
-check(common.normalize_config_mode('') == 'composer', 'normalize_config_mode empty defaults to composer');
-check(common.normalize_config_mode(null) == 'composer', 'normalize_config_mode null defaults to composer');
-check(common.normalize_config_mode('unknown') == 'composer', 'normalize_config_mode unknown defaults to composer');
-check(common.normalize_config_mode({ global: { config_mode: 'profile' } }) == 'profile', 'normalize_config_mode uci object profile');
-check(common.normalize_config_mode({ global: {} }) == 'composer', 'normalize_config_mode uci object missing defaults to composer');
+// 9b. Active configuration target resolution (composer & standalone profile)
+let rt_empty = common.resolve_active_target({ global: { active_profile: '' } });
+check(rt_empty.ok === false && rt_empty.code == common.ERR_NOT_FOUND, 'resolve_active_target rejects empty active_profile');
+
+let rt_missing = common.resolve_active_target({ global: { active_profile: 'no_such' } });
+check(rt_missing.ok === false && rt_missing.code == common.ERR_NOT_FOUND, 'resolve_active_target rejects missing section');
+
+let rt_comp = common.resolve_active_target({
+	global: { active_profile: 'home_router' },
+	home_router: { '.type': 'composer', name: 'Home Router', filename: 'home_router.json' }
+}, { composers_dir: '/tmp/composers' });
+check(rt_comp.ok === true && rt_comp.kind == 'composer' && rt_comp.id == 'home_router' &&
+	rt_comp.name == 'Home Router' && rt_comp.path == '/tmp/composers/home_router.json',
+	'resolve_active_target resolves composer section cleanly');
+
+let rt_comp_bad = common.resolve_active_target({
+	global: { active_profile: 'bad_comp' },
+	bad_comp: { '.type': 'composer', name: 'Bad', filename: '../escape.json' }
+});
+check(rt_comp_bad.ok === false && rt_comp_bad.code == common.ERR_INVALID_ARG,
+	'resolve_active_target rejects path traversal in composer filename');
+
+let rt_prof_ok = common.resolve_active_target({
+	global: { active_profile: 'standalone_sub' },
+	standalone_sub: { '.type': 'profile', name: 'Standalone Sub', filename: 'sub.json', as_config: '1' }
+}, { profiles_dir: '/tmp/profiles' });
+check(rt_prof_ok.ok === true && rt_prof_ok.kind == 'profile' && rt_prof_ok.id == 'standalone_sub' &&
+	rt_prof_ok.name == 'Standalone Sub' && rt_prof_ok.path == '/tmp/profiles/sub.json',
+	'resolve_active_target resolves profile with as_config=1');
+
+let rt_prof_denied = common.resolve_active_target({
+	global: { active_profile: 'nodes_only' },
+	nodes_only: { '.type': 'profile', name: 'Nodes Only', filename: 'nodes.json', as_config: '0' }
+});
+check(rt_prof_denied.ok === false && rt_prof_denied.code == common.ERR_VALIDATE_FAILED,
+	'resolve_active_target rejects profile with as_config=0');
+
+let rt_wrong_type = common.resolve_active_target({
+	global: { active_profile: 'proxy' },
+	proxy: { '.type': 'proxy', redirect_port: '7891' }
+});
+check(rt_wrong_type.ok === false && rt_wrong_type.code == common.ERR_NOT_FOUND,
+	'resolve_active_target rejects unsupported section type');
 
 // 10. sha256_str & sha256_file
 check(common.sha256_str('') == 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'sha256 empty string');

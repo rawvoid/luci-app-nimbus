@@ -5,23 +5,16 @@
 'require ui';
 'require nimbus.api as nimbusApi';
 
-function makeBadge(text, bg, fg) {
-	return E('span', {
-		'class': 'label',
-		'style': 'display:inline-block;padding:2px 8px;border-radius:3px;font-size:85%;font-weight:600;background:%s;color:%s;'.format(bg, fg)
-	}, text);
-}
-
 function renderStateBadge(state) {
 	switch (state) {
 	case 'running':
-		return makeBadge(_('Running'), '#e6f4ea', '#137333');
+		return E('span', { 'class': 'label' }, _('Running'));
 	case 'preparing':
-		return makeBadge(_('Preparing'), '#e8f0fe', '#1967d2');
+		return E('span', { 'class': 'label notice' }, _('Preparing'));
 	case 'lockdown':
-		return makeBadge(_('Lockdown'), '#fce8e6', '#c5221f');
+		return E('strong', {}, _('Lockdown'));
 	default:
-		return makeBadge(_('Stopped'), '#f1f3f4', '#5f6368');
+		return E('em', {}, _('Stopped'));
 	}
 }
 
@@ -114,22 +107,13 @@ return view.extend({
 	handleReset: null,
 
 	load: function() {
-		return Promise.all([
-			nimbusApi.status(),
-			nimbusApi.profileList().catch(function() { return { ok: false, profiles: [] }; })
-		]);
+		return nimbusApi.status();
 	},
 
-	render: function(data) {
-		var status = data[0] || {};
-		var plist = data[1] || {};
-		var profileMap = {};
+	render: function(initialStatus) {
+		var status = initialStatus || {};
 		var actionPending = false;
 		var pollInFlight = false;
-
-		(plist.profiles || []).forEach(function(p) {
-			profileMap[p.id] = p;
-		});
 
 		var alertsBox = E('div', { 'id': 'nimbus-alerts' });
 		var controlBox = E('div', { 'class': 'cbi-section' });
@@ -211,19 +195,19 @@ return view.extend({
 			if (!core.installed) {
 				nodes.push(E('div', { 'class': 'alert-message warning' }, [
 					E('span', {}, _('sing-box core binary is not installed yet. ')),
-					E('a', { 'href': L.url('admin/services/nimbus/core') }, _('Go to Core Management'))
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'core') }, _('Go to Core Management'))
 				]));
 			}
 
-			if (st.config_mode === 'profile' && !st.active_profile) {
+			if (!st.active_profile) {
 				nodes.push(E('div', { 'class': 'alert-message warning' }, [
-					E('span', {}, _('No active sing-box profile is selected. ')),
-					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'profiles') }, _('Go to Config'))
+					E('span', {}, _('No active sing-box configuration is selected. ')),
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'settings') }, _('Go to Settings'))
 				]));
-			} else if (st.config_mode !== 'profile' && !(st.composer && st.composer.initialized)) {
+			} else if (st.active_kind === 'composer' && !(st.composer && st.composer.initialized)) {
 				nodes.push(E('div', { 'class': 'alert-message warning' }, [
-					E('span', {}, _('Composer configuration has not been saved yet. ')),
-					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'profiles') }, _('Go to Config'))
+					E('span', {}, _('Selected Composer configuration file is missing or not initialized. ')),
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'config') }, _('Go to Config'))
 				]));
 			}
 
@@ -246,10 +230,13 @@ return view.extend({
 			var state = st.state || 'stopped';
 			var proc = st.process || {};
 			var core = st.core || {};
-			var prof = st.active_profile ? profileMap[st.active_profile] : null;
-			var profLabel = st.active_profile
-				? (prof && prof.name ? '%s (%s)'.format(prof.name, st.active_profile) : st.active_profile)
-				: _('None');
+			var activeLabel = _('None');
+			if (st.active_profile) {
+				var activeKindText = (st.active_kind === 'composer')
+					? _('Composer')
+					: (st.active_kind === 'profile' ? _('Standalone Profile') : _('Unavailable'));
+				activeLabel = '%s [%s]'.format(st.active_name || st.active_profile, activeKindText);
+			}
 
 			var btnStart = E('button', {
 				'type': 'button',
@@ -300,7 +287,7 @@ return view.extend({
 				? _('Running (PID %d)').format(proc.pid)
 				: _('Not running');
 
-			var isProfileMode = (st.config_mode === 'profile');
+			var isComposerActive = (st.active_kind === 'composer');
 			var comp = st.composer || {};
 			var compLabel = (comp && comp.initialized)
 				? _('%d sources · %d nodes · %d groups').format(
@@ -310,22 +297,25 @@ return view.extend({
 				)
 				: _('Not initialized');
 
+			var telemetryRows = [
+				[ _('Boot / UCI Enabled'), st.enabled ? _('Enabled') : _('Disabled') ],
+				[ _('Active Configuration'), activeLabel ]
+			];
+			if (isComposerActive)
+				telemetryRows.push([ _('Composer Summary'), compLabel ]);
+			telemetryRows.push(
+				[ _('Network Topology'), st.topology === 'side' ? _('Side Router') : _('Main Router') ],
+				[ _('Proxy Mode'), st.proxy_mode || 'tproxy_redirect' ],
+				[ _('Failure Policy'), st.fail_open ? _('Fail-Open (Direct Fallback)') : _('Fail-Closed (Lockdown)') ],
+				[ _('sing-box Core'), coreText ],
+				[ _('Process'), procText ],
+				[ _('Uptime'), proc.running ? nimbusApi.formatUptime(proc.uptime) : '-' ],
+				[ _('Memory (RSS)'), proc.running ? nimbusApi.formatBytes((proc.rss_kb || 0) * 1024) : '-' ]
+			);
+
 			dom.content(telemetryBox, [
 				E('h3', {}, _('Runtime Overview')),
-				renderKeyValueRows([
-					[ _('Boot / UCI Enabled'), st.enabled ? _('Enabled') : _('Disabled') ],
-					[ _('Config Mode'), isProfileMode ? _('Raw Profile Mode') : _('Composer Mode') ],
-					isProfileMode
-						? [ _('Active Profile'), profLabel ]
-						: [ _('Composer Summary'), compLabel ],
-					[ _('Network Topology'), st.topology === 'side' ? _('Side Router') : _('Main Router') ],
-					[ _('Proxy Mode'), st.proxy_mode || 'tproxy_redirect' ],
-					[ _('Failure Policy'), st.fail_open ? _('Fail-Open (Direct Fallback)') : _('Fail-Closed (Lockdown)') ],
-					[ _('sing-box Core'), coreText ],
-					[ _('Process'), procText ],
-					[ _('Uptime'), proc.running ? nimbusApi.formatUptime(proc.uptime) : '-' ],
-					[ _('Memory (RSS)'), proc.running ? nimbusApi.formatBytes((proc.rss_kb || 0) * 1024) : '-' ]
-				])
+				renderKeyValueRows(telemetryRows)
 			]);
 		}
 
@@ -400,11 +390,11 @@ return view.extend({
 			var url = nimbusApi.buildApiUrl(apiInfo, pathSuffix);
 			var flags = [];
 			if (apiInfo.loopback_only)
-				flags.push(makeBadge(_('Loopback Only'), '#fef7e0', '#b06000'));
+				flags.push(E('span', { 'class': 'label notice' }, _('Loopback Only')));
 			if (apiInfo.no_secret)
-				flags.push(makeBadge(_('No Secret Configured'), '#fce8e6', '#c5221f'));
+				flags.push(E('span', { 'class': 'label notice' }, _('No Secret Configured')));
 			if (apiInfo.has_secret)
-				flags.push(makeBadge(_('Secret Protected'), '#e6f4ea', '#137333'));
+				flags.push(E('span', { 'class': 'label' }, _('Secret Protected')));
 
 			var buttons = [];
 			var canOpen = (kind === 'singbox')

@@ -26,17 +26,25 @@
 			"path": "nimbus/settings"
 		}
 	},
-	"admin/services/nimbus/profiles": {
-		"title": "Config",
+	"admin/services/nimbus/subscriptions": {
+		"title": "Subscriptions",
 		"order": 30,
 		"action": {
 			"type": "view",
-			"path": "nimbus/profiles"
+			"path": "nimbus/subscriptions"
+		}
+	},
+	"admin/services/nimbus/config": {
+		"title": "Config",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "nimbus/config"
 		}
 	},
 	"admin/services/nimbus/whitelists": {
 		"title": "Whitelists",
-		"order": 40,
+		"order": 50,
 		"action": {
 			"type": "view",
 			"path": "nimbus/whitelists"
@@ -44,7 +52,7 @@
 	},
 	"admin/services/nimbus/core": {
 		"title": "Core",
-		"order": 50,
+		"order": 60,
 		"action": {
 			"type": "view",
 			"path": "nimbus/core"
@@ -52,7 +60,7 @@
 	},
 	"admin/services/nimbus/logs": {
 		"title": "Logs",
-		"order": 60,
+		"order": 70,
 		"action": {
 			"type": "view",
 			"path": "nimbus/logs"

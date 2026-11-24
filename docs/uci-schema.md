@@ -10,8 +10,8 @@
 - **命名规范**：全部使用 `snake_case`。
 - **数据边界**：
   - `/etc/config/nimbus` 仅保存用户配置。
-  - `/etc/nimbus/composer.json`（权限 `0600`）仅保存编排模式（`config_mode='composer'`）下的结构化配置蓝图（各共享节点源的提取规则、出站组、手动出站、自定义入站、DNS、路由规则、规则集与顶层复写 JSON），避免将多行嵌套 JSON 塞入 UCI。
-  - `/etc/nimbus/profiles/` 由两种模式共享：`profile` 模式将其作为整份只读完整配置使用，`composer` 模式从中按需提取非组出站节点。
+  - `/etc/nimbus/composers/<filename>`（权限 `0600`）保存多套编排配置（`config composer`）的结构化配置蓝图（各节点源的提取规则、出站组、手动出站、自定义入站、DNS、路由规则、规则集与顶层复写 JSON），避免将多行嵌套 JSON 塞入 UCI。
+  - `/etc/nimbus/profiles/<filename>` 存放所有远程订阅与本地 JSON 文件（`config profile`）：任意条目均可作为编排配置的节点提取源；勾选 `as_config='1'` 的条目还可以直接作为 `global.active_profile` 独立运行。
   - 运行期上下文（状态机阶段、生效端口/网卡、探测到的 API 入口摘要、`warnings` 与 `last_error`）统一存于 `/var/run/nimbus/state.json`（权限 `0600`，严禁存储明文 API `secret`）；真实 `sing-box` 进程号由 `supervisor.uc` 维护于 `/var/run/nimbus/sing-box.pid`。
   - 实时进程状态、内存占用与防火墙计数器通过 `ubus`、`/proc` 与 `nft` 按需实时查询。白名单计数须区分“各源文本解析条目数”与“经 `nftables` `auto-merge` 合并后的加载元素数”。
   - 远程白名单与订阅的上次更新时间直接读取对应文件的 `mtime`，HTTP 增量同步使用 `curl -z`，仅在 `SHA256` 变化时覆盖本地缓存。
@@ -19,6 +19,7 @@
   - `sing-box` 以 `-D /var/run/nimbus` 为工作目录启动，配置中的相对路径文件（如 `cache.db`、`dashboard/`）默认位于 `tmpfs`；显式绝对路径原样保留。`/var/run/nimbus/config.json` 权限固定设为 `0600`。
   - 运行日志由 `sing-box` 以原生 `O_APPEND` 方式写入 `/var/log/nimbus.log`，由 `supervisor.uc` 定时器实施滞回截断（超过 512KB 时就地截断保留尾部 256KB）。
 - **路径安全**：
+  - `composer.filename` 仅允许纯文件名（匹配 `^[A-Za-z0-9._-]+\.json$`），固定拼接至 `/etc/nimbus/composers/`。
   - `profile.filename` 仅允许纯文件名（匹配 `^[A-Za-z0-9._-]+\.json$`），固定拼接至 `/etc/nimbus/profiles/`。
   - `list_source.filename` 仅允许纯文件名（匹配 `^[A-Za-z0-9._-]+\.txt$`），固定拼接至 `/etc/nimbus/lists/local/`。
   - 远程白名单缓存固定存于 `/etc/nimbus/lists/cache/<section_id>.txt`。
@@ -32,8 +33,7 @@
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `'0'` | `'0'`, `'1'` | 全局启用开关 |
-| `config_mode` | `enum` | `'composer'` | `'composer'`, `'profile'` | 配置来源模式：`composer`=编排配置模式（使用 `/etc/nimbus/composer.json` 结合共享 `/etc/nimbus/profiles/*.json` 节点源合成标准 `sing-box` 1.14 配置）；`profile`=完整配置模式（直接使用 `active_profile` 对应的整份只读 JSON）。新安装默认 `'composer'`；从早期未包含 `config_mode` 的版本升级且已配置 `active_profile` 时，由 `99-nimbus` 自动设为 `'profile'` 保证平滑升级 |
-| `active_profile` | `string` | `''` | 已存在的 `config profile` Section 名 | 仅在 `config_mode='profile'` 时生效，指定当前激活的完整 `sing-box` 配置 ID |
+| `active_profile` | `string` | `''` | 已存在的 `config composer` Section 名，或已启用 `as_config='1'` 的 `config profile` Section 名 | 当前激活的 `sing-box` 配置 ID（不再区分全局配置模式，按目标 Section 类型自动执行编排合成或整份直连合成） |
 | `topology` | `enum` | `'main'` | `'main'`, `'side'` | `main`=主路由；`side`=旁路由（自动关闭 LAN 口 `send_redirects`，不依赖 `wan` 接口） |
 | `proxy_mode` | `enum` | `'tproxy_redirect'` | `'tproxy_redirect'`（v1.1+ 预留 `'tun'`） | 透明代理模式（v1.0 仅实现 `tproxy_redirect`） |
 | `fail_open` | `bool` | `'0'` | `'0'`, `'1'` | `'0'`=内核异常/崩溃时切入 Lockdown 阻断非白名单 LAN 转发（始终放行路由器管理流量）；`'1'`=异常时清表回落直连 |
@@ -120,15 +120,16 @@
 
 ---
 
-### 2.7 `config profile`（多实例：`sing-box` 配置文件与订阅）
+### 2.7 `config profile`（多实例：远程订阅与本地 JSON 文件）
 
-> `config profile` Section 与 `/etc/nimbus/profiles/<filename>` 文件在 `profile` 模式与 `composer` 模式间共享：切换模式无需重复配置订阅，前者整份作为配置输入，后者从中提取非组出站节点。
+> `config profile` 统一管理 `/etc/nimbus/profiles/<filename>` 下的远程订阅与本地只读 JSON 文件：任意条目均可被编排配置提取非组出站节点；勾选 `as_config='1'` 时可直接作为 `global.active_profile` 独立运行。
 
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `name` | `string` | 必填 | 非空显示名称 | 前端展示名 |
-| `type` | `enum` | `'local'` | `'local'`, `'subscription'` | `'local'`=本地上传/编辑；`'subscription'`=远程订阅 |
+| `type` | `enum` | `'subscription'` | `'subscription'`, `'local'` | `'subscription'`=远程订阅；`'local'`=本地上传/编辑 JSON 文件 |
 | `filename` | `string` | 必填 | `^[A-Za-z0-9._-]+\.json$` | 位于 `/etc/nimbus/profiles/` 下的原始只读文件名 |
+| `as_config` | `bool` | `'0'` | `'0'`, `'1'` | 是否允许直接作为 `global.active_profile` 独立运行（开启时要求文件为合法顶层 JSON 对象；关闭时仅作编排节点源，兼容纯出站数组 `[...]`） |
 | `url` | `string` | `''` | `type='subscription'` 时必填 `http(s)://` URL | 远程订阅地址 |
 | `user_agent` | `string` | `'sing-box/nimbus'` | 非空字符串 | 订阅拉取 `User-Agent` |
 | `via_proxy` | `bool` | `'0'` | `'0'`, `'1'` | 拉取订阅时是否经当前代理请求 |
@@ -137,7 +138,18 @@
 
 ---
 
-### 2.8 `config lan_device`（多实例：局域网设备分流）
+### 2.8 `config composer`（多实例：可视化编排配置）
+
+> 支持维护多套独立的 `sing-box` 1.14 编排配置蓝图（存储于 `/etc/nimbus/composers/<filename>`，权限 `0600`），每套配置均可在「设置」中选为 `global.active_profile`。
+
+| Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `name` | `string` | 必填 | 非空显示名称 | 前端展示名（如 `'Main Split'`、`'Lab Test'`） |
+| `filename` | `string` | 必填 | `^[A-Za-z0-9._-]+\.json$` | 位于 `/etc/nimbus/composers/` 下的编排蓝图文件名（各 `composer` 间不可重复） |
+
+---
+
+### 2.9 `config lan_device`（多实例：局域网设备分流）
 
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -154,7 +166,6 @@
 ```uci
 config main 'global'
 	option enabled '0'
-	option config_mode 'composer'
 	option active_profile ''
 	option topology 'main'
 	option proxy_mode 'tproxy_redirect'
@@ -231,7 +242,7 @@ config list_source 'custom_direct'
 3. **标记不冲突**：`proxy.outbound_mark` 与 `proxy.proxy_mark` 必须为不同的非零 32 位整数。
 4. **自定义 DNS 非空**：`dns.mode='custom'` 时，`dns.custom_servers` 至少包含 1 条合法上游；`dns.mode='singbox'` 且 `dns.local_dns_policy='fallback'` 时，`dns.local_fallback_server` 须为合法非回环单播 IP。
 5. **白名单源完整性**：`list_source.type='url'` 时 `url` 必填；`type='local'` 时 `filename` 必填且各本地列表 `filename` 不可重复。
-6. **配置源完整性**：`profile.type='subscription'` 时 `url` 必填；各 `profile.filename` 不可重复。
+6. **配置与订阅完整性**：`profile.type='subscription'` 时 `url` 必填；各 `profile.filename` 不可重复；各 `composer.filename` 不可重复；正在被设为 `global.active_profile` 的 `profile` 不可关闭 `as_config`。
 7. **设备条目完整**：启用的 `lan_device` 必须至少填写 `mac` 或 `ip` 之一。
-8. **启动前置校验**：`global.enabled='1'` 时，`core.bin_path` 必须有效；`config_mode='profile'` 时 `active_profile` 对应文件必须有效；`config_mode='composer'` 时 `/etc/nimbus/composer.json` 必须合法并可合成通过 `sing-box check` 的配置；不满足则按 `fail_open` 策略处理并写入错误原因至 `/var/run/nimbus/state.json`。
+8. **启动前置校验**：`global.enabled='1'` 时，`core.bin_path` 必须有效，且 `global.active_profile` 必须指向有效的 `config composer` 或已启用 `as_config='1'` 的 `config profile`，其合成结果必须通过 `sing-box check`；不满足则按 `fail_open` 策略处理并写入错误原因至 `/var/run/nimbus/state.json`。
 9. **运行期合成碰撞校验**：`config_builder.uc` 合成配置时校验 `effective_outbound_mark != proxy.proxy_mark`，并检测自动注入入站端口与用户配置中已有入站监听端口之间不存在碰撞冲突。

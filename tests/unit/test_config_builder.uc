@@ -20,7 +20,6 @@ function make_uci(overrides) {
 	return {
 		global: {
 			topology: o.topology ?? 'main',
-			config_mode: o.config_mode ?? 'profile',
 			proxy_mode: 'tproxy_redirect',
 			fail_open: '0',
 			lan_interfaces: o.lan_interfaces ?? [ 'lan' ],
@@ -29,7 +28,7 @@ function make_uci(overrides) {
 			ipv6_enable: o.ipv6_enable ?? '1',
 			proxy_local: o.proxy_local ?? '0',
 			log_level: o.log_level ?? 'warn',
-			active_profile: 'test_prof'
+			active_profile: o.active_profile ?? 'test_prof'
 		},
 		proxy: {
 			redirect_port: o.redirect_port ?? '7891',
@@ -51,6 +50,8 @@ function make_uci(overrides) {
 		},
 		test_prof: {
 			'.type': 'profile',
+			name: 'Test Profile',
+			as_config: o.as_config ?? '1',
 			filename: 'test.json'
 		}
 	};
@@ -653,6 +654,18 @@ let bad_prof_res = cb.build_config({
 });
 check(bad_prof_res.ok === false && bad_prof_res.code == common.ERR_INVALID_ARG,
 	'rejects path traversal in active profile filename');
+
+let denied_prof_res = cb.build_config({
+	uci: make_uci({ as_config: '0' }),
+	bin_path: singbox_bin,
+	skip_check: true,
+	core_version: '1.14.4',
+	validate_only: true
+});
+check(denied_prof_res.ok === false && denied_prof_res.code == common.ERR_VALIDATE_FAILED,
+	'rejects active profile when as_config=0');
+check(res_legacy.context.active_kind == 'profile',
+	'build_config records context.active_kind=profile for profile builds');
 
 // 14. Confirm fixtures are untouched byte-for-byte
 for (let name in fixture_names) {

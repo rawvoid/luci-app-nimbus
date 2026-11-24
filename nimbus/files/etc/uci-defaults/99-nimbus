@@ -1,6 +1,7 @@
 #!/bin/sh
 
 mkdir -p \
+	/etc/nimbus/composers \
 	/etc/nimbus/profiles \
 	/etc/nimbus/lists/local \
 	/etc/nimbus/lists/cache \
@@ -8,36 +9,6 @@ mkdir -p \
 
 if [ ! -f /etc/nimbus/lists/local/custom_direct.txt ]; then
 	printf '# Custom direct IPv4/IPv6 CIDR entries (one per line)\n' > /etc/nimbus/lists/local/custom_direct.txt
-fi
-
-if command -v uci >/dev/null 2>&1; then
-	cfg_mode=$(uci -q get nimbus.global.config_mode || true)
-	if [ -z "$cfg_mode" ]; then
-		active_prof=$(uci -q get nimbus.global.active_profile || true)
-		if [ -n "$active_prof" ]; then
-			uci -q set nimbus.global.config_mode='profile' && uci -q commit nimbus
-		else
-			uci -q set nimbus.global.config_mode='composer' && uci -q commit nimbus
-		fi
-	fi
-
-	lan_mode=$(uci -q get nimbus.proxy.lan_device_mode || true)
-	case "$lan_mode" in
-		all|bypass_listed|except_listed)
-			uci -q set nimbus.proxy.lan_device_mode='default_proxy' && uci -q commit nimbus
-			;;
-		proxy_listed)
-			idx=0
-			while uci -q get "nimbus.@lan_device[${idx}]" >/dev/null 2>&1; do
-				dev_policy=$(uci -q get "nimbus.@lan_device[${idx}].policy" || true)
-				if [ -z "$dev_policy" ]; then
-					uci -q set "nimbus.@lan_device[${idx}].policy=proxy" || true
-				fi
-				idx=$((idx + 1))
-			done
-			uci -q set nimbus.proxy.lan_device_mode='default_bypass' && uci -q commit nimbus
-			;;
-	esac
 fi
 
 exit 0

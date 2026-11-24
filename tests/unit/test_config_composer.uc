@@ -40,14 +40,15 @@ for (let name in fixture_names) {
 
 let check_dir = work_dir + '/check-dir';
 let profiles_dir = work_dir + '/profiles';
-let composer_file = work_dir + '/composer.json';
+let composers_dir = work_dir + '/composers';
+let composer_file = composers_dir + '/main_comp.json';
 check(common.ensure_dir(profiles_dir, 0755), 'create profiles_dir');
+check(common.ensure_dir(composers_dir, 0755), 'create composers_dir');
 
-function make_composer_uci(mode) {
+function make_composer_uci(active_id) {
 	return {
 		global: {
 			enabled: '1',
-			config_mode: mode,
 			topology: 'main',
 			proxy_mode: 'tproxy_redirect',
 			fail_open: '0',
@@ -57,7 +58,7 @@ function make_composer_uci(mode) {
 			ipv6_enable: '1',
 			proxy_local: '0',
 			log_level: 'warn',
-			active_profile: 'sub_a'
+			active_profile: active_id ?? 'main_comp'
 		},
 		proxy: {
 			redirect_port: '7891',
@@ -75,21 +76,30 @@ function make_composer_uci(mode) {
 		core: {
 			bin_path: singbox_bin
 		},
+		main_comp: {
+			'.type': 'composer',
+			'.name': 'main_comp',
+			'.index': 0,
+			name: 'Main Composer',
+			filename: 'main_comp.json'
+		},
 		sub_a: {
 			'.type': 'profile',
 			'.name': 'sub_a',
-			'.index': 0,
+			'.index': 1,
 			name: 'Sub A',
 			type: 'subscription',
+			as_config: '0',
 			filename: 'sub_a.json',
 			url: 'https://example.com/a.json'
 		},
 		sub_b: {
 			'.type': 'profile',
 			'.name': 'sub_b',
-			'.index': 1,
+			'.index': 2,
 			name: 'Sub B',
 			type: 'subscription',
+			as_config: '0',
 			filename: 'sub_b.json',
 			url: 'https://example.com/b.json'
 		}
@@ -124,14 +134,16 @@ check(empty_norm.ok === true && empty_norm.composer.schema_version == 1,
 	'create_empty_composer passes normalize_composer');
 
 let empty_build = cb.build_config({
-	uci: make_composer_uci('composer'),
+	uci: make_composer_uci('main_comp'),
+	compose_from_composer: true,
 	composer: empty_comp,
 	profiles_dir: profiles_dir,
+	composers_dir: composers_dir,
 	bin_path: singbox_bin,
 	check_dir: check_dir,
 	validate_only: true
 });
-check(empty_build.ok === true && empty_build.context.config_mode == 'composer' &&
+check(empty_build.ok === true && empty_build.context.active_kind == 'composer' &&
 	type(empty_build.composed_config) == 'object' &&
 	empty_build.context.composer?.initialized === true,
 	'create_empty_composer compiles and passes real sing-box 1.14.4 check');
@@ -141,9 +153,11 @@ let preset_norm = cc.normalize_composer(preset_comp);
 check(preset_norm.ok === true, 'create_standard_114_preset passes normalize_composer');
 
 let preset_build = cb.build_config({
-	uci: make_composer_uci('composer'),
+	uci: make_composer_uci('main_comp'),
+	compose_from_composer: true,
 	composer: preset_comp,
 	profiles_dir: profiles_dir,
+	composers_dir: composers_dir,
 	bin_path: singbox_bin,
 	check_dir: check_dir,
 	validate_only: true
@@ -219,7 +233,7 @@ check(cc.read_composer(composer_file) == null, 'read_composer returns null when 
 let sv1 = cc.save_composer(preset_comp, composer_file);
 let st_c1 = fs.stat(composer_file);
 check(sv1.ok === true && sv1.changed === true && st_c1 != null && (st_c1.mode & 0777) == 0600,
-	'save_composer writes composer.json atomically with 0600 permissions');
+	'save_composer writes composer file atomically with 0600 permissions');
 let sv2 = cc.save_composer(preset_comp, composer_file);
 let st_c2 = fs.stat(composer_file);
 check(sv2.ok === true && sv2.changed === false && sv2.sha256 == sv1.sha256 && st_c2.inode == st_c1.inode,
@@ -345,19 +359,18 @@ custom_comp.override = {
 };
 
 check(cc.save_composer(custom_comp, composer_file).ok === true, 'save custom_comp');
-let uci_unset_mode = make_composer_uci(null);
-delete uci_unset_mode.global.config_mode;
+let uci_comp = make_composer_uci('main_comp');
 
 let full_build = cb.build_config({
-	uci: uci_unset_mode,
-	composer_file: composer_file,
+	uci: uci_comp,
+	composers_dir: composers_dir,
 	profiles_dir: profiles_dir,
 	bin_path: singbox_bin,
 	check_dir: check_dir,
 	validate_only: true
 });
-check(full_build.ok === true && full_build.context.config_mode == 'composer',
-	'unset global.config_mode defaults to composer and passes real sing-box 1.14.4 check');
+check(full_build.ok === true && full_build.context.active_kind == 'composer',
+	'active_profile pointing to composer section compiles and passes real sing-box 1.14.4 check');
 let outb_list = full_build.composed_config.outbounds;
 check(outb_list[0].tag == 'Proxy' && !exists(outb_list[0], 'default') &&
 	outb_list[1].tag == 'HK-Only' && length(outb_list[1].outbounds) == 1 && outb_list[1].outbounds[0] == '[A] HK-01' &&
@@ -370,24 +383,37 @@ check(length(filter(full_build.context.warnings, (w) => index(w, 'NonExistentDef
 	length(filter(full_build.context.warnings, (w) => index(w, 'missing UCI profile section') >= 0)) == 1,
 	'compose emits warnings for pruned selector default and missing UCI profile section');
 
+// Multi-composer helpers: list_composers, resolve_composer_path, find_composers_using_profile
+let resolved_mc = cc.resolve_composer_path(uci_comp, 'main_comp', composers_dir);
+check(resolved_mc.ok === true && resolved_mc.path == composer_file && resolved_mc.name == 'Main Composer',
+	'resolve_composer_path resolves composer section cleanly');
+let clist = cc.list_composers(uci_comp, { composers_dir: composers_dir, profiles_dir: profiles_dir });
+check(clist.ok === true && clist.active_profile == 'main_comp' && length(clist.composers) == 1 &&
+	clist.composers[0].id == 'main_comp' && clist.composers[0].active === true &&
+	clist.composers[0].summary?.extracted_nodes == 4,
+	'list_composers lists composers with active flag and summary');
+let refs_a = cc.find_composers_using_profile(uci_comp, 'sub_a', { composers_dir: composers_dir });
+check(length(refs_a) == 1 && refs_a[0].id == 'main_comp' && refs_a[0].name == 'Main Composer',
+	'find_composers_using_profile finds enabled source references');
+
 // Empty group with empty fallback_outbound fails
 let empty_fb_comp = cc.deep_clone(custom_comp);
 empty_fb_comp.outbound_groups[1].providers = [ { profile_id: 'sub_a', include_regex: '^NO_SUCH_NODE$', exclude_regex: '' } ];
 empty_fb_comp.outbound_groups[1].fallback_outbound = '';
-let empty_fb_res = cc.compose(uci_unset_mode, { composer: empty_fb_comp, profiles_dir: profiles_dir });
+let empty_fb_res = cc.compose(uci_comp, { composer: empty_fb_comp, profiles_dir: profiles_dir });
 check(empty_fb_res.ok === false && empty_fb_res.code == common.ERR_VALIDATE_FAILED,
 	'compose rejects empty group when fallback_outbound is empty');
 
-// Missing composer.json returns ERR_NOT_FOUND
-let missing_comp_res = cc.compose(uci_unset_mode, { composer_file: work_dir + '/nonexistent.json' });
+// Missing composer file returns ERR_NOT_FOUND
+let missing_comp_res = cc.compose(uci_comp, { composer_file: work_dir + '/nonexistent.json' });
 check(missing_comp_res.ok === false && missing_comp_res.code == common.ERR_NOT_FOUND,
-	'compose returns ERR_NOT_FOUND when composer.json is missing');
+	'compose returns ERR_NOT_FOUND when composer file is missing');
 
 // 7. query_nodes & summarize_composer & import_from_singbox
-let q_all = cc.query_nodes(uci_unset_mode, { composer_file: composer_file, profiles_dir: profiles_dir });
+let q_all = cc.query_nodes(uci_comp, { composer_file: composer_file, profiles_dir: profiles_dir });
 check(q_all.ok === true && length(q_all.nodes) == 4 && q_all.per_source_counts.sub_a == 2 && q_all.per_source_counts.sub_b == 2,
 	'query_nodes returns extracted nodes across all enabled sources');
-let q_filt = cc.query_nodes(uci_unset_mode, {
+let q_filt = cc.query_nodes(uci_comp, {
 	composer_file: composer_file,
 	profiles_dir: profiles_dir,
 	profile_id: 'sub_b',
@@ -395,13 +421,13 @@ let q_filt = cc.query_nodes(uci_unset_mode, {
 });
 check(q_filt.ok === true && length(q_filt.nodes) == 1 && q_filt.nodes[0].tag == '[B] JP-01',
 	'query_nodes filters by profile_id and include_regex');
-let q_missing = cc.query_nodes(uci_unset_mode, { composer_file: composer_file, profile_id: 'nope' });
+let q_missing = cc.query_nodes(uci_comp, { composer_file: composer_file, profile_id: 'nope' });
 check(q_missing.ok === false && q_missing.code == common.ERR_NOT_FOUND, 'query_nodes rejects unknown profile_id');
 
-let sum_uninit = cc.summarize_composer(uci_unset_mode, { composer_file: work_dir + '/nonexistent.json' });
+let sum_uninit = cc.summarize_composer(uci_comp, { composer_file: work_dir + '/nonexistent.json' });
 check(sum_uninit.initialized === false && sum_uninit.groups == 0 && sum_uninit.extracted_nodes == 0,
 	'summarize_composer returns initialized=false with zero counts when uninitialized');
-let sum_init = cc.summarize_composer(uci_unset_mode, { composer_file: composer_file, profiles_dir: profiles_dir });
+let sum_init = cc.summarize_composer(uci_comp, { composer_file: composer_file, profiles_dir: profiles_dir });
 check(sum_init.initialized === true && sum_init.enabled_sources == 2 && sum_init.extracted_nodes == 4 &&
 	sum_init.groups == 3 && sum_init.manual_outbounds == 1 && sum_init.rule_sets == 1,
 	'summarize_composer returns accurate summary counts');
@@ -416,31 +442,37 @@ check(imp_res.ok === true &&
 	length(filter(imp_res.warnings, (w) => index(w, 'nimbus-redirect-in') >= 0)) == 1,
 	'import_from_singbox excludes auto-injected inbounds and log, splits groups/outbounds, and preserves override');
 
-// 8. profile_updater composer mode (array & object, unused vs enabled source, bad protocol rejection)
+// 8. profile_updater with active composer (array & object, unused vs enabled source, bad protocol rejection)
 let pu_conf_dir = work_dir + '/pu_conf';
 let pu_prof_dir = work_dir + '/pu_profs';
+let pu_composers_dir = work_dir + '/pu_composers';
 let pu_state = work_dir + '/pu_state.json';
-let pu_comp_file = work_dir + '/pu_composer.json';
+let pu_comp_file = pu_composers_dir + '/pu_comp.json';
 common.ensure_dir(pu_conf_dir, 0755);
 common.ensure_dir(pu_prof_dir, 0755);
+common.ensure_dir(pu_composers_dir, 0755);
 common.atomic_write(pu_conf_dir + '/nimbus',
 	"config main 'global'\n" +
 	"\toption enabled '1'\n" +
-	"\toption config_mode 'composer'\n" +
-	"\toption active_profile ''\n\n" +
+	"\toption active_profile 'pu_comp'\n\n" +
 	"config proxy 'proxy'\n" +
 	"\toption redirect_port '7891'\n" +
 	"\toption tproxy_port '7892'\n" +
 	"\toption outbound_mark '0xff'\n" +
 	"\toption proxy_mark '0x1'\n\n" +
+	"config composer 'pu_comp'\n" +
+	"\toption name 'PU Composer'\n" +
+	"\toption filename 'pu_comp.json'\n\n" +
 	"config profile 'sub_used'\n" +
 	"\toption name 'Used Sub'\n" +
 	"\toption type 'subscription'\n" +
+	"\toption as_config '0'\n" +
 	"\toption filename 'sub_used.json'\n" +
 	"\toption url 'https://example.com/used.json'\n\n" +
 	"config profile 'sub_unused'\n" +
 	"\toption name 'Unused Sub'\n" +
 	"\toption type 'subscription'\n" +
+	"\toption as_config '0'\n" +
 	"\toption filename 'sub_unused.json'\n" +
 	"\toption url 'https://example.com/unused.json'\n",
 	0644);
@@ -454,13 +486,13 @@ pu_comp.sources = {
 pu_comp.rule_sets = [];
 pu_comp.dns.rules = [ { id: 'dr_f', enabled: true, remark: '', action: 'route', server: 'dns-fakeip', config: { query_type: [ 'A', 'AAAA' ] } } ];
 pu_comp.route.rules = [ { id: 'rr_p', enabled: true, remark: '', action: 'route', outbound: 'direct', config: { ip_is_private: true } } ];
-check(cc.save_composer(pu_comp, pu_comp_file).ok === true, 'save pu_composer.json');
+check(cc.save_composer(pu_comp, pu_comp_file).ok === true, 'save pu_comp.json');
 
 let pu_reloads = 0;
 let pu_opts = {
 	uci_confdir: pu_conf_dir,
 	profiles_dir: pu_prof_dir,
-	composer_file: pu_comp_file,
+	composers_dir: pu_composers_dir,
 	state_file: pu_state,
 	bin_path: singbox_bin,
 	check_dir: check_dir,
@@ -538,7 +570,7 @@ let run_sup = (arg) => {
 			NIMBUS_UCI_CONFDIR: pu_conf_dir,
 			NIMBUS_UCI_SAVEDIR: work_dir + '/pu_save',
 			NIMBUS_BIN_PATH: singbox_bin,
-			NIMBUS_COMPOSER_FILE: pu_comp_file,
+			NIMBUS_COMPOSERS_DIR: pu_composers_dir,
 			NIMBUS_PROFILES_DIR: pu_prof_dir,
 			NIMBUS_WORK_DIR: sup_run,
 			NIMBUS_CONFIG_FILE: sup_cfg,
@@ -557,12 +589,13 @@ let run_sup = (arg) => {
 	return code_out;
 };
 
-check(run_sup('--prepare-start') == 0, 'supervisor --prepare-start succeeds in composer mode');
+check(run_sup('--prepare-start') == 0, 'supervisor --prepare-start succeeds for active composer');
 let st_sup = common.read_state(sup_state);
-check(st_sup.state == 'running' && st_sup.config_mode == 'composer' &&
+check(st_sup.state == 'running' && st_sup.active_kind == 'composer' &&
+	st_sup.active_name == 'PU Composer' &&
 	st_sup.composer?.initialized === true && st_sup.composer?.enabled_sources == 1 &&
 	st_sup.composer?.extracted_nodes == 2,
-	'supervisor writes config_mode=composer and composer summary into state.json');
+	'supervisor writes active_kind=composer, active_name, and composer summary into state.json');
 check(run_sup('--prepare-reload') == 10,
 	'supervisor --prepare-reload returns 10 when composed runtime config is unchanged');
 
@@ -597,7 +630,7 @@ check(fix_ext_b.ok === true && length(fix_ext_b.nodes) == 2 &&
 	length(fix_ext_b.warnings) == 1,
 	'sub_nodes_b deduplicates colliding HK-01 to [A] HK-01 #2 with warning and keeps anytls SG-01');
 
-let fix_uci = make_composer_uci('composer');
+let fix_uci = make_composer_uci('main_comp');
 delete fix_uci.sub_a;
 delete fix_uci.sub_b;
 fix_uci.sub_nodes_a = {
@@ -661,6 +694,7 @@ fix_comp.override = {
 let fix_out_path = work_dir + '/fix_out/config.json';
 let fix_build = cb.build_config({
 	uci: fix_uci,
+	compose_from_composer: true,
 	composer: fix_comp,
 	profiles_dir: fixtures_dir,
 	output_path: fix_out_path,
@@ -718,6 +752,7 @@ push(fb_rec_comp.outbound_groups, {
 });
 let fb_rec_build = cb.build_config({
 	uci: fix_uci,
+	compose_from_composer: true,
 	composer: fb_rec_comp,
 	profiles_dir: fixtures_dir,
 	bin_path: singbox_bin,
@@ -749,6 +784,7 @@ let comp_v114 = cc.compose(fix_uci, { composer: imp_v114.composer, profiles_dir:
 check(comp_v114.ok === true, 'compose succeeds on v114_modern imported draft');
 let build_v114 = cb.build_config({
 	uci: fix_uci,
+	compose_from_composer: true,
 	composer: imp_v114.composer,
 	profiles_dir: fixtures_dir,
 	bin_path: singbox_bin,
@@ -756,7 +792,7 @@ let build_v114 = cb.build_config({
 	validate_only: true
 });
 check(build_v114.ok === true &&
-	build_v114.context.config_mode == 'composer' &&
+	build_v114.context.active_kind == 'composer' &&
 	index(build_v114.context.fakeip?.ipv4 || [], '198.18.0.0/15') >= 0 &&
 	index(build_v114.context.fakeip?.ipv6 || [], 'fc00::/18') >= 0,
 	'v114_modern imported draft passes Stage A compose, Stage B build_config, and real sing-box 1.14.4 check');
@@ -774,6 +810,7 @@ let comp_dual = cc.compose(fix_uci, { composer: imp_dual.composer, profiles_dir:
 check(comp_dual.ok === true, 'compose succeeds on dual_api_v115 imported draft');
 let build_dual = cb.build_config({
 	uci: fix_uci,
+	compose_from_composer: true,
 	composer: imp_dual.composer,
 	profiles_dir: fixtures_dir,
 	bin_path: singbox_bin,
@@ -781,7 +818,7 @@ let build_dual = cb.build_config({
 	validate_only: true
 });
 check(build_dual.ok === true &&
-	build_dual.context.config_mode == 'composer' &&
+	build_dual.context.active_kind == 'composer' &&
 	build_dual.context.apis?.singbox_api?.detected === true &&
 	build_dual.context.apis?.singbox_api?.port == 9091 &&
 	build_dual.context.apis?.singbox_api?.has_secret === true &&
@@ -799,8 +836,8 @@ coll_comp.sources = {
 	sub_a: { enabled: true, tag_prefix: '[A] ', include_regex: '', exclude_regex: 'Expired' },
 	sub_b: { enabled: true, tag_prefix: '[A] ', include_regex: '', exclude_regex: '' }
 };
-let coll_compose = cc.compose(uci_unset_mode, { composer: coll_comp, profiles_dir: profiles_dir });
-let coll_q_enabled = cc.query_nodes(uci_unset_mode, {
+let coll_compose = cc.compose(uci_comp, { composer: coll_comp, profiles_dir: profiles_dir });
+let coll_q_enabled = cc.query_nodes(uci_comp, {
 	composer: coll_comp,
 	profiles_dir: profiles_dir,
 	profile_id: 'sub_b'
@@ -816,7 +853,7 @@ check(coll_compose.ok === true && coll_q_enabled.ok === true &&
 
 let coll_comp_dis = cc.deep_clone(coll_comp);
 coll_comp_dis.sources.sub_b.enabled = false;
-let coll_q_disabled = cc.query_nodes(uci_unset_mode, {
+let coll_q_disabled = cc.query_nodes(uci_comp, {
 	composer: coll_comp_dis,
 	profiles_dir: profiles_dir,
 	profile_id: 'sub_b'
@@ -827,9 +864,9 @@ check(coll_q_disabled.ok === true &&
 	'query_nodes({ profile_id: "sub_b" }) reserves tags from enabled sources when sub_b is disabled');
 
 // 14. Regression: import_from_singbox strips auto_tags inbound rules (including logical) & re-composes with dns.mode='none'
-let uci_dns_sb = make_composer_uci('composer');
+let uci_dns_sb = make_composer_uci('main_comp');
 uci_dns_sb.dns.mode = 'singbox';
-let uci_dns_none = make_composer_uci('composer');
+let uci_dns_none = make_composer_uci('main_comp');
 uci_dns_none.dns.mode = 'none';
 
 let auto_rules_comp = cc.deep_clone(custom_comp);
@@ -842,6 +879,7 @@ auto_rules_comp.route.rules = [
 ];
 let auto_rules_build = cb.build_config({
 	uci: uci_dns_sb,
+	compose_from_composer: true,
 	composer: auto_rules_comp,
 	profiles_dir: profiles_dir,
 	bin_path: singbox_bin,
@@ -853,6 +891,7 @@ check(auto_rules_build.ok === true, 'build effective config with auto-injected d
 let imp_auto = cc.import_from_singbox(auto_rules_build.config);
 let imp_auto_recompose = cb.build_config({
 	uci: uci_dns_none,
+	compose_from_composer: true,
 	composer: imp_auto.composer,
 	profiles_dir: profiles_dir,
 	bin_path: singbox_bin,
@@ -909,6 +948,7 @@ check(imp_stripped.ok === true &&
 
 let recompose_none = cb.build_config({
 	uci: uci_dns_none,
+	compose_from_composer: true,
 	composer: imp_stripped.composer,
 	profiles_dir: profiles_dir,
 	bin_path: singbox_bin,

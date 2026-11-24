@@ -21,13 +21,6 @@ function isValidCronExpr(expr) {
 	return parts.length === 5;
 }
 
-function makeBadge(text, bg, fg) {
-	return E('span', {
-		'class': 'label',
-		'style': 'display:inline-block;padding:2px 7px;border-radius:3px;font-size:85%;font-weight:600;background:%s;color:%s;'.format(bg, fg)
-	}, text);
-}
-
 function stripComment(line) {
 	var s = line.replace(/\r+$/, '');
 	var h = s.indexOf('#');
@@ -217,17 +210,18 @@ return view.extend({
 					'placeholder': '# 1.1.8.0/24\n# 2400:3200::/32',
 					'style': 'width:100%;font-family:monospace;font-size:12px;resize:vertical;'
 				}, content);
-				var sizeLabel = E('span', { 'style': 'font-size:90%;color:#666;' });
+				var sizeLabel = E('small', { 'style': 'opacity:0.75;' });
 				var saveBtn = E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-save' }, _('Save & Hot-Reload'));
 
 				function updateByteCount() {
 					var len = nimbusApi.utf8ByteLength(textarea.value);
 					var over = len > nimbusApi.MAX_DIRECT_TEXT_BYTES;
-					sizeLabel.style.color = over ? '#c5221f' : '#666';
-					dom.content(sizeLabel, _('%s / %s direct limit').format(
+					var txt = _('%s / %s direct limit').format(
 						nimbusApi.formatBytes(len),
 						nimbusApi.formatBytes(nimbusApi.MAX_DIRECT_TEXT_BYTES)
-					));
+					);
+					sizeLabel.style.opacity = over ? '1' : '0.75';
+					dom.content(sizeLabel, over ? E('strong', {}, txt) : txt);
 				}
 
 				textarea.addEventListener('input', updateByteCount);
@@ -303,10 +297,10 @@ return view.extend({
 				var parsed = previewCleanList(res.content || '', src.family || 'auto');
 				var body = [
 					E('div', { 'style': 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;' }, [
-						makeBadge(_('IPv4: %d').format(parsed.v4.length), '#e6f4ea', '#137333'),
-						makeBadge(_('IPv6: %d').format(parsed.v6.length), '#e8f0fe', '#1967d2'),
-						makeBadge(_('Ignored / Comments: %d').format(parsed.ignored), '#f1f3f4', '#5f6368'),
-						parsed.invalid.length > 0 ? makeBadge(_('Invalid: %d').format(parsed.invalid.length), '#fce8e6', '#c5221f') : ''
+						E('span', { 'class': 'label' }, _('IPv4: %d').format(parsed.v4.length)),
+						E('span', { 'class': 'label notice' }, _('IPv6: %d').format(parsed.v6.length)),
+						E('em', {}, _('Ignored / Comments: %d').format(parsed.ignored)),
+						parsed.invalid.length > 0 ? E('strong', {}, _('Invalid: %d').format(parsed.invalid.length)) : ''
 					])
 				];
 
@@ -588,9 +582,12 @@ return view.extend({
 
 			dom.content(policyBox, [
 				E('h3', {}, _('Global Whitelist Policy')),
-				E('div', { 'style': 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;' }, [
-					makeBadge(_('Effective nftables IPv4: %d').format(loaded.v4_count || 0), '#e6f4ea', '#137333'),
-					makeBadge(_('Effective nftables IPv6: %d').format(loaded.v6_count || 0), '#e8f0fe', '#1967d2')
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Effective nftables Sets')),
+					E('div', { 'class': 'cbi-value-field', 'style': 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;' }, [
+						E('span', { 'class': 'label' }, _('Effective nftables IPv4: %d').format(loaded.v4_count || 0)),
+						E('span', { 'class': 'label notice' }, _('Effective nftables IPv6: %d').format(loaded.v6_count || 0))
+					])
 				]),
 				E('div', { 'class': 'cbi-value' }, [
 					E('label', { 'class': 'cbi-value-title' }, _('Enable Whitelist Bypass')),
@@ -666,7 +663,7 @@ return view.extend({
 
 					var statsEl = E('div', {}, [
 						E('div', {}, _('IPv4: %d / IPv6: %d').format(src.v4_count || 0, src.v6_count || 0)),
-						E('div', { 'style': 'font-size:85%;color:#666;' }, src.exists
+						E('small', { 'style': 'opacity:0.75;' }, src.exists
 							? '%s · %s'.format(nimbusApi.formatBytes(src.size_bytes || 0), nimbusApi.formatTimestamp(src.mtime))
 							: _('Not cached / missing'))
 					]);
@@ -722,8 +719,8 @@ return view.extend({
 						E('td', { 'class': 'td' }, src.type === 'local' ? _('Local') : _('Remote URL')),
 						E('td', { 'class': 'td' }, src.family || 'auto'),
 						E('td', { 'class': 'td' }, src.enabled !== false
-							? makeBadge(_('Enabled'), '#e6f4ea', '#137333')
-							: makeBadge(_('Disabled'), '#f1f3f4', '#5f6368')),
+							? E('span', { 'class': 'label' }, _('Enabled'))
+							: E('em', {}, _('Disabled'))),
 						E('td', { 'class': 'td' }, targetEl),
 						E('td', { 'class': 'td' }, statsEl),
 						E('td', { 'class': 'td right' }, E('div', { 'style': 'display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;' }, actBtns))

@@ -20,9 +20,14 @@ return view.extend({
 		var autoScroll = true;
 		var inFlight = false;
 
-		var metaLabel = E('span', { 'style': 'font-size:90%;color:#666;' });
-		var logPre = E('pre', {
-			'style': 'margin:0;padding:12px;max-height:540px;min-height:240px;overflow:auto;background:#1e1e1e;color:#e6e6e6;border-radius:4px;font-family:monospace;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;'
+		var metaLabel = E('small', { 'style': 'opacity:0.75;' });
+		var logPre = E('textarea', {
+			'class': 'cbi-input-textarea',
+			'readonly': 'readonly',
+			'rows': '24',
+			'wrap': 'off',
+			'spellcheck': 'false',
+			'style': 'width:100%;font-family:monospace;resize:vertical;'
 		});
 
 		var linesSelect = E('select', { 'class': 'cbi-input-select', 'style': 'width:auto;' }, [
@@ -39,7 +44,7 @@ return view.extend({
 		function renderLogContent(res) {
 			logData = res || { ok: true, content: '', size_bytes: 0, truncated: false };
 			var text = logData.content || '';
-			dom.content(logPre, text || _('(Log file is empty)'));
+			logPre.value = text || _('(Log file is empty)');
 			if (autoScroll)
 				logPre.scrollTop = logPre.scrollHeight;
 

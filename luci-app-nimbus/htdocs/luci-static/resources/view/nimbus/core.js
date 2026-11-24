@@ -20,13 +20,6 @@ function isTaskActive(state) {
 	return ACTIVE_STATES.indexOf(state) >= 0;
 }
 
-function makeBadge(text, bg, fg) {
-	return E('span', {
-		'class': 'label',
-		'style': 'display:inline-block;padding:2px 8px;border-radius:3px;font-size:85%;font-weight:600;background:%s;color:%s;'.format(bg, fg)
-	}, text);
-}
-
 function formatTaskState(state) {
 	var labels = {
 		'idle': _('Idle'),
@@ -187,9 +180,9 @@ return view.extend({
 
 			var instBadge = inst.exists
 				? (inst.executable
-					? makeBadge(_('Installed: v%s').format(inst.version || _('unknown')), '#e6f4ea', '#137333')
-					: makeBadge(_('Not Executable'), '#fce8e6', '#c5221f'))
-				: makeBadge(_('Not Installed'), '#fef7e0', '#b06000');
+					? E('span', { 'class': 'label' }, _('Installed: v%s').format(inst.version || _('unknown')))
+					: E('strong', {}, _('Not Executable')))
+				: E('em', {}, _('Not Installed'));
 
 			dom.content(statusBox, [
 				E('h3', {}, _('Core Status & Architecture')),
@@ -216,21 +209,19 @@ return view.extend({
 
 			var pct = Math.max(0, Math.min(100, parseInt(task.progress || 0, 10) || 0));
 			var isErr = (state === 'failed' || state === 'error');
-			var barColor = isErr ? '#d93025' : (state === 'done' ? '#1e8e3e' : '#1a73e8');
 
 			var nodes = [
 				E('div', { 'class': isErr ? 'alert-message error' : 'alert-message notice' }, [
-					E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;' }, [
+					E('div', { 'style': 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap;' }, [
 						E('strong', {}, '%s (%d%%)'.format(formatTaskState(state), pct)),
-						E('span', { 'style': 'font-size:90%;' }, task.message || '')
+						E('small', { 'style': 'opacity:0.85;' }, task.message || '')
 					]),
 					E('div', {
 						'class': 'cbi-progressbar',
-						'title': '%d%%'.format(pct),
-						'style': 'width:100%;height:14px;background:#e0e0e0;border-radius:3px;overflow:hidden;'
+						'title': '%d%%'.format(pct)
 					}, [
 						E('div', {
-							'style': 'width:%d%%;height:100%;background:%s;transition:width 0.25s ease;'.format(pct, barColor)
+							'style': 'width:%d%%;'.format(pct)
 						})
 					]),
 					isErr && task.error ? E('div', { 'style': 'margin-top:6px;' }, task.error) : ''
@@ -247,13 +238,13 @@ return view.extend({
 
 			var asset = updateInfo.asset || {};
 			var badge = updateInfo.update_available
-				? makeBadge(_('Update Available'), '#e8f0fe', '#1967d2')
-				: makeBadge(_('Up to Date'), '#e6f4ea', '#137333');
+				? E('span', { 'class': 'label notice' }, _('Update Available'))
+				: E('span', { 'class': 'label' }, _('Up to Date'));
 
 			var rows = [
 				[ _('Latest Release'), E('div', { 'style': 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;' }, [
 					E('strong', {}, 'v' + (updateInfo.latest_version || '-')),
-					updateInfo.prerelease ? makeBadge(_('Prerelease'), '#fef7e0', '#b06000') : '',
+					updateInfo.prerelease ? E('span', { 'class': 'label notice' }, _('Prerelease')) : '',
 					badge
 				]) ],
 				[ _('Published At'), updateInfo.published_at || '-' ],

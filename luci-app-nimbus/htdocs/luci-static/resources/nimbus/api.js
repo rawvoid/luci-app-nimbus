@@ -46,6 +46,12 @@ var callProfileRead = rpc.declare({
 	params: [ 'filename' ]
 });
 
+var callProfilePreview = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'profile_preview',
+	params: [ 'section_id', 'validate' ]
+});
+
 var callProfileSave = rpc.declare({
 	object: 'luci.nimbus',
 	method: 'profile_save',
@@ -60,18 +66,13 @@ var callProfileMetaSave = rpc.declare({
 		'name',
 		'type',
 		'filename',
+		'as_config',
 		'url',
 		'user_agent',
 		'via_proxy',
 		'auto_update',
 		'update_interval_hours'
 	]
-});
-
-var callProfileActivate = rpc.declare({
-	object: 'luci.nimbus',
-	method: 'profile_activate',
-	params: [ 'section_id', 'reload' ]
 });
 
 var callProfileDelete = rpc.declare({
@@ -157,33 +158,45 @@ var callCoreTaskStatus = rpc.declare({
 	method: 'core_task_status'
 });
 
+var callComposerList = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_list'
+});
+
 var callComposerGet = rpc.declare({
 	object: 'luci.nimbus',
-	method: 'composer_get'
+	method: 'composer_get',
+	params: [ 'section_id' ]
+});
+
+var callComposerCreate = rpc.declare({
+	object: 'luci.nimbus',
+	method: 'composer_create',
+	params: [ 'name', 'filename', 'init_mode', 'clone_from', 'import_profile_id', 'content' ]
 });
 
 var callComposerNodes = rpc.declare({
 	object: 'luci.nimbus',
 	method: 'composer_nodes',
-	params: [ 'profile_id', 'composer_json', 'include_regex', 'exclude_regex' ]
+	params: [ 'section_id', 'profile_id', 'composer_json', 'include_regex', 'exclude_regex' ]
 });
 
 var callComposerPreview = rpc.declare({
 	object: 'luci.nimbus',
 	method: 'composer_preview',
-	params: [ 'composer_json', 'validate' ]
+	params: [ 'section_id', 'composer_json', 'validate' ]
 });
 
 var callComposerSave = rpc.declare({
 	object: 'luci.nimbus',
 	method: 'composer_save',
-	params: [ 'composer_json', 'validate', 'reload' ]
+	params: [ 'section_id', 'name', 'composer_json', 'validate', 'reload' ]
 });
 
-var callComposerModeSet = rpc.declare({
+var callComposerDelete = rpc.declare({
 	object: 'luci.nimbus',
-	method: 'composer_mode_set',
-	params: [ 'mode', 'reload' ]
+	method: 'composer_delete',
+	params: [ 'section_id' ]
 });
 
 var callComposerImport = rpc.declare({
@@ -249,6 +262,10 @@ return baseclass.extend({
 		return callProfileRead(filename);
 	},
 
+	profilePreview: function(sectionId, validate) {
+		return callProfilePreview(sectionId || '', validate !== false);
+	},
+
 	profileSave: function(opts) {
 		var o = opts || {};
 		var fromUpload = o.from_upload === true;
@@ -273,16 +290,13 @@ return baseclass.extend({
 			m.name || '',
 			m.type || 'local',
 			m.filename || '',
+			m.as_config === true,
 			isSub ? (m.url || '') : '',
 			m.user_agent || 'sing-box/nimbus',
 			m.via_proxy === true,
 			isSub ? (m.auto_update === true) : false,
 			interval
 		);
-	},
-
-	profileActivate: function(sectionId, reload) {
-		return callProfileActivate(sectionId, reload === true);
 	},
 
 	profileDelete: function(sectionId) {
@@ -358,15 +372,33 @@ return baseclass.extend({
 		return callCoreTaskStatus();
 	},
 
-	composerGet: function() {
-		return callComposerGet();
+	composerList: function() {
+		return callComposerList();
+	},
+
+	composerGet: function(sectionId) {
+		return callComposerGet(sectionId || '');
+	},
+
+	composerCreate: function(opts) {
+		var o = opts || {};
+		return callComposerCreate(
+			o.name || '',
+			o.filename ? String(o.filename) : undefined,
+			o.init_mode || 'standard',
+			o.clone_from ? String(o.clone_from) : undefined,
+			o.import_profile_id ? String(o.import_profile_id) : undefined,
+			(o.content != null && String(o.content) !== '') ? String(o.content) : undefined
+		);
 	},
 
 	composerNodes: function(opts) {
 		var o = opts || {};
+		var compJson = resolveComposerJson(o);
 		return callComposerNodes(
+			o.section_id ? String(o.section_id) : undefined,
 			o.profile_id || '',
-			resolveComposerJson(o),
+			compJson || undefined,
 			o.include_regex || '',
 			o.exclude_regex || ''
 		);
@@ -374,23 +406,28 @@ return baseclass.extend({
 
 	composerPreview: function(opts) {
 		var o = opts || {};
+		var compJson = resolveComposerJson(o);
 		return callComposerPreview(
-			resolveComposerJson(o),
+			o.section_id ? String(o.section_id) : undefined,
+			compJson || undefined,
 			o.validate !== false
 		);
 	},
 
 	composerSave: function(opts) {
 		var o = opts || {};
+		var trimmedName = (o.name != null) ? String(o.name).trim() : '';
 		return callComposerSave(
+			o.section_id || '',
+			trimmedName ? trimmedName : undefined,
 			resolveComposerJson(o),
 			o.validate !== false,
 			o.reload === true
 		);
 	},
 
-	composerModeSet: function(mode, reload) {
-		return callComposerModeSet(mode || 'composer', reload === true);
+	composerDelete: function(sectionId) {
+		return callComposerDelete(sectionId || '');
 	},
 
 	composerImport: function(opts) {

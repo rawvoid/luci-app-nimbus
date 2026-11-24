@@ -82,17 +82,18 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
-		o = sGlobal.option(form.ListValue, 'config_mode', _('Configuration Mode'));
-		o.value('composer', _('Composer Mode'));
-		o.value('profile', _('Raw Profile Mode'));
-		o.default = 'composer';
-		o.rmempty = false;
-
-		var oActiveProfile = sGlobal.option(form.ListValue, 'active_profile', _('Active Profile'));
-		oActiveProfile.depends('config_mode', 'profile');
-		oActiveProfile.value('', _('-- Select Profile --'));
+		var oActiveProfile = sGlobal.option(form.ListValue, 'active_profile', _('Active Configuration'),
+			_('Select a Composer configuration or a standalone Subscription / Local file (with "Allow as Active Config" enabled).'));
+		oActiveProfile.value('', _('-- Select Configuration --'));
+		uci.sections('nimbus', 'composer', function(sec) {
+			var label = '%s [%s]'.format(sec.name || sec['.name'], _('Composer'));
+			oActiveProfile.value(sec['.name'], label);
+		});
 		uci.sections('nimbus', 'profile', function(sec) {
-			var label = sec.name ? '%s (%s)'.format(sec.name, sec['.name']) : sec['.name'];
+			if (sec.as_config !== '1')
+				return;
+			var kindLabel = (sec.type === 'subscription') ? _('Subscription') : _('Local');
+			var label = '%s [%s]'.format(sec.name || sec['.name'], kindLabel);
 			oActiveProfile.value(sec['.name'], label);
 		});
 

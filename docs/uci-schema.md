@@ -32,7 +32,7 @@
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `'0'` | `'0'`, `'1'` | 全局启用开关 |
-| `config_mode` | `enum` | `'composer'` | `'composer'`, `'profile'` | 配置来源模式：`composer`=编排配置模式（使用 `/etc/nimbus/composer.json` 结合共享 `/etc/nimbus/profiles/*.json` 节点源合成标准 `sing-box` 1.14 配置）；`profile`=完整配置模式（直接使用 `active_profile` 对应的整份只读 JSON）。未设置或非法值时缺省按 `'composer'` 处理（项目未发布，无需老版本迁移逻辑） |
+| `config_mode` | `enum` | `'composer'` | `'composer'`, `'profile'` | 配置来源模式：`composer`=编排配置模式（使用 `/etc/nimbus/composer.json` 结合共享 `/etc/nimbus/profiles/*.json` 节点源合成标准 `sing-box` 1.14 配置）；`profile`=完整配置模式（直接使用 `active_profile` 对应的整份只读 JSON）。新安装默认 `'composer'`；从早期未包含 `config_mode` 的版本升级且已配置 `active_profile` 时，由 `99-nimbus` 自动设为 `'profile'` 保证平滑升级 |
 | `active_profile` | `string` | `''` | 已存在的 `config profile` Section 名 | 仅在 `config_mode='profile'` 时生效，指定当前激活的完整 `sing-box` 配置 ID |
 | `topology` | `enum` | `'main'` | `'main'`, `'side'` | `main`=主路由；`side`=旁路由（自动关闭 LAN 口 `send_redirects`，不依赖 `wan` 接口） |
 | `proxy_mode` | `enum` | `'tproxy_redirect'` | `'tproxy_redirect'`（v1.1+ 预留 `'tun'`） | 透明代理模式（v1.0 仅实现 `tproxy_redirect`） |

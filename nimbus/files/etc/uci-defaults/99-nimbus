@@ -11,6 +11,16 @@ if [ ! -f /etc/nimbus/lists/local/custom_direct.txt ]; then
 fi
 
 if command -v uci >/dev/null 2>&1; then
+	cfg_mode=$(uci -q get nimbus.global.config_mode || true)
+	if [ -z "$cfg_mode" ]; then
+		active_prof=$(uci -q get nimbus.global.active_profile || true)
+		if [ -n "$active_prof" ]; then
+			uci -q set nimbus.global.config_mode='profile' && uci -q commit nimbus
+		else
+			uci -q set nimbus.global.config_mode='composer' && uci -q commit nimbus
+		fi
+	fi
+
 	lan_mode=$(uci -q get nimbus.proxy.lan_device_mode || true)
 	case "$lan_mode" in
 		all|bypass_listed|except_listed)

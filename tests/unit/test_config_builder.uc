@@ -20,6 +20,7 @@ function make_uci(overrides) {
 	return {
 		global: {
 			topology: o.topology ?? 'main',
+			config_mode: o.config_mode ?? 'profile',
 			proxy_mode: 'tproxy_redirect',
 			fail_open: '0',
 			lan_interfaces: o.lan_interfaces ?? [ 'lan' ],

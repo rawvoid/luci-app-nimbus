@@ -33,6 +33,7 @@ check(common.ensure_dir(profiles_dir, 0755), 'create profiles_dir');
 let uci_text =
 	"config main 'global'\n" +
 	"\toption enabled '1'\n" +
+	"\toption config_mode 'profile'\n" +
 	"\toption active_profile 'main_sub'\n" +
 	"\toption topology 'main'\n" +
 	"\toption proxy_mode 'tproxy_redirect'\n" +

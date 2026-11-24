@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as ubus from 'ubus';
 import * as common from 'common';
+import * as cc from 'config_composer';
 
 const DEPRECATED_INBOUND_FIELDS = [
 	'sniff',
@@ -1220,7 +1221,7 @@ function run_singbox_check(bin_path, config_path, check_dir) {
 	return { ok: true };
 }
 
-function resolve_profile_path(uci_cfg, profile_path) {
+function resolve_profile_path(uci_cfg, profile_path, profiles_dir) {
 	if (type(profile_path) == 'string' && length(profile_path) > 0)
 		return { ok: true, path: profile_path };
 
@@ -1235,7 +1236,7 @@ function resolve_profile_path(uci_cfg, profile_path) {
 	if (!common.is_valid_profile_filename(sec.filename))
 		return fail(common.ERR_INVALID_ARG, sprintf('invalid profile filename: %s', '' + sec.filename));
 
-	return { ok: true, path: common.PROFILES_DIR + '/' + sec.filename };
+	return { ok: true, path: (profiles_dir || common.PROFILES_DIR) + '/' + sec.filename };
 }
 
 function build_config(opts) {
@@ -1244,6 +1245,7 @@ function build_config(opts) {
 	let bin_path = options.bin_path || uci_cfg?.core?.bin_path || '/etc/nimbus/bin/sing-box';
 	let validate_only = (options.validate_only === true);
 	let skip_check = (options.skip_check === true);
+	let config_mode = common.normalize_config_mode(uci_cfg);
 
 	let core_version = options.core_version || null;
 	if (!skip_check || !core_version) {
@@ -1256,8 +1258,30 @@ function build_config(opts) {
 		}
 	}
 
+	let has_raw_config = (exists(options, 'raw_config') && options.raw_config != null);
+	let has_profile_path = (type(options.profile_path) == 'string' && length(options.profile_path) > 0);
+	let use_composer = (options.compose_from_composer === true) ||
+		(!has_raw_config && !has_profile_path && config_mode == common.CONFIG_MODE_COMPOSER);
+
 	let raw_cfg = null;
-	if (exists(options, 'raw_config') && options.raw_config != null) {
+	let stage_a_warnings = [];
+	let composer_summary = null;
+	let composed_snapshot = null;
+
+	if (use_composer) {
+		let comp_res = cc.compose(uci_cfg, {
+			composer: options.composer,
+			composer_file: options.composer_file,
+			profiles_dir: options.profiles_dir,
+			override_profile_docs: options.override_profile_docs
+		});
+		if (!comp_res.ok)
+			return comp_res;
+		raw_cfg = comp_res.config;
+		stage_a_warnings = comp_res.warnings || [];
+		composer_summary = comp_res.summary || null;
+		composed_snapshot = cc.deep_clone(raw_cfg);
+	} else if (has_raw_config) {
 		if (type(options.raw_config) == 'string') {
 			try {
 				raw_cfg = json(options.raw_config);
@@ -1268,7 +1292,7 @@ function build_config(opts) {
 			raw_cfg = options.raw_config;
 		}
 	} else {
-		let p_res = resolve_profile_path(uci_cfg, options.profile_path);
+		let p_res = resolve_profile_path(uci_cfg, options.profile_path, options.profiles_dir);
 		if (!p_res.ok)
 			return p_res;
 
@@ -1293,8 +1317,20 @@ function build_config(opts) {
 		skip_ubus: options.skip_ubus,
 		skip_network_uci: options.skip_network_uci
 	});
-	if (!tr.ok)
+	if (!tr.ok) {
+		if (length(stage_a_warnings) > 0)
+			tr.warnings = [ ...stage_a_warnings, ...(tr.warnings || []) ];
 		return tr;
+	}
+
+	if (length(stage_a_warnings) > 0)
+		tr.context.warnings = [ ...stage_a_warnings, ...(tr.context.warnings || []) ];
+	tr.context.config_mode = config_mode;
+	tr.context.composer = (config_mode == common.CONFIG_MODE_COMPOSER) ? composer_summary : null;
+	if (use_composer) {
+		tr.composed_config = composed_snapshot;
+		tr.composer_summary = composer_summary;
+	}
 
 	if (skip_check && validate_only)
 		return tr;
@@ -1329,7 +1365,13 @@ function build_config(opts) {
 		let chk = run_singbox_check(bin_path, tmp_path, options.check_dir);
 		if (!chk.ok) {
 			fs.unlink(tmp_path);
-			return fail(chk.code, chk.error, tr.context.warnings);
+			let err_res = fail(chk.code, chk.error, tr.context.warnings);
+			if (use_composer) {
+				err_res.composed_config = composed_snapshot;
+				err_res.effective_config = tr.config;
+				err_res.summary = composer_summary;
+			}
+			return err_res;
 		}
 	}
 

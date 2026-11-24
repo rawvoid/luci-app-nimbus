@@ -14,7 +14,7 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-msgid "Profiles"
+msgid "Config"
 msgstr ""
 
 msgid "Whitelists"
@@ -377,7 +377,7 @@ msgstr ""
 msgid "No active sing-box profile is selected. "
 msgstr ""
 
-msgid "Go to Profiles"
+msgid "Go to Config"
 msgstr ""
 
 msgid "Warnings:"
@@ -518,7 +518,7 @@ msgstr ""
 msgid "nftables Traffic Counters"
 msgstr ""
 
-msgid "Not configured in the active profile."
+msgid "Not configured in the active configuration."
 msgstr ""
 
 msgid "Loopback Only"
@@ -761,10 +761,10 @@ msgstr ""
 msgid "Local"
 msgstr ""
 
-msgid "Nimbus Profiles"
+msgid "Nimbus Configuration"
 msgstr ""
 
-msgid "Manage sing-box JSON configurations and remote subscriptions. Source files in /etc/nimbus/profiles/ remain read-only; Nimbus generates runtime config in memory."
+msgid "Choose between structured Composer Mode and single-file Raw Profile Mode. Shared JSON files and subscriptions in /etc/nimbus/profiles/ remain read-only."
 msgstr ""
 
 msgid "Configuration applied and data plane reloaded."
@@ -839,10 +839,10 @@ msgstr ""
 msgid "Data Plane & Traffic Filtering"
 msgstr ""
 
-msgid "Used when the active profile does not define a redirect inbound."
+msgid "Used when the active configuration does not define a redirect inbound."
 msgstr ""
 
-msgid "Used when the active profile does not define a UDP tproxy inbound."
+msgid "Used when the active configuration does not define a UDP tproxy inbound."
 msgstr ""
 
 msgid "TPROXY port must differ from TCP Redirect port."
@@ -935,7 +935,7 @@ msgstr ""
 msgid "sing-box DNS Listen Port"
 msgstr ""
 
-msgid "Used when mode is \"singbox\" and the profile lacks a local direct DNS inbound."
+msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
 msgstr ""
 
 msgid "DNS listen port is required."
@@ -1196,7 +1196,6 @@ msgstr ""
 msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
 msgstr ""
 
-
 msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
 msgstr ""
 
@@ -1225,4 +1224,817 @@ msgid "Direct DNS server IP is required when policy is set to always use fallbac
 msgstr ""
 
 msgid "Direct DNS server IP must not be a loopback or unspecified address."
+msgstr ""
+
+msgid "Composer configuration has not been saved yet. "
+msgstr ""
+
+msgid "%d sources · %d nodes · %d groups"
+msgstr ""
+
+msgid "Not initialized"
+msgstr ""
+
+msgid "Config Mode"
+msgstr ""
+
+msgid "Raw Profile Mode"
+msgstr ""
+
+msgid "Composer Mode"
+msgstr ""
+
+msgid "Composer Summary"
+msgstr ""
+
+msgid "An active Composer source was updated and validated. Reload Nimbus service now to apply changes?"
+msgstr ""
+
+msgid "Source JSON must be a top-level object or a non-empty array."
+msgstr ""
+
+msgid "Unsaved Changes"
+msgstr ""
+
+msgid "You have unsaved changes in Composer Mode. Discard them and switch to Raw Profile Mode?"
+msgstr ""
+
+msgid "Switched to Composer Mode."
+msgstr ""
+
+msgid "Switched to Raw Profile Mode."
+msgstr ""
+
+msgid "Configuration mode changed while Nimbus is active. Reload service now to apply?"
+msgstr ""
+
+msgid "Manage structured inbounds, outbounds, DNS, routing rules, and multi-subscription node extraction."
+msgstr ""
+
+msgid "Select a single complete sing-box JSON profile or subscription."
+msgstr ""
+
+msgid "Configuration Mode"
+msgstr ""
+
+msgid "Switching mode..."
+msgstr ""
+
+msgid "-- Select 1.14 Snippet --"
+msgstr ""
+
+msgid "Apply Snippet"
+msgstr ""
+
+msgid "Format JSON"
+msgstr ""
+
+msgid "Sources"
+msgstr ""
+
+msgid "Outbounds"
+msgstr ""
+
+msgid "Inbounds"
+msgstr ""
+
+msgid "DNS"
+msgstr ""
+
+msgid "Route & Rule Sets"
+msgstr ""
+
+msgid "Override"
+msgstr ""
+
+msgid "Override JSON contains syntax errors: %s"
+msgstr ""
+
+msgid "Composer configuration exceeds the 256 KiB inline transfer limit."
+msgstr ""
+
+msgid "Composer configuration saved, validated, and applied."
+msgstr ""
+
+msgid "Composer configuration saved and validated. Reload service to apply changes."
+msgstr ""
+
+msgid "Composer configuration saved and validated with sing-box."
+msgstr ""
+
+msgid "Composer configuration saved."
+msgstr ""
+
+msgid "Composer Warnings:"
+msgstr ""
+
+msgid "Synthesizing configuration and running sing-box check..."
+msgstr ""
+
+msgid "Preview & Check"
+msgstr ""
+
+msgid "sing-box check: Passed"
+msgstr ""
+
+msgid "sing-box check: Failed"
+msgstr ""
+
+msgid "Preview Only (sing-box binary not installed)"
+msgstr ""
+
+msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
+msgstr ""
+
+msgid "Effective Runtime JSON (Stage B)"
+msgstr ""
+
+msgid "Composed JSON (Stage A)"
+msgstr ""
+
+msgid "JSON copied to clipboard."
+msgstr ""
+
+msgid "Copy JSON"
+msgstr ""
+
+msgid "Validation Error:"
+msgstr ""
+
+msgid "Paste full sing-box JSON object here..."
+msgstr ""
+
+msgid "Composer draft replaced. Click \"Save\" or \"Save & Apply\" to persist changes."
+msgstr ""
+
+msgid "Import Warnings:"
+msgstr ""
+
+msgid "You have unsaved changes. Confirm \"%s\" to overwrite the current draft?"
+msgstr ""
+
+msgid "Overwrite Draft"
+msgstr ""
+
+msgid "Please select a profile to import."
+msgstr ""
+
+msgid "Import Profile"
+msgstr ""
+
+msgid "Please paste a sing-box JSON configuration."
+msgstr ""
+
+msgid "Content exceeds the 256 KiB inline transfer limit."
+msgstr ""
+
+msgid "Import Raw JSON"
+msgstr ""
+
+msgid "Import JSON"
+msgstr ""
+
+msgid "Presets & Import"
+msgstr ""
+
+msgid "Unsaved draft changes are present. Applying a preset or importing will replace the current draft."
+msgstr ""
+
+msgid "Starter Presets"
+msgstr ""
+
+msgid "Load a clean sing-box 1.14 composer blueprint (no deprecated fields)."
+msgstr ""
+
+msgid "1.14 Standard Router Split"
+msgstr ""
+
+msgid "Blank Canvas"
+msgstr ""
+
+msgid "Import from Existing Profile"
+msgstr ""
+
+msgid "Import from Raw sing-box JSON"
+msgstr ""
+
+msgid "Not Saved Yet"
+msgstr ""
+
+msgid "Synced"
+msgstr ""
+
+msgid "%d sources · %d groups · %d manual outbounds · %d rules"
+msgstr ""
+
+msgid "Saved: %s"
+msgstr ""
+
+msgid "Presets / Import"
+msgstr ""
+
+msgid "Save & Apply"
+msgstr ""
+
+msgid "Matched %d node(s)."
+msgstr ""
+
+msgid "No nodes matched."
+msgstr ""
+
+msgid "Final Tag"
+msgstr ""
+
+msgid "Original Tag"
+msgstr ""
+
+msgid "Server"
+msgstr ""
+
+msgid "Extracting nodes..."
+msgstr ""
+
+msgid "Extracted Nodes: %s"
+msgstr ""
+
+msgid "Composer draft exceeds the 256 KiB inline transfer limit."
+msgstr ""
+
+msgid "No nodes extracted from this source with current rules."
+msgstr ""
+
+msgid "Testing extraction..."
+msgstr ""
+
+msgid "No nodes matched these extraction rules."
+msgstr ""
+
+msgid "Test Extract"
+msgstr ""
+
+msgid "No outbound groups defined."
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "Extract Config: %s"
+msgstr ""
+
+msgid "Extract Nodes"
+msgstr ""
+
+msgid "Tag Prefix"
+msgstr ""
+
+msgid "Include Regex"
+msgstr ""
+
+msgid "POSIX ERE (case-insensitive) matched against original node tag."
+msgstr ""
+
+msgid "Exclude Regex"
+msgstr ""
+
+msgid "Exclude Types (CSV)"
+msgstr ""
+
+msgid "Strip Fields (CSV)"
+msgstr ""
+
+msgid "Attach to Outbound Groups"
+msgstr ""
+
+msgid "Node Override (JSON)"
+msgstr ""
+
+msgid "RFC 7396 Merge Patch applied to every extracted node (null deletes a field)."
+msgstr ""
+
+msgid "Add Source / Profile"
+msgstr ""
+
+msgid "Shared profiles under /etc/nimbus/profiles/. Toggle Extract to include nodes in Composer."
+msgstr ""
+
+msgid "Composer references %d missing profile source(s): %s"
+msgstr ""
+
+msgid "Remove Missing Sources"
+msgstr ""
+
+msgid "Extract"
+msgstr ""
+
+msgid "Name & File"
+msgstr ""
+
+msgid "Extraction Rules"
+msgstr ""
+
+msgid "Attached Groups"
+msgstr ""
+
+msgid "No profiles configured yet. Click \"Add Source / Profile\" to add one."
+msgstr ""
+
+msgid "File missing"
+msgstr ""
+
+msgid "Prefix: %s"
+msgstr ""
+
+msgid "Include: /%s/"
+msgstr ""
+
+msgid "Exclude: /%s/"
+msgstr ""
+
+msgid "Override: %d keys"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "Extract Config"
+msgstr ""
+
+msgid "Nodes"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Remove \"%s\" from the Composer draft?"
+msgstr ""
+
+msgid "Optional remark"
+msgstr ""
+
+msgid "Comma or newline separated tags, e.g. Auto, direct"
+msgstr ""
+
+msgid "+ Pick Existing Tag"
+msgstr ""
+
+msgid "No subscription bindings configured (group uses static outbounds only)."
+msgstr ""
+
+msgid "* (All enabled sources)"
+msgstr ""
+
+msgid "Include regex (e.g. HK|SG)"
+msgstr ""
+
+msgid "Exclude regex"
+msgstr ""
+
+msgid "Matching nodes..."
+msgstr ""
+
+msgid "No nodes matched this provider binding."
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Group type is required when enabled."
+msgstr ""
+
+msgid "Group tag is required when enabled."
+msgstr ""
+
+msgid "Edit Outbound Group: %s"
+msgstr ""
+
+msgid "Add Outbound Group"
+msgstr ""
+
+msgid "Tag"
+msgstr ""
+
+msgid "Remark"
+msgstr ""
+
+msgid "Static Outbounds"
+msgstr ""
+
+msgid "Included before matched subscription nodes."
+msgstr ""
+
+msgid "Fallback Outbound"
+msgstr ""
+
+msgid "Used automatically if this group resolves to zero members."
+msgstr ""
+
+msgid "Provider Bindings"
+msgstr ""
+
+msgid "Add Binding"
+msgstr ""
+
+msgid "Config JSON"
+msgstr ""
+
+msgid "Format"
+msgstr ""
+
+msgid "Required for remote/local (binary or source); omitted for inline."
+msgstr ""
+
+msgid "Type is required when enabled."
+msgstr ""
+
+msgid "Tag is required when enabled."
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Match Config JSON"
+msgstr ""
+
+msgid "Outbound Groups (selector / urltest)"
+msgstr ""
+
+msgid "Add Group"
+msgstr ""
+
+msgid "Order"
+msgstr ""
+
+msgid "Members & Subscriptions"
+msgstr ""
+
+msgid "Static: %s"
+msgstr ""
+
+msgid "* All"
+msgstr ""
+
+msgid "Sources: %s"
+msgstr ""
+
+msgid "Fallback: %s"
+msgstr ""
+
+msgid "Delete Group"
+msgstr ""
+
+msgid "Manual Outbounds"
+msgstr ""
+
+msgid "Add Manual Outbound"
+msgstr ""
+
+msgid "Edit Outbound: %s"
+msgstr ""
+
+msgid "Add Outbound"
+msgstr ""
+
+msgid "Summary"
+msgstr ""
+
+msgid "No manual outbounds defined."
+msgstr ""
+
+msgid "Delete Outbound"
+msgstr ""
+
+msgid "DNS Mode: singbox (port %d)"
+msgstr ""
+
+msgid "DNS Mode: %s"
+msgstr ""
+
+msgid "Managed Dataplane Inbounds (%s): "
+msgstr ""
+
+msgid "Redirect TCP port %d · TPROXY UDP port %d · %s. Nimbus automatically injects missing transparent proxy or DNS inbounds at runtime and reuses matching user-defined ones (conflicting tun inbounds are stripped)."
+msgstr ""
+
+msgid "Custom Inbounds"
+msgstr ""
+
+msgid "Add Inbound"
+msgstr ""
+
+msgid "Edit Inbound: %s"
+msgstr ""
+
+msgid "Listen Summary"
+msgstr ""
+
+msgid "No custom inbounds configured."
+msgstr ""
+
+msgid "Delete Inbound"
+msgstr ""
+
+msgid "(Default)"
+msgstr ""
+
+msgid "Advanced DNS JSON (dns.extra)"
+msgstr ""
+
+msgid "Additional top-level sing-box 1.14 dns fields (e.g. disable_cache, disable_expire, reverse_mapping, client_subnet). Do not use removed independent_cache."
+msgstr ""
+
+msgid "Advanced DNS JSON..."
+msgstr ""
+
+msgid "Final Server"
+msgstr ""
+
+msgid "Strategy"
+msgstr ""
+
+msgid "DNS Servers"
+msgstr ""
+
+msgid "Add DNS Server"
+msgstr ""
+
+msgid "Edit DNS Server: %s"
+msgstr ""
+
+msgid "No DNS servers defined."
+msgstr ""
+
+msgid "Delete DNS Server"
+msgstr ""
+
+msgid "DNS Rules"
+msgstr ""
+
+msgid "Add DNS Rule"
+msgstr ""
+
+msgid "Edit DNS Rule"
+msgstr ""
+
+msgid "Target Server"
+msgstr ""
+
+msgid "Match Summary"
+msgstr ""
+
+msgid "No DNS rules defined."
+msgstr ""
+
+msgid "Delete DNS Rule"
+msgstr ""
+
+msgid "Advanced Route JSON (route.extra)"
+msgstr ""
+
+msgid "Additional top-level sing-box 1.14 route fields (e.g. auto_detect_interface, default_interface, default_mark)."
+msgstr ""
+
+msgid "Advanced Route JSON..."
+msgstr ""
+
+msgid "Final Outbound"
+msgstr ""
+
+msgid "Default Domain Resolver"
+msgstr ""
+
+msgid "Route Rules"
+msgstr ""
+
+msgid "Add Route Rule"
+msgstr ""
+
+msgid "Edit Route Rule"
+msgstr ""
+
+msgid "Target Outbound"
+msgstr ""
+
+msgid "No route rules defined."
+msgstr ""
+
+msgid "Delete Route Rule"
+msgstr ""
+
+msgid "Rule Sets (rule_set)"
+msgstr ""
+
+msgid "Add Rule Set"
+msgstr ""
+
+msgid "Edit Rule Set: %s"
+msgstr ""
+
+msgid "No rule sets defined."
+msgstr ""
+
+msgid "Delete Rule Set"
+msgstr ""
+
+msgid "-- Select Override Snippet --"
+msgstr ""
+
+msgid "Insert / Merge Snippet"
+msgstr ""
+
+msgid "Top-level RFC 7396 JSON Merge Patch applied before dataplane synthesis (null deletes keys; arrays replace). Supports services (api, hysteria-realm), endpoints, http_clients, experimental, ntp, etc."
+msgstr ""
+
+msgid "mixed (LAN Mixed Proxy)"
+msgstr ""
+
+msgid "LAN Mixed Proxy"
+msgstr ""
+
+msgid "socks (SOCKS5 Proxy)"
+msgstr ""
+
+msgid "LAN SOCKS5 Proxy"
+msgstr ""
+
+msgid "redirect (TCP Transparent)"
+msgstr ""
+
+msgid "Custom TCP Redirect"
+msgstr ""
+
+msgid "tproxy (UDP Transparent)"
+msgstr ""
+
+msgid "Custom UDP TPROXY"
+msgstr ""
+
+msgid "direct"
+msgstr ""
+
+msgid "Direct"
+msgstr ""
+
+msgid "hysteria2"
+msgstr ""
+
+msgid "Hysteria2 Node"
+msgstr ""
+
+msgid "vless+tls"
+msgstr ""
+
+msgid "VLESS + TLS"
+msgstr ""
+
+msgid "anytls"
+msgstr ""
+
+msgid "AnyTLS Node"
+msgstr ""
+
+msgid "shadowsocks"
+msgstr ""
+
+msgid "Shadowsocks Node"
+msgstr ""
+
+msgid "selector (Manual Select)"
+msgstr ""
+
+msgid "Manual Select"
+msgstr ""
+
+msgid "urltest (Auto Best)"
+msgstr ""
+
+msgid "Auto Best"
+msgstr ""
+
+msgid "udp (223.5.5.5)"
+msgstr ""
+
+msgid "China Direct DNS"
+msgstr ""
+
+msgid "https (1.1.1.1 DoH)"
+msgstr ""
+
+msgid "Proxy DoH"
+msgstr ""
+
+msgid "tls (DoT)"
+msgstr ""
+
+msgid "DNS over TLS"
+msgstr ""
+
+msgid "fakeip (1.14)"
+msgstr ""
+
+msgid "Fake-IP Pool"
+msgstr ""
+
+msgid "China Rule Set -> dns-cn"
+msgstr ""
+
+msgid "China domains direct"
+msgstr ""
+
+msgid "A/AAAA -> dns-fakeip"
+msgstr ""
+
+msgid "Fake-IP A/AAAA"
+msgstr ""
+
+msgid "Reject HTTPS/SVCB"
+msgstr ""
+
+msgid "Reject HTTPS/SVCB queries"
+msgstr ""
+
+msgid "Logical Rule"
+msgstr ""
+
+msgid "Logical DNS Rule"
+msgstr ""
+
+msgid "sniff"
+msgstr ""
+
+msgid "Protocol Sniff"
+msgstr ""
+
+msgid "hijack-dns"
+msgstr ""
+
+msgid "Hijack DNS"
+msgstr ""
+
+msgid "Private IP -> direct"
+msgstr ""
+
+msgid "Private IP Direct"
+msgstr ""
+
+msgid "Rule Set -> direct"
+msgstr ""
+
+msgid "China Traffic Direct"
+msgstr ""
+
+msgid "Reject QUIC"
+msgstr ""
+
+msgid "Logical Route Rule"
+msgstr ""
+
+msgid "remote (geosite-cn, http_client)"
+msgstr ""
+
+msgid "China Domain Rule Set"
+msgstr ""
+
+msgid "remote (geoip-cn, http_client)"
+msgstr ""
+
+msgid "China IP Rule Set"
+msgstr ""
+
+msgid "local (.srs)"
+msgstr ""
+
+msgid "Local Binary Rule Set"
+msgstr ""
+
+msgid "inline"
+msgstr ""
+
+msgid "Inline Domain Rules"
+msgstr ""
+
+msgid "Native sing-box API + Dashboard"
+msgstr ""
+
+msgid "Cache File + Fake-IP Store"
+msgstr ""
+
+msgid "Hysteria Realm Service"
+msgstr ""
+
+msgid "HTTP Clients"
+msgstr ""
+
+msgid "Value must be a JSON object."
+msgstr ""
+
+msgid "logical (%s, %d sub-rules)"
+msgstr ""
+
+msgid "%d inline rules"
+msgstr ""
+
+msgid "via %s"
+msgstr ""
+
+msgid "dev:%s"
 msgstr ""

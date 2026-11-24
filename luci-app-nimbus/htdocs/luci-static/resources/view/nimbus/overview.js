@@ -215,10 +215,15 @@ return view.extend({
 				]));
 			}
 
-			if (!st.active_profile) {
+			if (st.config_mode === 'profile' && !st.active_profile) {
 				nodes.push(E('div', { 'class': 'alert-message warning' }, [
 					E('span', {}, _('No active sing-box profile is selected. ')),
-					E('a', { 'href': L.url('admin/services/nimbus/profiles') }, _('Go to Profiles'))
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'profiles') }, _('Go to Config'))
+				]));
+			} else if (st.config_mode !== 'profile' && !(st.composer && st.composer.initialized)) {
+				nodes.push(E('div', { 'class': 'alert-message warning' }, [
+					E('span', {}, _('Composer configuration has not been saved yet. ')),
+					E('a', { 'href': L.url('admin', 'services', 'nimbus', 'profiles') }, _('Go to Config'))
 				]));
 			}
 
@@ -295,11 +300,24 @@ return view.extend({
 				? _('Running (PID %d)').format(proc.pid)
 				: _('Not running');
 
+			var isProfileMode = (st.config_mode === 'profile');
+			var comp = st.composer || {};
+			var compLabel = (comp && comp.initialized)
+				? _('%d sources · %d nodes · %d groups').format(
+					comp.enabled_sources || 0,
+					comp.extracted_nodes || 0,
+					comp.groups || 0
+				)
+				: _('Not initialized');
+
 			dom.content(telemetryBox, [
 				E('h3', {}, _('Runtime Overview')),
 				renderKeyValueRows([
 					[ _('Boot / UCI Enabled'), st.enabled ? _('Enabled') : _('Disabled') ],
-					[ _('Active Profile'), profLabel ],
+					[ _('Config Mode'), isProfileMode ? _('Raw Profile Mode') : _('Composer Mode') ],
+					isProfileMode
+						? [ _('Active Profile'), profLabel ]
+						: [ _('Composer Summary'), compLabel ],
 					[ _('Network Topology'), st.topology === 'side' ? _('Side Router') : _('Main Router') ],
 					[ _('Proxy Mode'), st.proxy_mode || 'tproxy_redirect' ],
 					[ _('Failure Policy'), st.fail_open ? _('Fail-Open (Direct Fallback)') : _('Fail-Closed (Lockdown)') ],
@@ -375,7 +393,7 @@ return view.extend({
 			if (!apiInfo || !apiInfo.detected) {
 				return E('div', { 'style': 'margin-bottom:12px;' }, [
 					E('h4', {}, title),
-					E('p', { 'class': 'cbi-section-descr' }, _('Not configured in the active profile.'))
+					E('p', { 'class': 'cbi-section-descr' }, _('Not configured in the active configuration.'))
 				]);
 			}
 

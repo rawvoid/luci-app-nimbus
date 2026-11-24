@@ -114,7 +114,7 @@
 
 ## M5：`rpcd` 接口层与权限收口 (`luci.nimbus.uc` / `acl.d` / `menu.d`)
 
-**目标**：按 `docs/rpc-contract.md` 完整暴露 `luci.nimbus` ubus 对象（9 个只读 + 14 个写 = 23 个方法），并收口最小权限声明与菜单配置。
+**目标**：按 `docs/rpc-contract.md` 完整暴露 `luci.nimbus` ubus 对象（原 v1.0 为 9 只读 + 14 写 = 23 个方法，Composer 扩展后共 13 只读 + 16 写 = 29 个方法），并收口最小权限声明与菜单配置。
 
 ### 交付物
 - `nimbus/files/usr/share/rpcd/ucode/luci.nimbus.uc`（实现全部 23 个读写 RPC 方法）

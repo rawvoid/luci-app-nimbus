@@ -34,6 +34,8 @@ function get_runtime_paths() {
 		uci_savedir: getenv('NIMBUS_UCI_SAVEDIR') || null,
 		bin_path: getenv('NIMBUS_BIN_PATH') || null,
 		profile_path: getenv('NIMBUS_PROFILE_PATH') || null,
+		composer_file: getenv('NIMBUS_COMPOSER_FILE') || common.COMPOSER_FILE,
+		profiles_dir: getenv('NIMBUS_PROFILES_DIR') || common.PROFILES_DIR,
 		config_file: getenv('NIMBUS_CONFIG_FILE') || common.CONFIG_FILE,
 		work_dir: work_dir,
 		runtime_dir: runtime_dir,
@@ -137,15 +139,18 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 	let out_mark = (type(bctx.effective_outbound_mark) == 'int')
 		? common.format_hex_u32(bctx.effective_outbound_mark)
 		: (uci_cfg?.proxy?.outbound_mark || '0xff');
+	let cfg_mode = common.normalize_config_mode(uci_cfg);
 
 	let payload = {
 		state: state_name,
 		emergency_lockdown: false,
 		enabled: (g.enabled == '1'),
+		config_mode: cfg_mode,
 		topology: (g.topology == 'side') ? 'side' : 'main',
 		proxy_mode: g.proxy_mode || 'tproxy_redirect',
 		fail_open: (g.fail_open == '1'),
 		active_profile: g.active_profile || '',
+		composer: (cfg_mode == common.CONFIG_MODE_COMPOSER) ? (bctx.composer ?? prev?.composer ?? null) : null,
 		config_hash: config_hash || null,
 		core: {
 			bin_path: bctx.core_bin || c.bin_path || c.core_path || common.DEFAULT_CORE_PATH,
@@ -275,10 +280,13 @@ function execute_fail_handler(reason, paths, existing_lock) {
 		let lock_v6 = used_emergency
 			? 0
 			: (lock_res?.loaded_counts?.bypass_v6 ?? wl?.v6_count ?? old_state?.whitelist?.v6_count ?? 0);
+		let cfg_mode = common.normalize_config_mode(uci_cfg);
 		let next_state = {
 			...old_state,
 			state: lockdown_ok ? 'lockdown' : 'error',
 			emergency_lockdown: (lockdown_ok && used_emergency),
+			config_mode: cfg_mode,
+			composer: (cfg_mode == common.CONFIG_MODE_COMPOSER) ? (old_state?.composer ?? null) : null,
 			fail_open: false,
 			whitelist: {
 				enabled: (w.enabled != '0'),
@@ -313,10 +321,13 @@ function execute_fail_handler(reason, paths, existing_lock) {
 
 		maybe_restore_dns(paths);
 
+		let cfg_mode = common.normalize_config_mode(uci_cfg);
 		let next_state = {
 			...old_state,
 			state: 'error',
 			emergency_lockdown: false,
+			config_mode: cfg_mode,
+			composer: (cfg_mode == common.CONFIG_MODE_COMPOSER) ? (old_state?.composer ?? null) : null,
 			fail_open: true,
 			whitelist: {
 				enabled: (w.enabled != '0'),
@@ -359,6 +370,8 @@ function cmd_prepare_start(paths, is_reload) {
 		uci_savedir: paths.uci_savedir,
 		bin_path: core_bin,
 		profile_path: paths.profile_path,
+		composer_file: paths.composer_file,
+		profiles_dir: paths.profiles_dir,
 		output_path: paths.config_file,
 		check_dir: paths.check_dir,
 		resolv_auto_path: paths.resolv_auto_path,
@@ -506,11 +519,14 @@ function cmd_stop(paths) {
 
 	maybe_restore_dns(paths);
 
+	let cfg_mode = common.normalize_config_mode(uci_cfg);
 	common.write_state({
 		...old_state,
 		state: 'stopped',
 		emergency_lockdown: false,
 		enabled: (uci_cfg?.global?.enabled == '1'),
+		config_mode: cfg_mode,
+		composer: (cfg_mode == common.CONFIG_MODE_COMPOSER) ? (old_state?.composer ?? null) : null,
 		whitelist: {
 			enabled: (w.enabled != '0'),
 			v4_count: old_state?.whitelist?.v4_count ?? 0,

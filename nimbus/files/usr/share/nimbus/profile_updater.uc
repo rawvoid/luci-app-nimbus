@@ -2,6 +2,7 @@
 
 import * as fs from 'fs';
 import * as common from 'common';
+import * as cc from 'config_composer';
 import * as cb from 'config_builder';
 
 const CRON_TAG = 'nimbus-profile';
@@ -228,10 +229,40 @@ function update_profiles(section_id, opts) {
 
 	let state_path = options.state_file || common.STATE_FILE;
 	let sub_meta_updates = {};
+	let config_mode = common.normalize_config_mode(uci_data);
+	let composer_obj = null;
+	if (config_mode == common.CONFIG_MODE_COMPOSER) {
+		if (options.composer != null) {
+			let norm = cc.normalize_composer(options.composer);
+			if (!norm.ok)
+				return { ok: false, code: norm.code, error: norm.error, reloaded: false, results: [] };
+			composer_obj = norm.composer;
+		} else {
+			composer_obj = cc.read_composer(options.composer_file || common.COMPOSER_FILE);
+		}
+	}
 
 	let results = [];
 	let active_changed = false;
 	let all_ok = true;
+
+	function push_fail(id, err) {
+		all_ok = false;
+		sub_meta_updates[id] = {
+			_merge: true,
+			status: 'failed',
+			error: err,
+			updated_at: time()
+		};
+		push(results, {
+			id: id,
+			status: 'failed',
+			changed: false,
+			size_bytes: 0,
+			mtime: null,
+			error: err
+		});
+	}
 
 	for (let item in targets) {
 		let id = item.id;
@@ -240,42 +271,12 @@ function update_profiles(section_id, opts) {
 		let url = trim('' + (sec.url || ''));
 
 		if (!common.is_valid_profile_filename(fname)) {
-			all_ok = false;
-			let err = sprintf('invalid profile filename: %s', '' + fname);
-			sub_meta_updates[id] = {
-				_merge: true,
-				status: 'failed',
-				error: err,
-				updated_at: time()
-			};
-			push(results, {
-				id: id,
-				status: 'failed',
-				changed: false,
-				size_bytes: 0,
-				mtime: null,
-				error: err
-			});
+			push_fail(id, sprintf('invalid profile filename: %s', '' + fname));
 			continue;
 		}
 
 		if (!match(url, /^https?:\/\/.+/)) {
-			all_ok = false;
-			let err = 'invalid or empty subscription URL';
-			sub_meta_updates[id] = {
-				_merge: true,
-				status: 'failed',
-				error: err,
-				updated_at: time()
-			};
-			push(results, {
-				id: id,
-				status: 'failed',
-				changed: false,
-				size_bytes: 0,
-				mtime: null,
-				error: err
-			});
+			push_fail(id, 'invalid or empty subscription URL');
 			continue;
 		}
 
@@ -287,22 +288,7 @@ function update_profiles(section_id, opts) {
 
 		if (!dl.ok || type(raw) != 'string' || length(trim(raw)) == 0) {
 			fs.unlink(tmp_path);
-			all_ok = false;
-			let err = !dl.ok ? sprintf('subscription download failed (rc=%d)', dl.rc ?? -1) : 'downloaded subscription is empty';
-			sub_meta_updates[id] = {
-				_merge: true,
-				status: 'failed',
-				error: err,
-				updated_at: time()
-			};
-			push(results, {
-				id: id,
-				status: 'failed',
-				changed: false,
-				size_bytes: 0,
-				mtime: null,
-				error: err
-			});
+			push_fail(id, !dl.ok ? sprintf('subscription download failed (rc=%d)', dl.rc ?? -1) : 'downloaded subscription is empty');
 			continue;
 		}
 
@@ -313,57 +299,78 @@ function update_profiles(section_id, opts) {
 			parsed_json = null;
 		}
 
-		if (type(parsed_json) != 'object') {
-			fs.unlink(tmp_path);
-			all_ok = false;
-			let err = 'downloaded subscription is not a valid JSON object';
-			sub_meta_updates[id] = {
-				_merge: true,
-				status: 'failed',
-				error: err,
-				updated_at: time()
-			};
-			push(results, {
-				id: id,
-				status: 'failed',
-				changed: false,
-				size_bytes: 0,
-				mtime: null,
-				error: err
-			});
-			continue;
-		}
+		let is_used = false;
+		if (config_mode == common.CONFIG_MODE_PROFILE) {
+			if (type(parsed_json) != 'object') {
+				fs.unlink(tmp_path);
+				push_fail(id, 'downloaded subscription is not a valid JSON object');
+				continue;
+			}
 
-		let bres = cb.build_config({
-			uci: uci_data,
-			uci_confdir: options.uci_confdir,
-			uci_savedir: options.uci_savedir,
-			raw_config: parsed_json,
-			bin_path: bin_path,
-			check_dir: check_dir,
-			validate_only: true,
-			skip_check: (options.skip_check === true)
-		});
-
-		if (!bres.ok) {
-			fs.unlink(tmp_path);
-			all_ok = false;
-			let err = bres.error || 'sing-box check validation failed';
-			sub_meta_updates[id] = {
-				_merge: true,
-				status: 'failed',
-				error: err,
-				updated_at: time()
-			};
-			push(results, {
-				id: id,
-				status: 'failed',
-				changed: false,
-				size_bytes: 0,
-				mtime: null,
-				error: err
+			let bres = cb.build_config({
+				uci: uci_data,
+				uci_confdir: options.uci_confdir,
+				uci_savedir: options.uci_savedir,
+				raw_config: parsed_json,
+				bin_path: bin_path,
+				check_dir: check_dir,
+				validate_only: true,
+				skip_check: (options.skip_check === true)
 			});
-			continue;
+
+			if (!bres.ok) {
+				fs.unlink(tmp_path);
+				push_fail(id, bres.error || 'sing-box check validation failed');
+				continue;
+			}
+
+			is_used = (id == active_profile);
+		} else {
+			if (type(parsed_json) != 'object' && type(parsed_json) != 'array') {
+				fs.unlink(tmp_path);
+				push_fail(id, 'downloaded subscription is not a valid JSON object or array');
+				continue;
+			}
+
+			let src_cfg = composer_obj?.sources?.[id] || {};
+			is_used = (src_cfg.enabled === true);
+
+			let ext_struct = cc.extract_source_nodes(parsed_json, { exclude_types: [] }, {});
+			let val_err = null;
+			if (!ext_struct.ok)
+				val_err = ext_struct.error;
+			else if (length(ext_struct.nodes) == 0)
+				val_err = 'downloaded subscription contains no valid outbound entries';
+
+			if (!val_err) {
+				let ext_src = cc.extract_source_nodes(parsed_json, src_cfg, {});
+				if (!ext_src.ok)
+					val_err = ext_src.error;
+			}
+
+			if (!val_err && is_used && composer_obj != null) {
+				let bres = cb.build_config({
+					uci: uci_data,
+					uci_confdir: options.uci_confdir,
+					uci_savedir: options.uci_savedir,
+					composer: composer_obj,
+					composer_file: options.composer_file,
+					profiles_dir: profiles_dir,
+					override_profile_docs: { [id]: parsed_json },
+					bin_path: bin_path,
+					check_dir: check_dir,
+					validate_only: true,
+					skip_check: (options.skip_check === true)
+				});
+				if (!bres.ok)
+					val_err = bres.error || 'sing-box check validation failed';
+			}
+
+			if (val_err) {
+				fs.unlink(tmp_path);
+				push_fail(id, val_err);
+				continue;
+			}
 		}
 
 		let new_hash = common.sha256_file(tmp_path);
@@ -375,25 +382,10 @@ function update_profiles(section_id, opts) {
 
 		if (changed) {
 			if (!common.atomic_write(target_path, raw, 0644)) {
-				all_ok = false;
-				let err = sprintf('failed to write profile file: %s', target_path);
-				sub_meta_updates[id] = {
-					_merge: true,
-					status: 'failed',
-					error: err,
-					updated_at: time()
-				};
-				push(results, {
-					id: id,
-					status: 'failed',
-					changed: false,
-					size_bytes: 0,
-					mtime: null,
-					error: err
-				});
+				push_fail(id, sprintf('failed to write profile file: %s', target_path));
 				continue;
 			}
-			if (id == active_profile)
+			if (is_used)
 				active_changed = true;
 		}
 

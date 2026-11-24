@@ -116,6 +116,7 @@ define Package/nimbus/install
 
 	$(INSTALL_DIR) $(1)/usr/share/nimbus
 	$(INSTALL_DATA) ./files/usr/share/nimbus/common.uc $(1)/usr/share/nimbus/common.uc
+	$(INSTALL_DATA) ./files/usr/share/nimbus/config_composer.uc $(1)/usr/share/nimbus/config_composer.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/config_builder.uc $(1)/usr/share/nimbus/config_builder.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/nft_manager.uc $(1)/usr/share/nimbus/nft_manager.uc
 	$(INSTALL_DATA) ./files/usr/share/nimbus/route_manager.uc $(1)/usr/share/nimbus/route_manager.uc

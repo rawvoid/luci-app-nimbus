@@ -17,7 +17,10 @@ const CORE_TASK_FILE = '/var/run/nimbus/core_task.json';
 const LOG_FILE = '/var/log/nimbus.log';
 
 const ETC_DIR = '/etc/nimbus';
+const COMPOSER_FILE = '/etc/nimbus/composer.json';
 const PROFILES_DIR = '/etc/nimbus/profiles';
+const CONFIG_MODE_COMPOSER = 'composer';
+const CONFIG_MODE_PROFILE = 'profile';
 const LISTS_DIR = '/etc/nimbus/lists';
 const LOCAL_LISTS_DIR = '/etc/nimbus/lists/local';
 const CACHE_LISTS_DIR = '/etc/nimbus/lists/cache';
@@ -531,6 +534,15 @@ function is_valid_list_filename(name) {
 	return true;
 }
 
+function normalize_config_mode(uci_or_mode) {
+	let raw = (type(uci_or_mode) == 'object')
+		? uci_or_mode?.global?.config_mode
+		: uci_or_mode;
+	if (type(raw) == 'string' && lc(trim(raw)) == CONFIG_MODE_PROFILE)
+		return CONFIG_MODE_PROFILE;
+	return CONFIG_MODE_COMPOSER;
+}
+
 function hex_u32_parse(val) {
 	if (type(val) == 'int')
 		return (val >= 1 && val <= 0xffffffff) ? val : null;
@@ -592,7 +604,10 @@ export {
 	CORE_TASK_FILE,
 	LOG_FILE,
 	ETC_DIR,
+	COMPOSER_FILE,
 	PROFILES_DIR,
+	CONFIG_MODE_COMPOSER,
+	CONFIG_MODE_PROFILE,
 	LISTS_DIR,
 	LOCAL_LISTS_DIR,
 	CACHE_LISTS_DIR,
@@ -649,6 +664,7 @@ export {
 	truncate_log_hysteresis,
 	is_valid_profile_filename,
 	is_valid_list_filename,
+	normalize_config_mode,
 	hex_u32_parse,
 	format_hex_u32,
 	log_msg

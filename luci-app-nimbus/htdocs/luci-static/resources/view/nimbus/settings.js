@@ -82,11 +82,18 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
-		o = sGlobal.option(form.ListValue, 'active_profile', _('Active Profile'));
-		o.value('', _('-- Select Profile --'));
+		o = sGlobal.option(form.ListValue, 'config_mode', _('Configuration Mode'));
+		o.value('composer', _('Composer Mode'));
+		o.value('profile', _('Raw Profile Mode'));
+		o.default = 'composer';
+		o.rmempty = false;
+
+		var oActiveProfile = sGlobal.option(form.ListValue, 'active_profile', _('Active Profile'));
+		oActiveProfile.depends('config_mode', 'profile');
+		oActiveProfile.value('', _('-- Select Profile --'));
 		uci.sections('nimbus', 'profile', function(sec) {
 			var label = sec.name ? '%s (%s)'.format(sec.name, sec['.name']) : sec['.name'];
-			o.value(sec['.name'], label);
+			oActiveProfile.value(sec['.name'], label);
 		});
 
 		o = sGlobal.option(form.ListValue, 'topology', _('Network Topology'));
@@ -176,13 +183,13 @@ return view.extend({
 		sProxy.addremove = false;
 
 		var oRedirPort = sProxy.option(form.Value, 'redirect_port', _('TCP Redirect Port'),
-			_('Used when the active profile does not define a redirect inbound.'));
+			_('Used when the active configuration does not define a redirect inbound.'));
 		oRedirPort.datatype = 'range(1024,65535)';
 		oRedirPort.default = '7891';
 		oRedirPort.rmempty = false;
 
 		var oTproxyPort = sProxy.option(form.Value, 'tproxy_port', _('UDP TPROXY Port'),
-			_('Used when the active profile does not define a UDP tproxy inbound.'));
+			_('Used when the active configuration does not define a UDP tproxy inbound.'));
 		oTproxyPort.datatype = 'range(1024,65535)';
 		oTproxyPort.default = '7892';
 		oTproxyPort.rmempty = false;
@@ -287,7 +294,7 @@ return view.extend({
 		oDnsMode.default = 'none';
 
 		var oDnsPort = sDns.option(form.Value, 'singbox_dns_port', _('sing-box DNS Listen Port'),
-			_('Used when mode is "singbox" and the profile lacks a local direct DNS inbound.'));
+			_('Used when mode is "singbox" and the active configuration lacks a local direct DNS inbound.'));
 		oDnsPort.datatype = 'range(1024,65535)';
 		oDnsPort.default = '5353';
 		oDnsPort.depends('mode', 'singbox');

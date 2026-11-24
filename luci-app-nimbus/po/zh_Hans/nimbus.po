@@ -19,7 +19,7 @@ msgstr "概览"
 msgid "Settings"
 msgstr "设置"
 
-msgid "Profiles"
+msgid "Config"
 msgstr "配置"
 
 msgid "Whitelists"
@@ -382,8 +382,8 @@ msgstr "前往内核管理"
 msgid "No active sing-box profile is selected. "
 msgstr "尚未选择激活的 sing-box 配置文件。"
 
-msgid "Go to Profiles"
-msgstr "前往配置管理"
+msgid "Go to Config"
+msgstr "前往配置"
 
 msgid "Warnings:"
 msgstr "诊断警告:"
@@ -523,8 +523,8 @@ msgstr "TUN 代理流量"
 msgid "nftables Traffic Counters"
 msgstr "nftables 实时流量统计"
 
-msgid "Not configured in the active profile."
-msgstr "当前激活配置中未定义此接口。"
+msgid "Not configured in the active configuration."
+msgstr "当前生效配置中未定义此接口。"
 
 msgid "Loopback Only"
 msgstr "仅回环监听"
@@ -766,11 +766,11 @@ msgstr "删除"
 msgid "Local"
 msgstr "本地"
 
-msgid "Nimbus Profiles"
+msgid "Nimbus Configuration"
 msgstr "Nimbus 配置管理"
 
-msgid "Manage sing-box JSON configurations and remote subscriptions. Source files in /etc/nimbus/profiles/ remain read-only; Nimbus generates runtime config in memory."
-msgstr "管理 sing-box JSON 配置与远程订阅。/etc/nimbus/profiles/ 下的原始文件始终保持只读，运行期配置由 Nimbus 在内存中动态合成。"
+msgid "Choose between structured Composer Mode and single-file Raw Profile Mode. Shared JSON files and subscriptions in /etc/nimbus/profiles/ remain read-only."
+msgstr "在结构化的「编排配置模式」与单文件的「完整配置模式」之间切换。/etc/nimbus/profiles/ 下的共享 JSON 与订阅文件始终保持只读。"
 
 msgid "Configuration applied and data plane reloaded."
 msgstr "配置已保存并重载数据面。"
@@ -844,11 +844,11 @@ msgstr "必须为 \"auto\" 或合法的二进制 Go 内存限制（支持单位 
 msgid "Data Plane & Traffic Filtering"
 msgstr "数据面与流量过滤"
 
-msgid "Used when the active profile does not define a redirect inbound."
-msgstr "当激活配置未定义 redirect 入站时自动补齐的监听端口。"
+msgid "Used when the active configuration does not define a redirect inbound."
+msgstr "当当前生效配置未定义 redirect 入站时自动补齐的监听端口。"
 
-msgid "Used when the active profile does not define a UDP tproxy inbound."
-msgstr "当激活配置未定义 UDP tproxy 入站时自动补齐的监听端口。"
+msgid "Used when the active configuration does not define a UDP tproxy inbound."
+msgstr "当当前生效配置未定义 UDP tproxy 入站时自动补齐的监听端口。"
 
 msgid "TPROXY port must differ from TCP Redirect port."
 msgstr "UDP TPROXY 端口不可与 TCP Redirect 端口相同。"
@@ -940,8 +940,8 @@ msgstr "转发至自定义上游"
 msgid "sing-box DNS Listen Port"
 msgstr "sing-box DNS 监听端口"
 
-msgid "Used when mode is \"singbox\" and the profile lacks a local direct DNS inbound."
-msgstr "当模式为 \"singbox\" 且配置缺少本地 direct DNS 入站时自动补齐的端口。"
+msgid "Used when mode is \"singbox\" and the active configuration lacks a local direct DNS inbound."
+msgstr "当模式为 \"singbox\" 且当前生效配置缺少本地 direct DNS 入站时自动补齐的端口。"
 
 msgid "DNS listen port is required."
 msgstr "必须填写 DNS 监听端口。"
@@ -1201,7 +1201,6 @@ msgstr "Nimbus 白名单管理"
 msgid "Manage direct-bypass IPv4/IPv6 CIDR lists. Edits and remote refreshes atomically hot-reload nftables sets without restarting sing-box."
 msgstr "管理直连绕行 IPv4/IPv6 CIDR 白名单。编辑本地列表或刷新远程源后，将通过 nftables 原子热更新生效，无需重启 sing-box。"
 
-
 msgid "Invalid interface name \"%s\": must be 1–64 characters matching [A-Za-z0-9_.+-]."
 msgstr "无效的接口名称“%s”：长度须为 1–64 个字符，且仅包含 [A-Za-z0-9_.+-]。"
 
@@ -1231,3 +1230,816 @@ msgstr "选择始终使用直连 DNS 时，必须填写合法的 DNS 服务器 I
 
 msgid "Direct DNS server IP must not be a loopback or unspecified address."
 msgstr "直连 DNS 服务器 IP 不能为回环地址或未指定地址。"
+
+msgid "Composer configuration has not been saved yet. "
+msgstr "编排配置尚未保存。"
+
+msgid "%d sources · %d nodes · %d groups"
+msgstr "%d 个配置源 · %d 个节点 · %d 个出站组"
+
+msgid "Not initialized"
+msgstr "尚未初始化"
+
+msgid "Config Mode"
+msgstr "配置模式"
+
+msgid "Raw Profile Mode"
+msgstr "完整配置模式"
+
+msgid "Composer Mode"
+msgstr "编排配置模式"
+
+msgid "Composer Summary"
+msgstr "编排配置摘要"
+
+msgid "An active Composer source was updated and validated. Reload Nimbus service now to apply changes?"
+msgstr "正在使用的编排配置源已更新并通过校验。是否立即重载 Nimbus 服务以应用更改？"
+
+msgid "Source JSON must be a top-level object or a non-empty array."
+msgstr "配置源 JSON 顶层必须是合法对象或非空数组。"
+
+msgid "Unsaved Changes"
+msgstr "未保存更改"
+
+msgid "You have unsaved changes in Composer Mode. Discard them and switch to Raw Profile Mode?"
+msgstr "编排配置模式中存在未保存的更改，确定放弃这些更改并切换至完整配置模式吗？"
+
+msgid "Switched to Composer Mode."
+msgstr "已切换至编排配置模式。"
+
+msgid "Switched to Raw Profile Mode."
+msgstr "已切换至完整配置模式。"
+
+msgid "Configuration mode changed while Nimbus is active. Reload service now to apply?"
+msgstr "Nimbus 运行期间配置模式已变更，是否立即重载服务以应用？"
+
+msgid "Manage structured inbounds, outbounds, DNS, routing rules, and multi-subscription node extraction."
+msgstr "可视化编排入站、出站、DNS、路由规则，并支持从多个订阅中提取与过滤节点。"
+
+msgid "Select a single complete sing-box JSON profile or subscription."
+msgstr "选择单个完整的 sing-box JSON 配置文件或远程订阅。"
+
+msgid "Configuration Mode"
+msgstr "配置模式"
+
+msgid "Switching mode..."
+msgstr "正在切换模式..."
+
+msgid "-- Select 1.14 Snippet --"
+msgstr "-- 选择 1.14 模板片段 --"
+
+msgid "Apply Snippet"
+msgstr "应用片段"
+
+msgid "Format JSON"
+msgstr "格式化 JSON"
+
+msgid "Sources"
+msgstr "配置源"
+
+msgid "Outbounds"
+msgstr "出站"
+
+msgid "Inbounds"
+msgstr "入站"
+
+msgid "DNS"
+msgstr "DNS"
+
+msgid "Route & Rule Sets"
+msgstr "路由与规则集"
+
+msgid "Override"
+msgstr "复写"
+
+msgid "Override JSON contains syntax errors: %s"
+msgstr "复写 JSON 存在语法错误: %s"
+
+msgid "Composer configuration exceeds the 256 KiB inline transfer limit."
+msgstr "编排配置超过 256 KiB 直接传输上限。"
+
+msgid "Composer configuration saved, validated, and applied."
+msgstr "编排配置已保存、校验并应用生效。"
+
+msgid "Composer configuration saved and validated. Reload service to apply changes."
+msgstr "编排配置已保存并通过校验，请重载服务以应用更改。"
+
+msgid "Composer configuration saved and validated with sing-box."
+msgstr "编排配置已保存并通过 sing-box 校验。"
+
+msgid "Composer configuration saved."
+msgstr "编排配置已保存。"
+
+msgid "Composer Warnings:"
+msgstr "编排配置警告:"
+
+msgid "Synthesizing configuration and running sing-box check..."
+msgstr "正在合成配置并执行 sing-box 校验..."
+
+msgid "Preview & Check"
+msgstr "预览与校验"
+
+msgid "sing-box check: Passed"
+msgstr "sing-box check: 校验通过"
+
+msgid "sing-box check: Failed"
+msgstr "sing-box check: 校验失败"
+
+msgid "Preview Only (sing-box binary not installed)"
+msgstr "仅预览（未安装 sing-box 内核）"
+
+msgid "%d sources · %d nodes · %d groups · %d inbounds · %d DNS · %d rules · %d rule sets"
+msgstr "%d 个配置源 · %d 个节点 · %d 个出站组 · %d 个入站 · %d 个 DNS · %d 条路由规则 · %d 个规则集"
+
+msgid "Effective Runtime JSON (Stage B)"
+msgstr "生效运行期 JSON（阶段 B）"
+
+msgid "Composed JSON (Stage A)"
+msgstr "编排合成 JSON（阶段 A）"
+
+msgid "JSON copied to clipboard."
+msgstr "JSON 已复制到剪贴板。"
+
+msgid "Copy JSON"
+msgstr "复制 JSON"
+
+msgid "Validation Error:"
+msgstr "校验错误:"
+
+msgid "Paste full sing-box JSON object here..."
+msgstr "在此粘贴完整的 sing-box JSON 对象..."
+
+msgid "Composer draft replaced. Click \"Save\" or \"Save & Apply\" to persist changes."
+msgstr "编排草稿已替换。请点击“保存”或“保存并应用”以持久化更改。"
+
+msgid "Import Warnings:"
+msgstr "导入警告:"
+
+msgid "You have unsaved changes. Confirm \"%s\" to overwrite the current draft?"
+msgstr "当前存在未保存的更改。确认执行“%s”以覆盖现有草稿吗？"
+
+msgid "Overwrite Draft"
+msgstr "覆盖草稿"
+
+msgid "Please select a profile to import."
+msgstr "请选择要导入的配置。"
+
+msgid "Import Profile"
+msgstr "导入配置"
+
+msgid "Please paste a sing-box JSON configuration."
+msgstr "请粘贴 sing-box JSON 配置内容。"
+
+msgid "Content exceeds the 256 KiB inline transfer limit."
+msgstr "内容大小超过 256 KiB 直接传输上限。"
+
+msgid "Import Raw JSON"
+msgstr "导入原始 JSON"
+
+msgid "Import JSON"
+msgstr "导入 JSON"
+
+msgid "Presets & Import"
+msgstr "预设与导入"
+
+msgid "Unsaved draft changes are present. Applying a preset or importing will replace the current draft."
+msgstr "当前草稿存在未保存的更改。应用预设或导入配置将会替换现有草稿。"
+
+msgid "Starter Presets"
+msgstr "初始预设模板"
+
+msgid "Load a clean sing-box 1.14 composer blueprint (no deprecated fields)."
+msgstr "加载规范的 sing-box 1.14 编排配置蓝图（不含任何已废弃字段）。"
+
+msgid "1.14 Standard Router Split"
+msgstr "1.14 标准路由分流"
+
+msgid "Blank Canvas"
+msgstr "空白画布"
+
+msgid "Import from Existing Profile"
+msgstr "从现有配置导入"
+
+msgid "Import from Raw sing-box JSON"
+msgstr "从原始 sing-box JSON 导入"
+
+msgid "Not Saved Yet"
+msgstr "尚未保存"
+
+msgid "Synced"
+msgstr "已同步"
+
+msgid "%d sources · %d groups · %d manual outbounds · %d rules"
+msgstr "%d 个配置源 · %d 个出站组 · %d 个手动出站 · %d 条规则"
+
+msgid "Saved: %s"
+msgstr "已保存: %s"
+
+msgid "Presets / Import"
+msgstr "预设 / 导入"
+
+msgid "Save & Apply"
+msgstr "保存并应用"
+
+msgid "Matched %d node(s)."
+msgstr "共匹配 %d 个节点。"
+
+msgid "No nodes matched."
+msgstr "未匹配到任何节点。"
+
+msgid "Final Tag"
+msgstr "最终 Tag"
+
+msgid "Original Tag"
+msgstr "原始 Tag"
+
+msgid "Server"
+msgstr "服务器"
+
+msgid "Extracting nodes..."
+msgstr "正在提取节点..."
+
+msgid "Extracted Nodes: %s"
+msgstr "已提取节点: %s"
+
+msgid "Composer draft exceeds the 256 KiB inline transfer limit."
+msgstr "编排草稿超过 256 KiB 直接传输上限。"
+
+msgid "No nodes extracted from this source with current rules."
+msgstr "当前提取规则未从该配置源中提取到任何节点。"
+
+msgid "Testing extraction..."
+msgstr "正在测试提取..."
+
+msgid "No nodes matched these extraction rules."
+msgstr "当前提取规则未匹配到任何节点。"
+
+msgid "Test Extract"
+msgstr "测试提取"
+
+msgid "No outbound groups defined."
+msgstr "尚未定义出站组。"
+
+msgid "All"
+msgstr "全部"
+
+msgid "Extract Config: %s"
+msgstr "提取规则配置: %s"
+
+msgid "Extract Nodes"
+msgstr "启用节点提取"
+
+msgid "Tag Prefix"
+msgstr "节点 Tag 前缀"
+
+msgid "Include Regex"
+msgstr "包含正则"
+
+msgid "POSIX ERE (case-insensitive) matched against original node tag."
+msgstr "按 POSIX ERE（不区分大小写）匹配节点的原始 tag。"
+
+msgid "Exclude Regex"
+msgstr "排除正则"
+
+msgid "Exclude Types (CSV)"
+msgstr "排除类型 (CSV)"
+
+msgid "Strip Fields (CSV)"
+msgstr "剥离字段 (CSV)"
+
+msgid "Attach to Outbound Groups"
+msgstr "关联到出站组"
+
+msgid "Node Override (JSON)"
+msgstr "节点属性复写 (JSON)"
+
+msgid "RFC 7396 Merge Patch applied to every extracted node (null deletes a field)."
+msgstr "对每个提取的节点应用 RFC 7396 Merge Patch（设为 null 可删除字段）。"
+
+msgid "Add Source / Profile"
+msgstr "添加配置源 / 配置"
+
+msgid "Shared profiles under /etc/nimbus/profiles/. Toggle Extract to include nodes in Composer."
+msgstr "共享配置位于 /etc/nimbus/profiles/。勾选「提取」即可将节点纳入编排配置。"
+
+msgid "Composer references %d missing profile source(s): %s"
+msgstr "编排配置引用了 %d 个缺失的配置源: %s"
+
+msgid "Remove Missing Sources"
+msgstr "清理缺失配置源"
+
+msgid "Extract"
+msgstr "提取"
+
+msgid "Name & File"
+msgstr "名称与文件"
+
+msgid "Extraction Rules"
+msgstr "提取规则"
+
+msgid "Attached Groups"
+msgstr "已关联出站组"
+
+msgid "No profiles configured yet. Click \"Add Source / Profile\" to add one."
+msgstr "暂无配置，请点击“添加配置源 / 配置”新建。"
+
+msgid "File missing"
+msgstr "文件缺失"
+
+msgid "Prefix: %s"
+msgstr "前缀: %s"
+
+msgid "Include: /%s/"
+msgstr "包含: /%s/"
+
+msgid "Exclude: /%s/"
+msgstr "排除: /%s/"
+
+msgid "Override: %d keys"
+msgstr "复写: %d 项"
+
+msgid "Default"
+msgstr "默认"
+
+msgid "Extract Config"
+msgstr "提取设置"
+
+msgid "Nodes"
+msgstr "节点"
+
+msgid "Upload"
+msgstr "上传"
+
+msgid "Remove \"%s\" from the Composer draft?"
+msgstr "确认从编排草稿中移除 \"%s\" 吗？"
+
+msgid "Optional remark"
+msgstr "可选备注"
+
+msgid "Comma or newline separated tags, e.g. Auto, direct"
+msgstr "使用逗号或换行分隔 tag，例如 Auto, direct"
+
+msgid "+ Pick Existing Tag"
+msgstr "+ 选择已有 Tag"
+
+msgid "No subscription bindings configured (group uses static outbounds only)."
+msgstr "未配置订阅源绑定（该出站组仅使用静态出站）。"
+
+msgid "* (All enabled sources)"
+msgstr "*（全部已启用配置源）"
+
+msgid "Include regex (e.g. HK|SG)"
+msgstr "包含正则（如 HK|SG）"
+
+msgid "Exclude regex"
+msgstr "排除正则"
+
+msgid "Matching nodes..."
+msgstr "正在匹配节点..."
+
+msgid "No nodes matched this provider binding."
+msgstr "此配置源绑定未匹配到任何节点。"
+
+msgid "Remove"
+msgstr "移除"
+
+msgid "Group type is required when enabled."
+msgstr "启用出站组时必须指定类型。"
+
+msgid "Group tag is required when enabled."
+msgstr "启用出站组时必须指定 Tag。"
+
+msgid "Edit Outbound Group: %s"
+msgstr "编辑出站组: %s"
+
+msgid "Add Outbound Group"
+msgstr "新建出站组"
+
+msgid "Tag"
+msgstr "Tag"
+
+msgid "Remark"
+msgstr "备注"
+
+msgid "Static Outbounds"
+msgstr "静态出站"
+
+msgid "Included before matched subscription nodes."
+msgstr "排在匹配到的订阅节点之前。"
+
+msgid "Fallback Outbound"
+msgstr "兜底出站"
+
+msgid "Used automatically if this group resolves to zero members."
+msgstr "当此出站组解析结果为空时自动使用的兜底出站。"
+
+msgid "Provider Bindings"
+msgstr "配置源绑定"
+
+msgid "Add Binding"
+msgstr "添加绑定"
+
+msgid "Config JSON"
+msgstr "配置 JSON"
+
+msgid "Format"
+msgstr "格式"
+
+msgid "Required for remote/local (binary or source); omitted for inline."
+msgstr "remote/local 类型必填（binary 或 source）；inline 类型自动忽略。"
+
+msgid "Type is required when enabled."
+msgstr "启用时必须指定类型。"
+
+msgid "Tag is required when enabled."
+msgstr "启用时必须指定 Tag。"
+
+msgid "Action"
+msgstr "动作"
+
+msgid "Match Config JSON"
+msgstr "匹配条件 JSON"
+
+msgid "Outbound Groups (selector / urltest)"
+msgstr "出站组 (selector / urltest)"
+
+msgid "Add Group"
+msgstr "新建出站组"
+
+msgid "Order"
+msgstr "顺序"
+
+msgid "Members & Subscriptions"
+msgstr "成员与订阅源"
+
+msgid "Static: %s"
+msgstr "静态: %s"
+
+msgid "* All"
+msgstr "* 全部"
+
+msgid "Sources: %s"
+msgstr "配置源: %s"
+
+msgid "Fallback: %s"
+msgstr "兜底: %s"
+
+msgid "Delete Group"
+msgstr "删除出站组"
+
+msgid "Manual Outbounds"
+msgstr "手动出站"
+
+msgid "Add Manual Outbound"
+msgstr "新建手动出站"
+
+msgid "Edit Outbound: %s"
+msgstr "编辑出站: %s"
+
+msgid "Add Outbound"
+msgstr "新建出站"
+
+msgid "Summary"
+msgstr "摘要"
+
+msgid "No manual outbounds defined."
+msgstr "尚未定义手动出站。"
+
+msgid "Delete Outbound"
+msgstr "删除出站"
+
+msgid "DNS Mode: singbox (port %d)"
+msgstr "DNS 模式: singbox（端口 %d）"
+
+msgid "DNS Mode: %s"
+msgstr "DNS 模式: %s"
+
+msgid "Managed Dataplane Inbounds (%s): "
+msgstr "托管数据面入站 (%s): "
+
+msgid "Redirect TCP port %d · TPROXY UDP port %d · %s. Nimbus automatically injects missing transparent proxy or DNS inbounds at runtime and reuses matching user-defined ones (conflicting tun inbounds are stripped)."
+msgstr "TCP Redirect 端口 %d · UDP TPROXY 端口 %d · %s。Nimbus 运行时会自动补齐缺失的透明代理或 DNS 入站，并优先复用匹配的用户自定义入站（冲突的 tun 入站将被剥离）。"
+
+msgid "Custom Inbounds"
+msgstr "自定义入站"
+
+msgid "Add Inbound"
+msgstr "新建入站"
+
+msgid "Edit Inbound: %s"
+msgstr "编辑入站: %s"
+
+msgid "Listen Summary"
+msgstr "监听摘要"
+
+msgid "No custom inbounds configured."
+msgstr "尚未配置自定义入站。"
+
+msgid "Delete Inbound"
+msgstr "删除入站"
+
+msgid "(Default)"
+msgstr "（默认）"
+
+msgid "Advanced DNS JSON (dns.extra)"
+msgstr "高级 DNS JSON (dns.extra)"
+
+msgid "Additional top-level sing-box 1.14 dns fields (e.g. disable_cache, disable_expire, reverse_mapping, client_subnet). Do not use removed independent_cache."
+msgstr "附加的 sing-box 1.14 顶层 dns 字段（如 disable_cache、disable_expire、reverse_mapping、client_subnet）。请勿使用已移除的 independent_cache。"
+
+msgid "Advanced DNS JSON..."
+msgstr "高级 DNS JSON..."
+
+msgid "Final Server"
+msgstr "默认 DNS (final)"
+
+msgid "Strategy"
+msgstr "解析策略"
+
+msgid "DNS Servers"
+msgstr "DNS 服务器"
+
+msgid "Add DNS Server"
+msgstr "新建 DNS 服务器"
+
+msgid "Edit DNS Server: %s"
+msgstr "编辑 DNS 服务器: %s"
+
+msgid "No DNS servers defined."
+msgstr "尚未定义 DNS 服务器。"
+
+msgid "Delete DNS Server"
+msgstr "删除 DNS 服务器"
+
+msgid "DNS Rules"
+msgstr "DNS 规则"
+
+msgid "Add DNS Rule"
+msgstr "新建 DNS 规则"
+
+msgid "Edit DNS Rule"
+msgstr "编辑 DNS 规则"
+
+msgid "Target Server"
+msgstr "目标 DNS 服务器"
+
+msgid "Match Summary"
+msgstr "匹配摘要"
+
+msgid "No DNS rules defined."
+msgstr "尚未定义 DNS 规则。"
+
+msgid "Delete DNS Rule"
+msgstr "删除 DNS 规则"
+
+msgid "Advanced Route JSON (route.extra)"
+msgstr "高级路由 JSON (route.extra)"
+
+msgid "Additional top-level sing-box 1.14 route fields (e.g. auto_detect_interface, default_interface, default_mark)."
+msgstr "附加的 sing-box 1.14 顶层 route 字段（如 auto_detect_interface、default_interface、default_mark）。"
+
+msgid "Advanced Route JSON..."
+msgstr "高级路由 JSON..."
+
+msgid "Final Outbound"
+msgstr "默认出站 (final)"
+
+msgid "Default Domain Resolver"
+msgstr "默认域名解析器"
+
+msgid "Route Rules"
+msgstr "路由规则"
+
+msgid "Add Route Rule"
+msgstr "新建路由规则"
+
+msgid "Edit Route Rule"
+msgstr "编辑路由规则"
+
+msgid "Target Outbound"
+msgstr "目标出站"
+
+msgid "No route rules defined."
+msgstr "尚未定义路由规则。"
+
+msgid "Delete Route Rule"
+msgstr "删除路由规则"
+
+msgid "Rule Sets (rule_set)"
+msgstr "规则集 (rule_set)"
+
+msgid "Add Rule Set"
+msgstr "新建规则集"
+
+msgid "Edit Rule Set: %s"
+msgstr "编辑规则集: %s"
+
+msgid "No rule sets defined."
+msgstr "尚未定义规则集。"
+
+msgid "Delete Rule Set"
+msgstr "删除规则集"
+
+msgid "-- Select Override Snippet --"
+msgstr "-- 选择复写片段 --"
+
+msgid "Insert / Merge Snippet"
+msgstr "插入 / 合并片段"
+
+msgid "Top-level RFC 7396 JSON Merge Patch applied before dataplane synthesis (null deletes keys; arrays replace). Supports services (api, hysteria-realm), endpoints, http_clients, experimental, ntp, etc."
+msgstr "在数据面合成前应用的顶层 RFC 7396 JSON Merge Patch（设为 null 可删除键；数组将整体替换）。支持 services（api、hysteria-realm）、endpoints、http_clients、experimental、ntp 等字段。"
+
+msgid "mixed (LAN Mixed Proxy)"
+msgstr "mixed（LAN 混合代理）"
+
+msgid "LAN Mixed Proxy"
+msgstr "LAN 混合代理"
+
+msgid "socks (SOCKS5 Proxy)"
+msgstr "socks（SOCKS5 代理）"
+
+msgid "LAN SOCKS5 Proxy"
+msgstr "LAN SOCKS5 代理"
+
+msgid "redirect (TCP Transparent)"
+msgstr "redirect（TCP 透明代理）"
+
+msgid "Custom TCP Redirect"
+msgstr "自定义 TCP Redirect"
+
+msgid "tproxy (UDP Transparent)"
+msgstr "tproxy（UDP 透明代理）"
+
+msgid "Custom UDP TPROXY"
+msgstr "自定义 UDP TPROXY"
+
+msgid "direct"
+msgstr "direct（直连）"
+
+msgid "Direct"
+msgstr "直连"
+
+msgid "hysteria2"
+msgstr "hysteria2"
+
+msgid "Hysteria2 Node"
+msgstr "Hysteria2 节点"
+
+msgid "vless+tls"
+msgstr "vless+tls"
+
+msgid "VLESS + TLS"
+msgstr "VLESS + TLS"
+
+msgid "anytls"
+msgstr "anytls"
+
+msgid "AnyTLS Node"
+msgstr "AnyTLS 节点"
+
+msgid "shadowsocks"
+msgstr "shadowsocks"
+
+msgid "Shadowsocks Node"
+msgstr "Shadowsocks 节点"
+
+msgid "selector (Manual Select)"
+msgstr "selector（手动选择）"
+
+msgid "Manual Select"
+msgstr "手动选择"
+
+msgid "urltest (Auto Best)"
+msgstr "urltest（自动测速优选）"
+
+msgid "Auto Best"
+msgstr "自动测速优选"
+
+msgid "udp (223.5.5.5)"
+msgstr "udp (223.5.5.5)"
+
+msgid "China Direct DNS"
+msgstr "国内直连 DNS"
+
+msgid "https (1.1.1.1 DoH)"
+msgstr "https (1.1.1.1 DoH)"
+
+msgid "Proxy DoH"
+msgstr "代理 DoH"
+
+msgid "tls (DoT)"
+msgstr "tls (DoT)"
+
+msgid "DNS over TLS"
+msgstr "DNS over TLS"
+
+msgid "fakeip (1.14)"
+msgstr "fakeip (1.14)"
+
+msgid "Fake-IP Pool"
+msgstr "Fake-IP 地址池"
+
+msgid "China Rule Set -> dns-cn"
+msgstr "国内规则集 -> dns-cn"
+
+msgid "China domains direct"
+msgstr "国内域名直连"
+
+msgid "A/AAAA -> dns-fakeip"
+msgstr "A/AAAA -> dns-fakeip"
+
+msgid "Fake-IP A/AAAA"
+msgstr "Fake-IP A/AAAA"
+
+msgid "Reject HTTPS/SVCB"
+msgstr "拒绝 HTTPS/SVCB"
+
+msgid "Reject HTTPS/SVCB queries"
+msgstr "拒绝 HTTPS/SVCB 查询"
+
+msgid "Logical Rule"
+msgstr "逻辑规则"
+
+msgid "Logical DNS Rule"
+msgstr "逻辑 DNS 规则"
+
+msgid "sniff"
+msgstr "sniff（协议嗅探）"
+
+msgid "Protocol Sniff"
+msgstr "协议嗅探"
+
+msgid "hijack-dns"
+msgstr "hijack-dns（DNS 劫持）"
+
+msgid "Hijack DNS"
+msgstr "DNS 劫持"
+
+msgid "Private IP -> direct"
+msgstr "私有 IP -> direct"
+
+msgid "Private IP Direct"
+msgstr "私有 IP 直连"
+
+msgid "Rule Set -> direct"
+msgstr "规则集 -> direct"
+
+msgid "China Traffic Direct"
+msgstr "国内流量直连"
+
+msgid "Reject QUIC"
+msgstr "阻断 QUIC"
+
+msgid "Logical Route Rule"
+msgstr "逻辑路由规则"
+
+msgid "remote (geosite-cn, http_client)"
+msgstr "remote (geosite-cn, http_client)"
+
+msgid "China Domain Rule Set"
+msgstr "国内域名规则集"
+
+msgid "remote (geoip-cn, http_client)"
+msgstr "remote (geoip-cn, http_client)"
+
+msgid "China IP Rule Set"
+msgstr "国内 IP 规则集"
+
+msgid "local (.srs)"
+msgstr "local（本地 .srs）"
+
+msgid "Local Binary Rule Set"
+msgstr "本地二进制规则集"
+
+msgid "inline"
+msgstr "inline（内联规则）"
+
+msgid "Inline Domain Rules"
+msgstr "内联域名规则"
+
+msgid "Native sing-box API + Dashboard"
+msgstr "sing-box 原生 API + 控制面板"
+
+msgid "Cache File + Fake-IP Store"
+msgstr "缓存文件 + Fake-IP 持久化"
+
+msgid "Hysteria Realm Service"
+msgstr "Hysteria Realm 服务"
+
+msgid "HTTP Clients"
+msgstr "HTTP 客户端 (http_clients)"
+
+msgid "Value must be a JSON object."
+msgstr "值必须是合法的 JSON 对象。"
+
+msgid "logical (%s, %d sub-rules)"
+msgstr "逻辑规则 (%s, %d 条子规则)"
+
+msgid "%d inline rules"
+msgstr "%d 条内联规则"
+
+msgid "via %s"
+msgstr "经由 %s"
+
+msgid "dev:%s"
+msgstr "接口:%s"

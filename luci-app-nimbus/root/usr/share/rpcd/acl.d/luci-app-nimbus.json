@@ -12,7 +12,11 @@
 					"list_read",
 					"core_info",
 					"core_check_update",
-					"core_task_status"
+					"core_task_status",
+					"composer_get",
+					"composer_nodes",
+					"composer_preview",
+					"composer_import"
 				],
 				"network.interface": [ "dump" ],
 				"luci-rpc": [ "getHostHints" ]
@@ -36,7 +40,9 @@
 					"list_save",
 					"list_delete",
 					"list_update",
-					"core_install"
+					"core_install",
+					"composer_save",
+					"composer_mode_set"
 				]
 			},
 			"uci": [ "nimbus" ],

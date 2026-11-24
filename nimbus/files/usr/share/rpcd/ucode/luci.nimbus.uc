@@ -6,6 +6,7 @@ import * as ubus from 'ubus';
 import * as uloop from 'uloop';
 import * as common from 'nimbus.common';
 import * as cb from 'nimbus.config_builder';
+import * as cc from 'nimbus.config_composer';
 import * as nft from 'nimbus.nft_manager';
 import * as lu from 'nimbus.list_updater';
 import * as pu from 'nimbus.profile_updater';
@@ -20,6 +21,7 @@ const WORKER_DISPATCH =
 	"import * as fs from 'fs';\n" +
 	"import * as common from 'common';\n" +
 	"import * as cb from 'config_builder';\n" +
+	"import * as cc from 'config_composer';\n" +
 	"import * as nft from 'nft_manager';\n" +
 	"import * as lu from 'list_updater';\n" +
 	"import * as pu from 'profile_updater';\n" +
@@ -33,8 +35,90 @@ const WORKER_DISPATCH =
 	"\tres = { ok: true, counters: cnt, core_version: (ver && ver.ok) ? ver.version : null };\n" +
 	"} else if (op == 'profile_check') {\n" +
 	"\tlet raw = fs.readfile(a.raw_path);\n" +
-	"\tif (raw == null) res = { ok: false, code: common.ERR_INTERNAL, error: 'failed to read staged profile' };\n" +
-	"\telse res = cb.build_config({ ...(a.opts || {}), raw_config: raw, validate_only: true });\n" +
+	"\tif (raw == null) {\n" +
+	"\t\tres = { ok: false, code: common.ERR_INTERNAL, error: 'failed to read staged profile' };\n" +
+	"\t} else if (a.mode == 'composer') {\n" +
+	"\t\tlet parsed = null;\n" +
+	"\t\ttry { parsed = json(raw); } catch (e) { parsed = null; }\n" +
+	"\t\tif (type(parsed) != 'object' && type(parsed) != 'array') {\n" +
+	"\t\t\tres = { ok: false, code: common.ERR_VALIDATE_FAILED, error: 'profile content must be a valid JSON object or array' };\n" +
+	"\t\t} else {\n" +
+	"\t\t\tlet ext = cc.extract_source_nodes(parsed, { exclude_types: [] }, {});\n" +
+	"\t\t\tif (!ext.ok) {\n" +
+	"\t\t\t\tres = ext;\n" +
+	"\t\t\t} else if (length(ext.nodes) == 0) {\n" +
+	"\t\t\t\tres = { ok: false, code: common.ERR_VALIDATE_FAILED, error: 'profile contains no valid outbound entries' };\n" +
+	"\t\t\t} else {\n" +
+	"\t\t\t\tlet pids = (type(a.profile_ids) == 'array' && length(a.profile_ids) > 0) ? a.profile_ids : (a.profile_id ? [ a.profile_id ] : []);\n" +
+	"\t\t\t\tlet ov_docs = {};\n" +
+	"\t\t\t\tlet src_err = null;\n" +
+	"\t\t\t\tfor (let pid in pids) {\n" +
+	"\t\t\t\t\tif (a.composer?.sources?.[pid]?.enabled === true) {\n" +
+	"\t\t\t\t\t\tlet s_ext = cc.extract_source_nodes(parsed, a.composer.sources[pid], {});\n" +
+	"\t\t\t\t\t\tif (!s_ext.ok) { src_err = s_ext; break; }\n" +
+	"\t\t\t\t\t\tov_docs[pid] = parsed;\n" +
+	"\t\t\t\t\t}\n" +
+	"\t\t\t\t}\n" +
+	"\t\t\t\tif (src_err)\n" +
+	"\t\t\t\t\tres = src_err;\n" +
+	"\t\t\t\telse if (length(keys(ov_docs)) > 0)\n" +
+	"\t\t\t\t\tres = cb.build_config({ ...(a.opts || {}), compose_from_composer: true, composer: a.composer, override_profile_docs: ov_docs, validate_only: true });\n" +
+	"\t\t\t\telse\n" +
+	"\t\t\t\t\tres = { ok: true, checked: false };\n" +
+	"\t\t\t}\n" +
+	"\t\t}\n" +
+	"\t} else {\n" +
+	"\t\tres = cb.build_config({ ...(a.opts || {}), raw_config: raw, validate_only: true });\n" +
+	"\t}\n" +
+	"} else if (op == 'composer_preview') {\n" +
+	"\tlet bres = cb.build_config({ ...(a.opts || {}), compose_from_composer: true, composer: a.composer, validate_only: true, skip_check: true });\n" +
+	"\tif (!bres || !bres.ok) {\n" +
+	"\t\tres = { ok: false, code: bres?.code || common.ERR_VALIDATE_FAILED, error: bres?.error || 'composer transform failed', warnings: bres?.warnings || [] };\n" +
+	"\t} else {\n" +
+	"\t\tlet checked = false, check_ok = null, check_error = null;\n" +
+	"\t\tif (a.validate !== false && a.bin_ok === true) {\n" +
+	"\t\t\tchecked = true;\n" +
+	"\t\t\tlet tmp_cfg = sprintf('%s/nimbus-composer-preview.%s.%d.json', getenv('TMPDIR') || '/tmp', fs.readlink('/proc/self') || '0', time());\n" +
+	"\t\t\tif (!common.write_json_atomic(tmp_cfg, bres.config, 0600)) {\n" +
+	"\t\t\t\tcheck_ok = false;\n" +
+	"\t\t\t\tcheck_error = 'failed to stage preview config for sing-box check';\n" +
+	"\t\t\t} else {\n" +
+	"\t\t\t\tlet base_chk = a.check_dir || a.opts?.check_dir || common.CHECK_DIR;\n" +
+	"\t\t\t\tlet uniq_chk = sprintf('%s.%s', base_chk, fs.readlink('/proc/self') || '0');\n" +
+	"\t\t\t\tlet chk = cb.run_singbox_check(a.bin_path, tmp_cfg, uniq_chk);\n" +
+	"\t\t\t\tfs.unlink(tmp_cfg);\n" +
+	"\t\t\t\tcheck_ok = (chk.ok === true);\n" +
+	"\t\t\t\tcheck_error = check_ok ? null : (chk.error || 'sing-box check failed');\n" +
+	"\t\t\t}\n" +
+	"\t\t}\n" +
+	"\t\tres = {\n" +
+	"\t\t\tok: true,\n" +
+	"\t\t\tcomposed: bres.composed_config,\n" +
+	"\t\t\teffective: bres.config,\n" +
+	"\t\t\tcomposed_json: sprintf('%.2J\\n', bres.composed_config),\n" +
+	"\t\t\teffective_json: sprintf('%.2J\\n', bres.config),\n" +
+	"\t\t\twarnings: bres.context?.warnings || [],\n" +
+	"\t\t\tchecked: checked,\n" +
+	"\t\t\tcheck_ok: check_ok,\n" +
+	"\t\t\tcheck_error: check_error,\n" +
+	"\t\t\tsummary: bres.composer_summary || bres.context?.composer || null\n" +
+	"\t\t};\n" +
+	"\t}\n" +
+	"} else if (op == 'composer_save') {\n" +
+	"\tlet want_check = (a.validate !== false && a.bin_ok === true);\n" +
+	"\tlet bres = cb.build_config({ ...(a.opts || {}), compose_from_composer: true, composer: a.composer, validate_only: true, skip_check: !want_check });\n" +
+	"\tif (want_check && (!bres || !bres.ok)) {\n" +
+	"\t\tres = { ok: false, code: bres?.code || common.ERR_VALIDATE_FAILED, error: bres?.error || 'composer validation failed', warnings: bres?.warnings || [] };\n" +
+	"\t}\n" +
+	"\tif (!res) {\n" +
+	"\t\tlet sv = cc.save_composer(a.composer, a.composer_file);\n" +
+	"\t\tif (!sv || !sv.ok) {\n" +
+	"\t\t\tres = sv || { ok: false, code: common.ERR_INTERNAL, error: 'failed to save composer configuration' };\n" +
+	"\t\t} else {\n" +
+	"\t\t\tlet w = bres?.ok ? (bres.context?.warnings || []) : (bres?.warnings || []);\n" +
+	"\t\t\tres = { ok: true, checked: want_check, changed: sv.changed, mtime: sv.mtime, composer: sv.composer, composer_json: sprintf('%.2J\\n', sv.composer), warnings: w };\n" +
+	"\t\t}\n" +
+	"\t}\n" +
 	"} else if (op == 'profile_update') {\n" +
 	"\tres = pu.update_profiles(a.section_id, a.opts);\n" +
 	"} else if (op == 'list_update') {\n" +
@@ -75,6 +159,7 @@ function get_cfg() {
 		pid_file: ov.pid_file ?? getenv('NIMBUS_PID_FILE') ?? common.PID_FILE,
 		lock_file: ov.lock_file ?? getenv('NIMBUS_LOCK_FILE') ?? common.LOCK_FILE,
 		log_file: ov.log_file ?? getenv('NIMBUS_LOG_FILE') ?? common.LOG_FILE,
+		composer_file: ov.composer_file ?? getenv('NIMBUS_COMPOSER_FILE') ?? common.COMPOSER_FILE,
 		profiles_dir: ov.profiles_dir ?? getenv('NIMBUS_PROFILES_DIR') ?? common.PROFILES_DIR,
 		local_lists_dir: ov.local_lists_dir ?? getenv('NIMBUS_LOCAL_LISTS_DIR') ?? common.LOCAL_LISTS_DIR,
 		cache_lists_dir: ov.cache_lists_dir ?? getenv('NIMBUS_CACHE_LISTS_DIR') ?? common.CACHE_LISTS_DIR,
@@ -199,6 +284,7 @@ function build_worker_opts(cfg) {
 		state_file: cfg.state_file,
 		lock_file: cfg.lock_file,
 		config_file: cfg.config_file,
+		composer_file: cfg.composer_file,
 		profiles_dir: cfg.profiles_dir,
 		local_dir: cfg.local_lists_dir,
 		cache_dir: cfg.cache_lists_dir,
@@ -262,6 +348,10 @@ function build_child_env(cfg) {
 		env.NIMBUS_PID_FILE = cfg.pid_file;
 	if (cfg.log_file)
 		env.NIMBUS_LOG_FILE = cfg.log_file;
+	if (cfg.composer_file)
+		env.NIMBUS_COMPOSER_FILE = cfg.composer_file;
+	if (cfg.profiles_dir)
+		env.NIMBUS_PROFILES_DIR = cfg.profiles_dir;
 	if (cfg.bin_path)
 		env.NIMBUS_BIN_PATH = cfg.bin_path;
 	if (cfg.check_dir)
@@ -308,26 +398,52 @@ function run_detached(cmd, argv, env, on_exit) {
 	return true;
 }
 
-function run_async(req, cfg, cmd, argv, on_done) {
+function run_async_manual(req, cfg, cmd, argv, on_done, on_cleanup) {
 	let jid = ++job_seq;
 	let job = { proc: null, defer: null };
 	active_jobs[jid] = job;
+	let replied = false;
+	function reply_once(obj) {
+		if (!replied) {
+			replied = true;
+			req.reply(obj);
+		}
+	}
+	function cleanup_once() {
+		if (type(on_cleanup) == 'function') {
+			try {
+				on_cleanup();
+			} catch (e) {
+			}
+		}
+	}
 
 	job.proc = uloop.process(cmd, argv, build_child_env(cfg), (rc) => {
 		delete active_jobs[jid];
-		let reply_obj = null;
 		try {
-			reply_obj = on_done(rc);
+			on_done(rc, reply_once);
 		} catch (e) {
-			in_flight_write = false;
-			reply_obj = fail(common.ERR_INTERNAL, '' + e);
+			cleanup_once();
+			reply_once(fail(common.ERR_INTERNAL, '' + (e?.message || e)));
 		}
-		req.reply(reply_obj);
 	});
 
 	if (!job.proc) {
 		delete active_jobs[jid];
-		return { started: false, deferred: null, reply: on_done(-1) };
+		let sync_reply = null;
+		try {
+			on_done(-1, (obj) => {
+				sync_reply = obj;
+			});
+		} catch (e) {
+			cleanup_once();
+			sync_reply = fail(common.ERR_INTERNAL, '' + (e?.message || e));
+		}
+		if (sync_reply == null) {
+			cleanup_once();
+			sync_reply = fail(common.ERR_INTERNAL, 'failed to spawn async process');
+		}
+		return { started: false, deferred: null, reply: sync_reply };
 	}
 
 	let conn = get_ubus_conn(cfg);
@@ -353,6 +469,12 @@ function run_async(req, cfg, cmd, argv, on_done) {
 	return { started: true, deferred: job.defer, reply: null };
 }
 
+function run_async(req, cfg, cmd, argv, on_done, on_cleanup) {
+	return run_async_manual(req, cfg, cmd, argv, (rc, reply_once) => {
+		reply_once(on_done(rc));
+	}, on_cleanup);
+}
+
 function create_tmp_json_path(prefix) {
 	let tmp_dir = getenv('TMPDIR') || '/tmp';
 	common.ensure_dir(tmp_dir, 0755);
@@ -361,24 +483,54 @@ function create_tmp_json_path(prefix) {
 	return sprintf('%s/%s.%s.%d.json', tmp_dir, prefix, pid, job_seq);
 }
 
-function run_ucode_worker(req, cfg, op, worker_args, on_result) {
+function run_ucode_worker_manual(req, cfg, op, worker_args, on_result, on_cleanup) {
 	let args_path = create_tmp_json_path('nimbus-rpc-args');
 	let out_path = create_tmp_json_path('nimbus-rpc-out');
 
 	if (!common.write_json_atomic(args_path, worker_args || {}, 0600)) {
 		fs.unlink(args_path);
-		return { started: false, deferred: null, reply: on_result(fail(common.ERR_INTERNAL, 'failed to stage worker arguments'), -1) };
+		let sync_reply = null;
+		try {
+			on_result(fail(common.ERR_INTERNAL, 'failed to stage worker arguments'), -1, (obj) => {
+				sync_reply = obj;
+			});
+		} catch (e) {
+			if (type(on_cleanup) == 'function') {
+				try {
+					on_cleanup();
+				} catch (e2) {
+				}
+			}
+			sync_reply = fail(common.ERR_INTERNAL, '' + (e?.message || e));
+		}
+		if (sync_reply == null) {
+			if (type(on_cleanup) == 'function') {
+				try {
+					on_cleanup();
+				} catch (e2) {
+				}
+			}
+			sync_reply = fail(common.ERR_INTERNAL, 'failed to stage worker arguments');
+		}
+		return { started: false, deferred: null, reply: sync_reply };
 	}
 
-	return run_async(req, cfg, cfg.ucode_bin,
+	return run_async_manual(req, cfg, cfg.ucode_bin,
 		[ '-S', '-L', cfg.lib_dir, '-e', WORKER_DISPATCH, op, args_path, out_path ],
-		(rc) => {
+		(rc, reply_once) => {
 			let res = common.read_json(out_path);
 			fs.unlink(args_path);
 			fs.unlink(out_path);
-			return on_result(res, rc);
-		}
+			on_result(res, rc, reply_once);
+		},
+		on_cleanup
 	);
+}
+
+function run_ucode_worker(req, cfg, op, worker_args, on_result, on_cleanup) {
+	return run_ucode_worker_manual(req, cfg, op, worker_args, (res, rc, reply_once) => {
+		reply_once(on_result(res, rc));
+	}, on_cleanup);
 }
 
 function with_write_lock(cfg, fn) {
@@ -397,18 +549,25 @@ function with_write_lock(cfg, fn) {
 		}
 	}
 
-	let res = fn(release_once);
-	if (type(res) == 'object' && exists(res, '__async_result')) {
-		let ar = res.__async_result;
-		if (!ar.started) {
-			release_once();
-			return ar.reply;
+	try {
+		let res = fn(release_once);
+		if (type(res) == 'object' && exists(res, '__async_result')) {
+			let ar = res.__async_result;
+			if (!ar.started) {
+				in_flight_write = false;
+				release_once();
+				return ar.reply;
+			}
+			return ar.deferred;
 		}
-		return ar.deferred;
-	}
 
-	release_once();
-	return res;
+		release_once();
+		return res;
+	} catch (e) {
+		in_flight_write = false;
+		release_once();
+		return fail(common.ERR_INTERNAL, '' + (e?.message || e));
+	}
 }
 
 function sync_cron_nonblocking(kind, uci_cfg, cfg) {
@@ -585,12 +744,54 @@ function sanitize_apis(raw_apis) {
 	};
 }
 
-function build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, core_ver, cnt) {
+function parse_composer_arg(args, required) {
+	let a = (type(args) == 'object') ? args : {};
+	let has_json_key = (exists(a, 'composer_json') && a.composer_json != null);
+	if (has_json_key) {
+		if (type(a.composer_json) != 'string')
+			return fail(common.ERR_INVALID_ARG, 'composer_json must be a string');
+		if (length(a.composer_json) > common.MAX_DIRECT_TEXT_BYTES)
+			return fail(common.ERR_INVALID_ARG,
+				sprintf('composer_json exceeds %d bytes direct transfer limit', common.MAX_DIRECT_TEXT_BYTES));
+		if (length(trim(a.composer_json)) > 0) {
+			let parsed = null;
+			try {
+				parsed = json(a.composer_json);
+			} catch (e) {
+				parsed = null;
+			}
+			if (type(parsed) != 'object')
+				return fail(common.ERR_VALIDATE_FAILED, 'composer_json must be a valid JSON object');
+			return { ok: true, provided: true, composer: parsed };
+		}
+	}
+
+	if (exists(a, 'composer') && a.composer != null) {
+		if (type(a.composer) != 'object')
+			return fail(common.ERR_INVALID_ARG, 'composer must be a JSON object');
+		let ser = sprintf('%.2J\n', a.composer);
+		if (length(ser) > common.MAX_DIRECT_TEXT_BYTES)
+			return fail(common.ERR_INVALID_ARG,
+				sprintf('composer exceeds %d bytes direct transfer limit', common.MAX_DIRECT_TEXT_BYTES));
+		return { ok: true, provided: true, composer: a.composer };
+	}
+
+	if (has_json_key && length(a.composer_json) > 0)
+		return fail(common.ERR_VALIDATE_FAILED, 'composer_json must be a valid JSON object');
+
+	if (required)
+		return fail(common.ERR_INVALID_ARG, 'composer or composer_json is required');
+
+	return { ok: true, provided: false, composer: null };
+}
+
+function build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, core_ver, cnt, composer_summary) {
 	let g = uci_cfg?.global || {};
 	let p = uci_cfg?.proxy || {};
 	let d = uci_cfg?.dns || {};
 	let w = uci_cfg?.whitelist || {};
 	let eff = (type(st?.effective) == 'object') ? st.effective : {};
+	let config_mode = common.normalize_config_mode(uci_cfg);
 
 	let out_mark = eff.outbound_mark;
 	if (type(out_mark) == 'int')
@@ -602,10 +803,12 @@ function build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, 
 		ok: true,
 		state: normalize_state_name(st?.state),
 		enabled: (g.enabled == '1'),
+		config_mode: config_mode,
 		topology: (g.topology == 'side') ? 'side' : 'main',
 		proxy_mode: g.proxy_mode || 'tproxy_redirect',
 		fail_open: (g.fail_open == '1'),
 		active_profile: g.active_profile || '',
+		composer: (config_mode == common.CONFIG_MODE_COMPOSER) ? (composer_summary ?? null) : null,
 		process: proc_info,
 		core: {
 			installed: core_installed,
@@ -698,6 +901,10 @@ function reload_whitelist_async_or_sync(req, cfg, release_once, build_reply) {
 			if (!res || res.ok === false)
 				return fail(res?.code || common.ERR_INTERNAL, res?.error || 'failed to reload whitelist nftables sets');
 			return build_reply(res);
+		},
+		() => {
+			in_flight_write = false;
+			release_once();
 		}
 	);
 	return { __async_result: ar };
@@ -751,6 +958,9 @@ function dispatch_updater_rpc(req, cfg, kind) {
 				return { ...res, ...err_info };
 			}
 			return res;
+		}, () => {
+			in_flight_write = false;
+			release_once();
 		});
 		return { __async_result: ar };
 	});
@@ -820,10 +1030,17 @@ const methods = {
 			let st_name = normalize_state_name(st?.state);
 			let need_nft = (st_name == 'running' || st_name == 'lockdown') && !cfg.skip_nft && !cfg.mock_counters;
 			let need_ver = core_installed && (core_ver == null) && !cfg.skip_core_probe;
+			let config_mode = common.normalize_config_mode(uci_cfg);
+			let composer_summary = (config_mode == common.CONFIG_MODE_COMPOSER)
+				? cc.summarize_composer(uci_cfg, {
+					composer_file: cfg.composer_file,
+					profiles_dir: cfg.profiles_dir
+				})
+				: null;
 
 			if (!need_nft && !need_ver) {
 				let cnt = cfg.mock_counters || {};
-				return build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, core_ver, cnt);
+				return build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, core_ver, cnt, composer_summary);
 			}
 
 			return dispatch_async_read(req, cfg, 'status_probe', {
@@ -834,7 +1051,7 @@ const methods = {
 			}, (probe_res) => {
 				let cnt = cfg.mock_counters || probe_res?.counters || {};
 				let ver = core_ver ?? probe_res?.core_version ?? null;
-				return build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, ver, cnt);
+				return build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, ver, cnt, composer_summary);
 			});
 		}
 	},
@@ -887,6 +1104,9 @@ const methods = {
 						);
 					}
 					return { ok: true, state: next_state };
+				}, () => {
+					in_flight_write = false;
+					release_once();
 				});
 				return { __async_result: ar };
 			});
@@ -1012,12 +1232,50 @@ const methods = {
 				} catch (e) {
 					parsed = null;
 				}
-				if (type(parsed) != 'object') {
-					cleanup_upload(input.from_upload, cfg.upload_profile_path);
-					return fail(common.ERR_VALIDATE_FAILED, 'profile content must be a valid JSON object');
-				}
 
 				let uci_cfg = read_uci(cfg);
+				let config_mode = common.normalize_config_mode(uci_cfg);
+				if (config_mode == common.CONFIG_MODE_PROFILE) {
+					if (type(parsed) != 'object') {
+						cleanup_upload(input.from_upload, cfg.upload_profile_path);
+						return fail(common.ERR_VALIDATE_FAILED, 'profile content must be a valid JSON object');
+					}
+				} else {
+					if (type(parsed) != 'object' && type(parsed) != 'array') {
+						cleanup_upload(input.from_upload, cfg.upload_profile_path);
+						return fail(common.ERR_VALIDATE_FAILED, 'profile content must be a valid JSON object or array');
+					}
+					let ext = cc.extract_source_nodes(parsed, { exclude_types: [] }, {});
+					if (!ext.ok) {
+						cleanup_upload(input.from_upload, cfg.upload_profile_path);
+						return fail(ext.code || common.ERR_VALIDATE_FAILED, ext.error);
+					}
+					if (length(ext.nodes) == 0) {
+						cleanup_upload(input.from_upload, cfg.upload_profile_path);
+						return fail(common.ERR_VALIDATE_FAILED, 'profile contains no valid outbound entries');
+					}
+				}
+
+				let comp = null;
+				let enabled_ids = [];
+				let is_enabled_in_composer = false;
+				if (config_mode == common.CONFIG_MODE_COMPOSER) {
+					comp = cc.read_composer(cfg.composer_file);
+					if (comp) {
+						for (let k, sec in uci_cfg) {
+							if (type(sec) != 'object' || sec['.type'] != 'profile')
+								continue;
+							if (sec.filename != filename)
+								continue;
+							let id = sec['.name'] || k;
+							if (comp?.sources?.[id]?.enabled === true) {
+								is_enabled_in_composer = true;
+								push(enabled_ids, id);
+							}
+						}
+					}
+				}
+
 				let bin_path = cfg.bin_path || uci_cfg?.core?.bin_path || common.DEFAULT_CORE_PATH;
 				let bin_ok = (fs.stat(bin_path)?.type == 'file' && fs.access(bin_path, 'x'));
 
@@ -1031,12 +1289,18 @@ const methods = {
 
 					let st_file = fs.stat(target);
 					let st_run = common.read_state(cfg.state_file);
-					let active_id = uci_cfg?.global?.active_profile || '';
-					let active_sec = (length(active_id) > 0) ? uci_cfg?.[active_id] : null;
-					let reload_required = (type(active_sec) == 'object' &&
-						active_sec['.type'] == 'profile' &&
-						active_sec.filename == filename &&
-						st_run?.state == 'running');
+					let active_svc = (st_run?.state == 'running' || st_run?.state == 'lockdown');
+					let reload_required = false;
+					if (config_mode == common.CONFIG_MODE_COMPOSER) {
+						reload_required = (is_enabled_in_composer && active_svc);
+					} else {
+						let active_id = uci_cfg?.global?.active_profile || '';
+						let active_sec = (length(active_id) > 0) ? uci_cfg?.[active_id] : null;
+						reload_required = (type(active_sec) == 'object' &&
+							active_sec['.type'] == 'profile' &&
+							active_sec.filename == filename &&
+							active_svc);
+					}
 
 					return {
 						ok: true,
@@ -1048,7 +1312,9 @@ const methods = {
 					};
 				}
 
-				if (!want_validate || !bin_ok)
+				let need_core_check = (want_validate && bin_ok &&
+					(config_mode == common.CONFIG_MODE_PROFILE || is_enabled_in_composer));
+				if (!need_core_check)
 					return finish_save(false);
 
 				let raw_stage = create_tmp_json_path('nimbus-prof-raw');
@@ -1057,25 +1323,38 @@ const methods = {
 					return fail(common.ERR_INTERNAL, 'failed to stage profile for validation');
 				}
 
-				in_flight_write = true;
-				let ar = run_ucode_worker(req, cfg, 'profile_check', {
+				let check_args = {
 					raw_path: raw_stage,
+					mode: config_mode,
 					opts: {
 						...build_worker_opts(cfg),
 						bin_path: bin_path
 					}
-				}, (chk_res) => {
+				};
+				if (config_mode == common.CONFIG_MODE_COMPOSER) {
+					check_args.profile_id = enabled_ids[0];
+					check_args.profile_ids = enabled_ids;
+					check_args.composer = comp;
+				}
+
+				in_flight_write = true;
+				let ar = run_ucode_worker(req, cfg, 'profile_check', check_args, (chk_res) => {
 					fs.unlink(raw_stage);
 					let reply;
 					if (!chk_res || chk_res.ok !== true) {
 						cleanup_upload(input.from_upload, cfg.upload_profile_path);
 						reply = fail(chk_res?.code || common.ERR_VALIDATE_FAILED, chk_res?.error || 'sing-box check failed');
 					} else {
-						reply = finish_save(true);
+						reply = finish_save(chk_res.checked !== false);
 					}
 					in_flight_write = false;
 					release_once();
 					return reply;
+				}, () => {
+					in_flight_write = false;
+					fs.unlink(raw_stage);
+					cleanup_upload(input.from_upload, cfg.upload_profile_path);
+					release_once();
 				});
 				return { __async_result: ar };
 			});
@@ -1225,6 +1504,9 @@ const methods = {
 						active_profile: section_id,
 						reloaded: true
 					};
+				}, () => {
+					in_flight_write = false;
+					release_once();
 				});
 				return { __async_result: ar };
 			});
@@ -1245,14 +1527,23 @@ const methods = {
 				if (type(sec) != 'object' || sec['.type'] != 'profile')
 					return fail(common.ERR_NOT_FOUND, sprintf('profile section "%s" not found', section_id));
 
-				if (uci_cfg?.global?.active_profile == section_id)
-					return fail(common.ERR_CONFLICT, sprintf('cannot delete active profile "%s"', section_id));
+				let config_mode = common.normalize_config_mode(uci_cfg);
+				if (config_mode == common.CONFIG_MODE_PROFILE) {
+					if (uci_cfg?.global?.active_profile == section_id)
+						return fail(common.ERR_CONFLICT, sprintf('cannot delete active profile "%s"', section_id));
+				} else {
+					let comp = cc.read_composer(cfg.composer_file);
+					if (comp?.sources?.[section_id]?.enabled === true)
+						return fail(common.ERR_CONFLICT, sprintf('cannot delete profile "%s" while enabled in composer sources', section_id));
+				}
 
 				let cur = open_uci(cfg);
 				if (!cur)
 					return fail(common.ERR_INTERNAL, 'failed to open UCI cursor');
 
 				cur.delete('nimbus', section_id);
+				if (config_mode == common.CONFIG_MODE_COMPOSER && uci_cfg?.global?.active_profile == section_id)
+					cur.set('nimbus', 'global', 'active_profile', '');
 				let committed = cur.commit('nimbus');
 				cur.unload('nimbus');
 				if (!committed)
@@ -1662,6 +1953,367 @@ const methods = {
 		call: function(req) {
 			let cfg = get_cfg();
 			return cm.get_task_status({ task_file: cfg.core_task_file });
+		}
+	},
+
+	composer_get: {
+		args: {},
+		call: function(req) {
+			let cfg = get_cfg();
+			let uci_cfg = read_uci(cfg);
+			let config_mode = common.normalize_config_mode(uci_cfg);
+			let cpath = cfg.composer_file || common.COMPOSER_FILE;
+			let st = fs.stat(cpath);
+			let loaded = (st && st.type == 'file') ? cc.read_composer(cpath) : null;
+			let exists_flag = (loaded != null);
+			let comp = exists_flag ? loaded : cc.create_empty_composer();
+			let plist = pu.list_profiles(uci_cfg, {
+				uci_confdir: cfg.uci_confdir,
+				uci_savedir: cfg.uci_savedir,
+				profiles_dir: cfg.profiles_dir
+			});
+			let g = uci_cfg?.global || {};
+			let p = uci_cfg?.proxy || {};
+			let d = uci_cfg?.dns || {};
+
+			return {
+				ok: true,
+				config_mode: config_mode,
+				exists: exists_flag,
+				mtime: exists_flag ? st.mtime : null,
+				composer: comp,
+				composer_json: sprintf('%.2J\n', comp),
+				profiles: plist?.profiles || [],
+				auto_inbounds: {
+					proxy_mode: g.proxy_mode || 'tproxy_redirect',
+					redirect_port: parse_int_range(p.redirect_port, 1, 65535) ?? common.DEFAULT_REDIRECT_PORT,
+					tproxy_port: parse_int_range(p.tproxy_port, 1, 65535) ?? common.DEFAULT_TPROXY_PORT,
+					dns_mode: d.mode || 'none',
+					singbox_dns_port: parse_int_range(d.singbox_dns_port ?? d.listen_port, 1, 65535) ?? common.DEFAULT_DNS_PORT
+				}
+			};
+		}
+	},
+
+	composer_nodes: {
+		args: { profile_id: '', composer: {}, composer_json: '', include_regex: '', exclude_regex: '' },
+		call: function(req) {
+			let cfg = get_cfg();
+			let a = req.args || {};
+			let cp = parse_composer_arg(a, false);
+			if (!cp.ok)
+				return cp;
+
+			let profile_id = (exists(a, 'profile_id') && a.profile_id != null) ? a.profile_id : '';
+			if (type(profile_id) != 'string')
+				return fail(common.ERR_INVALID_ARG, 'profile_id must be a string');
+
+			let include_regex = (exists(a, 'include_regex') && a.include_regex != null) ? a.include_regex : '';
+			if (type(include_regex) != 'string')
+				return fail(common.ERR_INVALID_ARG, 'include_regex must be a string');
+
+			let exclude_regex = (exists(a, 'exclude_regex') && a.exclude_regex != null) ? a.exclude_regex : '';
+			if (type(exclude_regex) != 'string')
+				return fail(common.ERR_INVALID_ARG, 'exclude_regex must be a string');
+
+			let qopts = {
+				composer_file: cfg.composer_file,
+				profiles_dir: cfg.profiles_dir,
+				profile_id: trim(profile_id),
+				include_regex: include_regex,
+				exclude_regex: exclude_regex
+			};
+			if (cp.provided)
+				qopts.composer = cp.composer;
+
+			return cc.query_nodes(read_uci(cfg), qopts);
+		}
+	},
+
+	composer_preview: {
+		args: { composer: {}, composer_json: '', validate: true },
+		call: function(req) {
+			let cfg = get_cfg();
+			let a = req.args || {};
+			let cp = parse_composer_arg(a, false);
+			if (!cp.ok)
+				return cp;
+
+			let comp_to_use = null;
+			if (cp.provided) {
+				let norm = cc.normalize_composer(cp.composer);
+				if (!norm.ok)
+					return norm;
+				comp_to_use = norm.composer;
+			}
+
+			let want_validate = (a.validate !== false);
+			let uci_cfg = read_uci(cfg);
+			let bin_path = cfg.bin_path || uci_cfg?.core?.bin_path || common.DEFAULT_CORE_PATH;
+			let bin_ok = (fs.stat(bin_path)?.type == 'file' && fs.access(bin_path, 'x'));
+
+			return dispatch_async_read(req, cfg, 'composer_preview', {
+				composer: comp_to_use,
+				validate: want_validate,
+				bin_path: bin_path,
+				bin_ok: bin_ok,
+				check_dir: cfg.check_dir,
+				opts: {
+					...build_worker_opts(cfg),
+					bin_path: bin_path
+				}
+			}, (res) => {
+				return res || fail(common.ERR_INTERNAL, 'composer_preview worker failed');
+			});
+		}
+	},
+
+	composer_save: {
+		args: { composer: {}, composer_json: '', validate: true, reload: false },
+		call: function(req) {
+			let cfg = get_cfg();
+			let a = req.args || {};
+			let cp = parse_composer_arg(a, true);
+			if (!cp.ok)
+				return cp;
+
+			let norm = cc.normalize_composer(cp.composer);
+			if (!norm.ok)
+				return norm;
+
+			let norm_json = sprintf('%.2J\n', norm.composer);
+			if (length(norm_json) > common.MAX_DIRECT_TEXT_BYTES) {
+				return fail(common.ERR_INVALID_ARG,
+					sprintf('composer exceeds %d bytes direct transfer limit', common.MAX_DIRECT_TEXT_BYTES));
+			}
+
+			let want_validate = (a.validate !== false);
+			let want_reload = (a.reload === true);
+
+			return with_write_lock(cfg, (release_once) => {
+				let uci_cfg = read_uci(cfg);
+				let config_mode = common.normalize_config_mode(uci_cfg);
+				let bin_path = cfg.bin_path || uci_cfg?.core?.bin_path || common.DEFAULT_CORE_PATH;
+				let bin_ok = (fs.stat(bin_path)?.type == 'file' && fs.access(bin_path, 'x'));
+
+				in_flight_write = true;
+				let ar = run_ucode_worker_manual(req, cfg, 'composer_save', {
+					composer: norm.composer,
+					composer_file: cfg.composer_file,
+					validate: want_validate,
+					bin_path: bin_path,
+					bin_ok: bin_ok,
+					opts: {
+						...build_worker_opts(cfg),
+						bin_path: bin_path
+					}
+				}, (res, rc, reply_once) => {
+					if (!res || res.ok !== true) {
+						in_flight_write = false;
+						release_once();
+						reply_once(res || fail(common.ERR_INTERNAL, 'composer_save worker failed'));
+						return;
+					}
+
+					let st_before = common.read_state(cfg.state_file) || {};
+					let active_svc = (st_before.state == 'running' || st_before.state == 'lockdown');
+					let need_reload = (want_reload && active_svc && config_mode == common.CONFIG_MODE_COMPOSER);
+
+					if (!need_reload) {
+						in_flight_write = false;
+						release_once();
+						reply_once({
+							ok: true,
+							checked: res.checked === true,
+							changed: res.changed === true,
+							mtime: res.mtime ?? null,
+							reload_required: (active_svc && config_mode == common.CONFIG_MODE_COMPOSER && res.changed === true),
+							reloaded: false,
+							composer: res.composer,
+							composer_json: res.composer_json,
+							warnings: res.warnings || []
+						});
+						return;
+					}
+
+					// Release nimbus.lock before spawning init reload so supervisor can acquire it
+					release_once();
+
+					let jid2 = ++job_seq;
+					let job2 = { proc: null };
+					active_jobs[jid2] = job2;
+					job2.proc = uloop.process(cfg.init_script, [ 'reload' ], build_child_env(cfg), (rc2) => {
+						delete active_jobs[jid2];
+						in_flight_write = false;
+						try {
+							let st_after = common.read_state(cfg.state_file) || {};
+							let next_state = normalize_state_name(st_after.state);
+							if (rc2 != 0 || next_state == 'lockdown' || st_after.state == 'error') {
+								reply_once(fail(
+									common.ERR_VALIDATE_FAILED,
+									st_after.last_error || sprintf('service reload failed (exit %d)', rc2),
+									{
+										checked: res.checked === true,
+										changed: res.changed === true,
+										mtime: res.mtime ?? null,
+										reload_required: true,
+										reloaded: false,
+										state: next_state,
+										composer: res.composer,
+										composer_json: res.composer_json,
+										warnings: res.warnings || []
+									}
+								));
+								return;
+							}
+							reply_once({
+								ok: true,
+								checked: res.checked === true,
+								changed: res.changed === true,
+								mtime: res.mtime ?? null,
+								reload_required: true,
+								reloaded: true,
+								composer: res.composer,
+								composer_json: res.composer_json,
+								warnings: res.warnings || []
+							});
+						} catch (e) {
+							reply_once(fail(common.ERR_INTERNAL, '' + e));
+						}
+					});
+
+					if (!job2.proc) {
+						delete active_jobs[jid2];
+						in_flight_write = false;
+						reply_once(fail(common.ERR_INTERNAL, 'failed to spawn service reload process', {
+							checked: res.checked === true,
+							changed: res.changed === true,
+							mtime: res.mtime ?? null,
+							reload_required: true,
+							reloaded: false
+						}));
+					}
+				}, () => {
+					in_flight_write = false;
+					release_once();
+				});
+				return { __async_result: ar };
+			});
+		}
+	},
+
+	composer_mode_set: {
+		args: { mode: '', reload: false },
+		call: function(req) {
+			let cfg = get_cfg();
+			let mode = req.args?.mode;
+			if (type(mode) != 'string' || (mode != common.CONFIG_MODE_COMPOSER && mode != common.CONFIG_MODE_PROFILE))
+				return fail(common.ERR_INVALID_ARG, 'mode must be composer or profile');
+
+			let want_reload = (req.args?.reload === true);
+
+			return with_write_lock(cfg, (release_once) => {
+				let uci_cfg = read_uci(cfg);
+				let cur = open_uci(cfg);
+				if (!cur)
+					return fail(common.ERR_INTERNAL, 'failed to open UCI cursor');
+
+				if (type(uci_cfg?.global) != 'object')
+					cur.set('nimbus', 'global', 'main');
+				cur.set('nimbus', 'global', 'config_mode', mode);
+				let committed = cur.commit('nimbus');
+				cur.unload('nimbus');
+				if (!committed)
+					return fail(common.ERR_INTERNAL, 'failed to commit config_mode');
+
+				let st = common.read_state(cfg.state_file) || {};
+				let active_svc = (st.state == 'running' || st.state == 'lockdown');
+				if (!want_reload || !active_svc) {
+					return {
+						ok: true,
+						config_mode: mode,
+						reload_required: active_svc,
+						reloaded: false
+					};
+				}
+
+				in_flight_write = true;
+				release_once();
+
+				let ar = run_async(req, cfg, cfg.init_script, [ 'reload' ], (rc) => {
+					in_flight_write = false;
+					let st_after = common.read_state(cfg.state_file) || {};
+					let next_state = normalize_state_name(st_after.state);
+					if (rc != 0 || next_state == 'lockdown' || st_after.state == 'error') {
+						return fail(
+							common.ERR_VALIDATE_FAILED,
+							st_after.last_error || sprintf('service reload failed (exit %d)', rc),
+							{ config_mode: mode, reload_required: true, reloaded: false, state: next_state }
+						);
+					}
+					return {
+						ok: true,
+						config_mode: mode,
+						reload_required: true,
+						reloaded: true
+					};
+				}, () => {
+					in_flight_write = false;
+					release_once();
+				});
+				return { __async_result: ar };
+			});
+		}
+	},
+
+	composer_import: {
+		args: { source: '', profile_id: '', content: '' },
+		call: function(req) {
+			let cfg = get_cfg();
+			let a = req.args || {};
+			let source = (type(a.source) == 'string') ? trim(a.source) : '';
+			let raw_cfg = null;
+
+			if (source == 'profile') {
+				let pid = (type(a.profile_id) == 'string') ? trim(a.profile_id) : '';
+				if (length(pid) == 0)
+					return fail(common.ERR_INVALID_ARG, 'profile_id is required when source is profile');
+				if (!is_valid_section_id(pid))
+					return fail(common.ERR_INVALID_ARG, sprintf('invalid profile_id: %s', pid));
+
+				let uci_cfg = read_uci(cfg);
+				let sec = uci_cfg?.[pid];
+				if (type(sec) != 'object' || sec['.type'] != 'profile')
+					return fail(common.ERR_NOT_FOUND, sprintf('profile section "%s" not found', pid));
+
+				let rf = read_validated_file(sec.filename, common.is_valid_profile_filename, cfg.profiles_dir, 'profile');
+				if (!rf.ok)
+					return rf;
+				raw_cfg = rf.content;
+			} else if (source == 'json') {
+				if (type(a.content) != 'string')
+					return fail(common.ERR_INVALID_ARG, 'content must be a string');
+				if (length(a.content) > common.MAX_DIRECT_TEXT_BYTES) {
+					return fail(common.ERR_INVALID_ARG,
+						sprintf('content exceeds %d bytes direct transfer limit', common.MAX_DIRECT_TEXT_BYTES));
+				}
+				if (length(trim(a.content)) == 0)
+					return fail(common.ERR_INVALID_ARG, 'content is required when source is json');
+				raw_cfg = a.content;
+			} else {
+				return fail(common.ERR_INVALID_ARG, 'source must be profile or json');
+			}
+
+			let res = cc.import_from_singbox(raw_cfg);
+			if (!res || !res.ok)
+				return res || fail(common.ERR_VALIDATE_FAILED, 'failed to import sing-box configuration');
+
+			return {
+				ok: true,
+				composer: res.composer,
+				composer_json: sprintf('%.2J\n', res.composer),
+				warnings: res.warnings || []
+			};
 		}
 	}
 };

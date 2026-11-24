@@ -514,9 +514,9 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           set -- repo/opkg/all/*.ipk repo/apk/all/*.apk repo/SHA256SUMS
           if [ "${IS_PRERELEASE:-false}" = "true" ]; then
-            gh release create "$tag" "$@" --title "$tag" --generate-notes --prerelease
+            gh release create "$tag" "$@" --repo "${GITHUB_REPOSITORY}" --title "$tag" --generate-notes --prerelease
           else
-            gh release create "$tag" "$@" --title "$tag" --generate-notes
+            gh release create "$tag" "$@" --repo "${GITHUB_REPOSITORY}" --title "$tag" --generate-notes
           fi
 
   deploy-pages:

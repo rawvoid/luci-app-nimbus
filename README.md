@@ -44,11 +44,11 @@ opkg update
 opkg install luci-app-nimbus luci-i18n-nimbus-zh-cn
 ```
 
-后续升级：
+后续升级（将 `nimbus` 放最后，避免 `opkg` 逐包升级时先停代理影响后续包下载）：
 
 ```sh
 opkg update
-opkg upgrade nimbus luci-app-nimbus luci-i18n-nimbus-zh-cn
+opkg upgrade luci-i18n-nimbus-zh-cn luci-app-nimbus nimbus
 ```
 
 ### OpenWrt 25.12+（`apk`）

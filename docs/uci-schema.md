@@ -41,7 +41,7 @@
 | `wan_interfaces` | `list(string)` | `['wan', 'wan6']` | OpenWrt `network` 逻辑接口名列表 | `topology='main'` 时使用，提取公网 IPv4/IPv6 加入 `wan_v4`/`wan_v6` 绕行 |
 | `ipv4_enable` | `bool` | `'1'` | `'0'`, `'1'` | 启用 IPv4 透明代理 |
 | `ipv6_enable` | `bool` | `'1'` | `'0'`, `'1'` | 启用 IPv6 透明代理 |
-| `proxy_local` | `bool` | `'0'` | `'0'`, `'1'` | 是否代理路由器本机出站流量（`output` 链） |
+| `proxy_local` | `bool` | `'0'` | `'0'`, `'1'` | 是否代理路由器本机出站流量（`output` 链；开启后启用 `SO_MARK` + `meta skgid` 双防环路、DHCP/NTP 豁免与 `ct mark` 快速路径） |
 | `log_level` | `enum` | `'warn'` | `'trace'`, `'debug'`, `'info'`, `'warn'`, `'error'`, `'fatal'`, `'panic'` | 覆写运行期 `sing-box` 日志级别 |
 | `gomemlimit` | `string` | `'auto'` | `'auto'` 或 Go 内存格式（如 `'128MiB'`） | 注入 `GOMEMLIMIT`；`'auto'` 按 `min(MemTotal * 0.4, 256MiB)` 计算 |
 

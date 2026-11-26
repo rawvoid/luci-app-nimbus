@@ -235,6 +235,8 @@ check(common.write_state({
 	core: { bin_path: singbox_bin, version: '1.14.4' },
 	effective: {
 		outbound_mark: '0xff',
+		proxy_local: true,
+		skgid: 450,
 		redirect_port: 7891,
 		tproxy_port: 7892,
 		dns_mode: 'singbox',
@@ -264,6 +266,8 @@ check(st_res.ok === true && st_res.state == 'running' &&
 	st_res.process.running === true && st_res.process.pid == int(self_pid, 10) && st_res.process.rss_kb > 0 &&
 	st_res.core.installed === true && st_res.core.version == '1.14.4' &&
 	st_res.effective.outbound_mark == '0xff' &&
+	st_res.effective.proxy_local === true &&
+	st_res.effective.skgid == 450 &&
 	st_res.counters.tcp_packets == 1234 && st_res.counters.udp_packets == 42 &&
 	st_res.apis.singbox_api.has_secret === true && st_res.apis.clash_api.has_secret === true,
 	'status aggregates state.json, live /proc/<pid>, core, counters, and API flags');

@@ -342,12 +342,20 @@ return view.extend({
 			if (eff.dns_mode === 'singbox' && eff.dns_port)
 				dnsText = '%s (127.0.0.1:%d)'.format(eff.dns_mode, eff.dns_port);
 
+			var proxyLocalText = _('Disabled');
+			if (eff.proxy_local === true) {
+				proxyLocalText = (eff.skgid != null)
+					? _('%s (skgid %d)').format(_('Enabled'), eff.skgid)
+					: _('%s (SO_MARK only)').format(_('Enabled'));
+			}
+
 			dom.content(dataplaneBox, [
 				E('h3', {}, _('Effective Data Plane & Whitelist')),
 				renderKeyValueRows([
 					[ _('TCP Redirect Port'), fmtPortSource(eff.redirect_port, src.redirect) ],
 					[ _('UDP TPROXY Port'), fmtPortSource(eff.tproxy_port, src.tproxy) ],
 					[ _('Outbound Mark'), eff.outbound_mark || '-' ],
+					[ _('Router Outbound Proxy'), proxyLocalText ],
 					[ _('DNS Takeover'), dnsText ],
 					[ _('Fake-IP Ranges'), fakeipParts.length ? fakeipParts.join(' | ') : _('None detected') ],
 					[ _('Whitelist Bypass'), '%s (%s: %d, %s: %d)'.format(

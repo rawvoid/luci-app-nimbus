@@ -78,6 +78,8 @@
   },
   "effective": {
     "outbound_mark": "0xff",
+    "proxy_local": false,
+    "skgid": 450,
     "redirect_port": 7891,
     "tproxy_port": 7892,
     "tun_iface": null,

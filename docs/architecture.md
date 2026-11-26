@@ -200,7 +200,8 @@
      - 内部维护崩溃重试窗口（如 3600s 窗口 / 3s 退避 / 最多 5 次）；瞬时崩溃期间保留防火墙表与路由；耗尽重试次数后删除 PID 文件、执行统一 Fail Handler（按 `fail_open` 切入 `LOCKDOWN` 或回落直连）并自身退出；
      - 每 30s 通过 `uloop.timer` 检查 `/var/log/nimbus.log`：超过 512KB 时就地截断保留尾部 256KB（对齐换行边界），配合 `sing-box` 原生 `O_APPEND` 打开模式避免管道转发开销与空洞文件。
 - **异常回调**：启动校验失败或 `supervisor.uc` 重试耗尽时，统一调用 Fail Handler 按 `fail_open` 执行切入 `LOCKDOWN` 或回落直连。
-- **智能差异化重载（`reload_service`）**：`init.d` 通过 `procd_add_reload_trigger "nimbus"` 响应 UCI 变更；`reload_service` 先合成临时配置 `/var/run/nimbus/config.json.tmp` 并将其 `SHA256` 与在线 `/var/run/nimbus/config.json` 比对，同时刷新规则表、路由及 `dnsmasq` 与 `crond`；若 `config.json` 哈希未变化（例如仅修改 `core.mirror_prefix` 或 `whitelist.*`），则**跳过重启 `sing-box` 进程**（仍确保双态规则/Set 与定时任务同步）。
+- **进程身份与双防环路（`UID=0` + `GID=nimbus`）**：`nimbus` 包通过 `USERID:=nimbus:nimbus`（并在 `uci-defaults` / `postinst` 经 `/lib/functions.sh` 的 `group_add_next nimbus` 兜底兼容 `apk` 升级）创建专用 `nimbus` 组；`init.d/nimbus` 在该组存在时仅声明 `procd_set_param group "nimbus"`（不降 `user`，保留 `UID=0` 与 `CAP_NET_ADMIN`，零 `procd-ujail`/`libcap` 依赖），由 `nft_manager.uc` 在 `output` 链注入 `meta skgid <gid> return` 叠加 `meta mark $OUTBOUND_MARK return`。
+- **智能差异化重载（`reload_service`）**：`init.d` 通过 `procd_add_reload_trigger "nimbus"` 响应 UCI 变更；`reload_service` 先合成临时配置 `/var/run/nimbus/config.json.tmp` 并将其 `SHA256` 与在线 `/var/run/nimbus/config.json` 比对，同时刷新规则表、路由及 `dnsmasq` 与 `crond`；若 `config.json` 哈希、内核二进制以及运行进程 `/proc/<pid>/status` 中的有效 `Gid` 均未变化（例如仅修改 `core.mirror_prefix`、`whitelist.*` 或在无 `local` DNS 改写时切换 `proxy_local`），则**跳过重启 `sing-box` 进程**（仍确保双态规则/Set 与定时任务同步）。
 
 ### 6.3 `hotplug.d/iface/90-nimbus` 事件自愈
 监听网络接口的 `ifup` / `ifupdate` / `ifdown` 事件：

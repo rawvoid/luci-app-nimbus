@@ -328,4 +328,24 @@ check(common.log_msg('warn', 'test warning message', log_path), 'log_msg appends
 let after_msg = fs.readfile(log_path);
 check(index(after_msg, '[nimbus] [warn] test warning message\n') >= 0, 'log_msg format matches');
 
+// 14. resolve_group_gid & read_pid_gid
+let mock_group = work_dir + '/mock_group';
+check(common.atomic_write(mock_group,
+	'# comment\nroot:x:0:\nnimbus:x:450:\nzero_grp:x:0:\nbad_grp:x:abc:\n', 0644),
+	'write mock_group fixture');
+check(common.resolve_group_gid('nimbus', mock_group) == 450 &&
+	common.resolve_group_gid('zero_grp', mock_group) == null &&
+	common.resolve_group_gid('root', mock_group) == null &&
+	common.resolve_group_gid('bad_grp', mock_group) == null &&
+	common.resolve_group_gid('missing', mock_group) == null &&
+	common.resolve_group_gid('nimbus', work_dir + '/no_such_group') == null,
+	'resolve_group_gid parses valid non-zero GID and strictly rejects gid=0/invalid/missing');
+
+let mock_pid = work_dir + '/self.pid';
+let self_pid = fs.readlink('/proc/self');
+check(common.atomic_write(mock_pid, self_pid + '\n', 0644), 'write self.pid');
+let self_gid = common.read_pid_gid(mock_pid);
+check(type(self_gid) == 'int' && self_gid >= 0, 'read_pid_gid reads live process effective GID from /proc/<pid>/status');
+check(common.read_pid_gid(work_dir + '/nonexistent.pid') == null, 'read_pid_gid returns null when PID file missing');
+
 printf('test_common.uc: %d assertions passed\n', passed);

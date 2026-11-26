@@ -668,6 +668,22 @@ function format_set_block(name, set_type, flags_line, elements, quote_elems) {
 	return join('\n', lines);
 }
 
+function resolve_skgid(opts) {
+	let options = opts || {};
+	if (exists(options, 'skgid')) {
+		if (options.skgid === false || options.skgid === 0 || options.skgid == null || options.skgid === '')
+			return null;
+		if (type(options.skgid) == 'int')
+			return (options.skgid > 0 && options.skgid <= 4294967294) ? options.skgid : null;
+		if (type(options.skgid) == 'string' && match(trim(options.skgid), /^[0-9]+$/)) {
+			let n = int(trim(options.skgid), 10);
+			return (!common.isnan(n) && n > 0 && n <= 4294967294) ? n : null;
+		}
+		return null;
+	}
+	return common.resolve_group_gid(common.NIMBUS_GROUP, options.group_file);
+}
+
 function generate_rules(opts) {
 	let options = opts || {};
 	let uci_cfg = options.uci || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
@@ -687,6 +703,7 @@ function generate_rules(opts) {
 	let router_proxy_raw = options.router_proxy ?? options.proxy_local ??
 		g.proxy_local ?? g.router_proxy ?? p.proxy_local ?? p.router_proxy ?? '0';
 	let proxy_local = (router_proxy_raw == '1' || router_proxy_raw === 1 || router_proxy_raw === true);
+	let skgid = proxy_local ? resolve_skgid(options) : null;
 
 	let hijack_dns_raw = options.hijack_lan_dns ?? d.hijack_lan_dns ?? '0';
 	let hijack_lan_dns = (hijack_dns_raw == '1' || hijack_dns_raw === 1 || hijack_dns_raw === true);
@@ -918,32 +935,20 @@ function generate_rules(opts) {
 	if (proxy_local) {
 		push(out, '');
 		push(out, '\tchain output_tcp {');
-		push(out, '\t\ttype nat hook output priority -100; policy accept;');
-		push(out, '\t\toifname "lo" return');
-		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
+		push(out, '\t\ttype nat hook output priority -98; policy accept;');
 		push(out, '\t\tmeta l4proto != tcp return');
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
+		if (skgid != null)
+			push(out, sprintf('\t\tmeta skgid %d return', skgid));
+		push(out, '\t\toifname "lo" return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
+		push(out, '\t\tct status dnat return');
 		push(out, '\t\tfib daddr type local return');
 		if (ipv4_enable)
 			push(out, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv6_enable)
 			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @reserved_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @reserved_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @lan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @lan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @wan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @wan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @bypass_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @bypass_v6 return');
+		append_daddr_bypass_lines(out, ipv4_enable, ipv6_enable, 'return');
 		if (ipv4_enable)
 			push(out, sprintf('\t\tmeta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv6_enable)
@@ -953,10 +958,12 @@ function generate_rules(opts) {
 		push(out, '');
 		push(out, '\tchain output_udp {');
 		push(out, '\t\ttype route hook output priority mangle; policy accept;');
-		push(out, '\t\toifname "lo" return');
-		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tmeta l4proto != udp return');
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
+		if (skgid != null)
+			push(out, sprintf('\t\tmeta skgid %d return', skgid));
+		push(out, '\t\toifname "lo" return');
+		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tfib daddr type local return');
 		push(out, '\t\tct status dnat return');
 		push(out, '\t\tct direction reply return');
@@ -964,30 +971,18 @@ function generate_rules(opts) {
 			push(out, '\t\tmeta nfproto ipv4 udp sport 68 udp dport 67 return');
 		if (ipv6_enable)
 			push(out, '\t\tmeta nfproto ipv6 udp sport 546 udp dport 547 return');
+		push(out, '\t\tudp dport 123 return');
+		push(out, '\t\tct mark & 0x30 == 0x10 return');
+		push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta mark set %s accept', proxy_mark_hex));
 		if (ipv4_enable)
-			push(out, sprintf('\t\tip daddr @fakeip_v4 meta mark set %s accept', proxy_mark_hex));
+			push(out, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tip6 daddr @fakeip_v6 meta mark set %s accept', proxy_mark_hex));
+			push(out, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
+		append_daddr_bypass_lines(out, ipv4_enable, ipv6_enable, 'ct mark set ct mark & 0xffffffcf | 0x10 return');
 		if (ipv4_enable)
-			push(out, '\t\tip daddr @reserved_v4 return');
+			push(out, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
 		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @reserved_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @lan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @lan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @wan_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @wan_v6 return');
-		if (ipv4_enable)
-			push(out, '\t\tip daddr @bypass_v4 return');
-		if (ipv6_enable)
-			push(out, '\t\tip6 daddr @bypass_v6 return');
-		if (ipv4_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv4 meta mark set %s accept', proxy_mark_hex));
-		if (ipv6_enable)
-			push(out, sprintf('\t\tmeta nfproto ipv6 meta mark set %s accept', proxy_mark_hex));
+			push(out, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
 		push(out, '\t}');
 	}
 
@@ -1599,6 +1594,7 @@ export {
 	is_valid_ifname,
 	classify_ip_or_cidr,
 	resolve_network_context,
+	resolve_skgid,
 	parse_device_rules,
 	parse_port_elements,
 	generate_rules,

@@ -850,6 +850,8 @@ function build_status_payload(uci_cfg, st, proc_info, bin_path, core_installed, 
 		},
 		effective: {
 			outbound_mark: out_mark,
+			proxy_local: to_bool(eff.proxy_local ?? g.proxy_local ?? g.router_proxy, false),
+			skgid: (type(eff.skgid) == 'int' && eff.skgid > 0) ? eff.skgid : null,
 			redirect_port: eff.redirect_port ?? null,
 			tproxy_port: eff.tproxy_port ?? null,
 			tun_iface: null,

@@ -29,7 +29,7 @@ check(common.ensure_dir(conf_dir, 0755), 'create conf_dir');
 check(common.ensure_dir(save_dir, 0755), 'create save_dir');
 check(common.ensure_dir(run_dir, 0755), 'create run_dir');
 
-function write_uci_nimbus(fail_open, dns_mode) {
+function write_uci_nimbus(fail_open, dns_mode, proxy_local) {
 	let text = sprintf(
 		"config main 'global'\n" +
 		"\toption enabled '1'\n" +
@@ -38,6 +38,7 @@ function write_uci_nimbus(fail_open, dns_mode) {
 		"\toption fail_open '%s'\n" +
 		"\toption ipv4_enable '1'\n" +
 		"\toption ipv6_enable '1'\n" +
+		"\toption proxy_local '%s'\n" +
 		"\toption gomemlimit 'auto'\n\n" +
 		"config proxy 'proxy'\n" +
 		"\toption redirect_port '7891'\n" +
@@ -72,6 +73,7 @@ function write_uci_nimbus(fail_open, dns_mode) {
 		"\toption auto_update '1'\n" +
 		"\toption update_interval_hours '24'\n",
 		fail_open,
+		proxy_local || '0',
 		dns_mode
 	);
 	return common.atomic_write(conf_dir + '/nimbus', text, 0644);
@@ -414,6 +416,14 @@ check(index(init_script, 'if [ "${NIMBUS_PREPARED:-0}" != "1" ]; then') >= 0 &&
 let makefile_text = fs.readfile(repo_root + '/nimbus/Makefile') || '';
 check(index(makefile_text, '$(INSTALL_BIN) ./files/etc/hotplug.d/iface/90-nimbus $(1)/etc/hotplug.d/iface/90-nimbus') >= 0,
 	'nimbus/Makefile installs 90-nimbus with $(INSTALL_BIN) (0755)');
+check(index(makefile_text, 'USERID:=nimbus:nimbus') >= 0 &&
+	index(makefile_text, 'group_exists nimbus || group_add_next nimbus') >= 0,
+	'nimbus/Makefile declares USERID:=nimbus:nimbus and apk-safe postinst group fallback');
+check(index(init_script, 'procd_set_param group "nimbus"') >= 0,
+	'init.d/nimbus sets procd group "nimbus" while keeping UID=0');
+let uci_defaults_text = fs.readfile(repo_root + '/nimbus/files/etc/uci-defaults/99-nimbus') || '';
+check(index(uci_defaults_text, 'group_exists nimbus || group_add_next nimbus') >= 0,
+	'uci-defaults/99-nimbus ensures nimbus group exists');
 
 // 7. P0 regression test: Fail Handler falls back to static emergency lockdown if primary lockdown fails, and marks error if nft is completely broken
 check(write_uci_nimbus('0', 'none'), 'reset uci fail_open=0 for emergency lockdown fallback test');
@@ -517,5 +527,42 @@ check(system([ '/bin/sh', '-c', '/usr/sbin/nft list table inet nimbus >/dev/null
 check(run_sup_cmd('--stop', live_hotplug_env) == 0, 'clean up live table via --stop');
 check(common.read_state(state_file)?.emergency_lockdown === false,
 	'--stop resets emergency_lockdown to false');
+
+// 9. Plan C: skgid state recording, missing-group fallback warning, and GID-mismatch restart detection
+let grp_with_nimbus = work_dir + '/group_nimbus';
+let grp_without_nimbus = work_dir + '/group_empty';
+check(common.atomic_write(grp_with_nimbus, 'root:x:0:\nnimbus:x:450:\n', 0644), 'seed group file with nimbus=450');
+check(common.atomic_write(grp_without_nimbus, 'root:x:0:\n', 0644), 'seed group file without nimbus');
+
+check(write_uci_nimbus('0', 'none', '1'), 'configure proxy_local=1 for Plan C supervisor test');
+check(run_sup_cmd('--prepare-start', { NIMBUS_GROUP_FILE: grp_with_nimbus }) == 0,
+	'--prepare-start succeeds with proxy_local=1 and nimbus group 450');
+let st_pl_gid = common.read_state(state_file);
+let pl_rules = fs.readfile(rules_file) || '';
+check(st_pl_gid.effective?.proxy_local === true &&
+	st_pl_gid.effective?.skgid == 450 &&
+	index(pl_rules, 'meta skgid 450 return') >= 0 &&
+	index(pl_rules, 'udp dport 123 return') >= 0 &&
+	length(filter(st_pl_gid.warnings || [], (w) => index(w, 'system group "nimbus" not found') >= 0)) == 0,
+	'--prepare-start records effective.skgid=450, generates skgid/NTP rules, and emits no missing-group warning');
+
+// Live process is running with self_pid (gid=0 != 450): --prepare-reload MUST return 0 (restart required) even when config.json is unchanged
+check(common.atomic_write(pid_file, self_pid + '\n', 0644), 'seed alive PID (gid!=450) for gid mismatch test');
+check(run_sup_cmd('--prepare-reload', { NIMBUS_GROUP_FILE: grp_with_nimbus }) == 0,
+	'--prepare-reload forces restart (exit 0) when live process GID differs from expected nimbus skgid');
+
+// Missing nimbus group degrades gracefully with warning and skips restart when config/core unchanged
+check(run_sup_cmd('--prepare-start', { NIMBUS_GROUP_FILE: grp_without_nimbus }) == 0,
+	'--prepare-start degrades gracefully when nimbus group is missing');
+let st_pl_nogid = common.read_state(state_file);
+let pl_nogid_rules = fs.readfile(rules_file) || '';
+check(st_pl_nogid.effective?.proxy_local === true &&
+	st_pl_nogid.effective?.skgid == null &&
+	index(pl_nogid_rules, 'meta skgid') < 0 &&
+	length(filter(st_pl_nogid.warnings || [], (w) => index(w, 'system group "nimbus" not found') >= 0)) == 1,
+	'missing nimbus group records skgid=null, omits meta skgid, and records clear warning');
+check(common.atomic_write(pid_file, self_pid + '\n', 0644), 'seed alive PID for no-gid unchanged reload');
+check(run_sup_cmd('--prepare-reload', { NIMBUS_GROUP_FILE: grp_without_nimbus }) == 10,
+	'--prepare-reload returns 10 when no nimbus group is configured and config/core unchanged');
 
 printf('test_supervisor.uc: %d assertions passed\n', passed);

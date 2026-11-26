@@ -168,7 +168,7 @@ return view.extend({
 		};
 
 		var oProxyLocal = sGlobal.option(form.Flag, 'proxy_local', _('Proxy Router Outbound Traffic'),
-			_('Intercept TCP/UDP connections initiated by the router itself.'));
+			_('Intercept non-whitelist TCP/UDP connections initiated by the router itself (with SO_MARK + skgid dual anti-loop protection and DHCP/NTP exemptions).'));
 		oProxyLocal.default = '0';
 		oProxyLocal.rmempty = false;
 

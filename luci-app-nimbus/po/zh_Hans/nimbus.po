@@ -1597,8 +1597,17 @@ msgstr "IPv4 与 IPv6 代理不可同时禁用。"
 msgid "Proxy Router Outbound Traffic"
 msgstr "代理路由器本机出站流量"
 
-msgid "Intercept TCP/UDP connections initiated by the router itself."
-msgstr "接管路由器本机主动发起的 TCP/UDP 出站连接。"
+msgid "Intercept non-whitelist TCP/UDP connections initiated by the router itself (with SO_MARK + skgid dual anti-loop protection and DHCP/NTP exemptions)."
+msgstr "接管路由器本机主动发起的非白名单 TCP/UDP 出站连接（启用 SO_MARK + skgid 双防环路与 DHCP/NTP 豁免）。"
+
+msgid "Router Outbound Proxy"
+msgstr "路由器本机代理"
+
+msgid "%s (skgid %d)"
+msgstr "%s（skgid %d）"
+
+msgid "%s (SO_MARK only)"
+msgstr "%s（仅 SO_MARK）"
 
 msgid "Log Level"
 msgstr "日志级别"

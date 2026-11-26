@@ -667,6 +667,109 @@ check(denied_prof_res.ok === false && denied_prof_res.code == common.ERR_VALIDAT
 check(res_legacy.context.active_kind == 'profile',
 	'build_config records context.active_kind=profile for profile builds');
 
+// 13b. Plan C static routing_mark audit & proxy_local diagnostics
+let rm_ob_coll = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct', routing_mark: 1 } ]
+}, make_uci({ proxy_mark: '0x1' }));
+check(rm_ob_coll.ok === false && rm_ob_coll.code == common.ERR_VALIDATE_FAILED &&
+	index(rm_ob_coll.error, 'outbound "direct"') >= 0,
+	'rejects outbound routing_mark colliding with proxy_mark');
+
+let rm_ep_coll = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ],
+	endpoints: [ { type: 'wireguard', tag: 'wg-ep', routing_mark: '0x01' } ]
+}, make_uci({ proxy_mark: '0x1' }));
+check(rm_ep_coll.ok === false && rm_ep_coll.code == common.ERR_VALIDATE_FAILED &&
+	index(rm_ep_coll.error, 'endpoint "wg-ep"') >= 0,
+	'rejects endpoint routing_mark colliding with proxy_mark');
+
+let rm_dns_coll = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ],
+	dns: { servers: [ { type: 'udp', tag: 'dns-bad', server: '8.8.8.8', routing_mark: '1' } ] }
+}, make_uci({ proxy_mark: '0x1' }));
+check(rm_dns_coll.ok === false && rm_dns_coll.code == common.ERR_VALIDATE_FAILED &&
+	index(rm_dns_coll.error, 'dns server "dns-bad"') >= 0,
+	'rejects dns server decimal routing_mark colliding with proxy_mark');
+
+let rm_ntp_coll = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ],
+	ntp: { enabled: true, server: 'time.apple.com', routing_mark: 1 }
+}, make_uci({ proxy_mark: '0x1' }));
+check(rm_ntp_coll.ok === false && rm_ntp_coll.code == common.ERR_VALIDATE_FAILED &&
+	index(rm_ntp_coll.error, 'ntp') >= 0,
+	'rejects ntp routing_mark colliding with proxy_mark');
+
+let rm_http_coll = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ],
+	http_clients: [ { tag: 'hc-1', routing_mark: 1 } ]
+}, make_uci({ proxy_mark: '0x1' }));
+check(rm_http_coll.ok === false && rm_http_coll.code == common.ERR_VALIDATE_FAILED &&
+	index(rm_http_coll.error, 'http_client "hc-1"') >= 0,
+	'rejects http_client routing_mark colliding with proxy_mark');
+
+let rm_dec_ok = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct', routing_mark: '10' } ]
+}, make_uci({ proxy_mark: '0x10', proxy_local: '1' }));
+check(rm_dec_ok.ok === true &&
+	length(filter(rm_dec_ok.context.warnings, (w) => index(w, 'overrides routing_mark (0xa != 0xff)') >= 0)) == 1,
+	'parses decimal routing_mark "10" as 0xa (not 0x10) and emits mismatch warning under proxy_local=1');
+
+let pl_domain_nodns = cb.transform_config({
+	outbounds: [
+		{ type: 'vless', tag: 'proxy', server: 'proxy.example.com', server_port: 443 },
+		{ type: 'direct', tag: 'direct' }
+	]
+}, make_uci({ dns_mode: 'none', proxy_local: '1' }));
+check(pl_domain_nodns.ok === true &&
+	length(filter(pl_domain_nodns.context.warnings, (w) => index(w, 'domain-based outbounds/endpoints') >= 0)) == 1,
+	'emits bootstrap DNS loop warning when proxy_local=1 has domain outbound without dns.servers');
+
+let pl_ip_nodns = cb.transform_config({
+	outbounds: [
+		{ type: 'vless', tag: 'proxy', server: '203.0.113.10', server_port: 443 },
+		{ type: 'direct', tag: 'direct' }
+	]
+}, make_uci({ dns_mode: 'none', proxy_local: '1' }));
+check(pl_ip_nodns.ok === true &&
+	length(filter(pl_ip_nodns.context.warnings, (w) => index(w, 'domain-based outbounds/endpoints') >= 0)) == 0,
+	'omits bootstrap DNS loop warning when all outbounds use literal IPs');
+
+let fakeip_local_off = cb.transform_config({
+	dns: {
+		servers: [
+			{ type: 'fakeip', tag: 'f', inet4_range: '198.18.0.0/15' },
+			{ type: 'udp', tag: 'r', server: '223.5.5.5' }
+		]
+	},
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ dns_mode: 'singbox', proxy_local: '0' }));
+check(fakeip_local_off.ok === true &&
+	fakeip_local_off.context.proxy_local === false &&
+	length(filter(fakeip_local_off.context.warnings, (w) => index(w, 'while global.proxy_local="0"') >= 0)) == 1,
+	'emits diagnostic warning when Fake-IP + dns.mode=singbox coexists with proxy_local=0');
+
+let fakeip_local_on = cb.transform_config({
+	dns: {
+		servers: [
+			{ type: 'fakeip', tag: 'f', inet4_range: '198.18.0.0/15' },
+			{ type: 'udp', tag: 'r', server: '223.5.5.5' }
+		]
+	},
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ dns_mode: 'singbox', proxy_local: '1' }));
+check(fakeip_local_on.ok === true &&
+	fakeip_local_on.context.proxy_local === true &&
+	length(filter(fakeip_local_on.context.warnings, (w) => index(w, 'while global.proxy_local="0"') >= 0)) == 0,
+	'omits Fake-IP router blackhole warning when proxy_local=1');
+
+let pl_override_uci = make_uci({ dns_mode: 'none', proxy_local: '0' });
+pl_override_uci.global.router_proxy = '1';
+let pl_override_res = cb.transform_config({
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, pl_override_uci);
+check(pl_override_res.ok === true && pl_override_res.context.proxy_local === false,
+	'explicit global.proxy_local=0 overrides legacy global.router_proxy=1');
+
 // 14. Confirm fixtures are untouched byte-for-byte
 for (let name in fixture_names) {
 	let p = fixtures_dir + '/' + name;

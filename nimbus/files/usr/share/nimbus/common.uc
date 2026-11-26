@@ -37,6 +37,8 @@ const LOG_HIGH_BYTES = 524288;
 const LOG_KEEP_BYTES = 262144;
 
 const TABLE_NAME = 'inet nimbus';
+const NIMBUS_GROUP = 'nimbus';
+const GROUP_FILE = '/etc/group';
 const CT_BYPASS_BIT = 0x10;
 const CT_PROXY_BIT = 0x20;
 const CT_MARK_MASK = 0x30;
@@ -600,6 +602,53 @@ function format_hex_u32(n) {
 	return sprintf('0x%x', n);
 }
 
+function resolve_group_gid(group_name, group_file) {
+	let gname = (type(group_name) == 'string' && length(trim(group_name)) > 0)
+		? trim(group_name)
+		: NIMBUS_GROUP;
+	let gpath = group_file || getenv('NIMBUS_GROUP_FILE') || GROUP_FILE;
+	let raw = fs.readfile(gpath);
+	if (type(raw) != 'string' || length(raw) == 0)
+		return null;
+
+	for (let line in split(raw, '\n')) {
+		let s = trim(line);
+		if (length(s) == 0 || substr(s, 0, 1) == '#')
+			continue;
+		let parts = split(s, ':');
+		if (length(parts) >= 3 && parts[0] == gname) {
+			if (!match(parts[2], /^[0-9]+$/))
+				return null;
+			let gid = int(parts[2], 10);
+			if (!isnan(gid) && gid > 0 && gid <= 4294967294)
+				return gid;
+			return null;
+		}
+	}
+	return null;
+}
+
+function read_pid_gid(pid_path) {
+	let raw_pid = fs.readfile(pid_path);
+	if (type(raw_pid) != 'string' || !match(trim(raw_pid), /^[0-9]+$/))
+		return null;
+
+	let status = fs.readfile('/proc/' + trim(raw_pid) + '/status');
+	if (type(status) != 'string')
+		return null;
+
+	for (let line in split(status, '\n')) {
+		let m = match(line, /^Gid:[ \t]+([0-9]+)[ \t]+([0-9]+)/);
+		if (m) {
+			let egid = int(m[2], 10);
+			if (!isnan(egid) && egid >= 0)
+				return egid;
+			return null;
+		}
+	}
+	return null;
+}
+
 function log_msg(level, msg, log_path) {
 	let path = log_path || LOG_FILE;
 	let parent = fs.dirname(path);
@@ -653,6 +702,8 @@ export {
 	LOG_HIGH_BYTES,
 	LOG_KEEP_BYTES,
 	TABLE_NAME,
+	NIMBUS_GROUP,
+	GROUP_FILE,
 	CT_BYPASS_BIT,
 	CT_PROXY_BIT,
 	CT_MARK_MASK,
@@ -697,5 +748,7 @@ export {
 	resolve_active_target,
 	hex_u32_parse,
 	format_hex_u32,
+	resolve_group_gid,
+	read_pid_gid,
 	log_msg
 };

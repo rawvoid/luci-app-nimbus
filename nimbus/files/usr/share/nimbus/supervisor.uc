@@ -53,6 +53,7 @@ function get_runtime_paths() {
 		cache_lists_dir: getenv('NIMBUS_CACHE_LISTS_DIR') || null,
 		crontab_file: getenv('NIMBUS_CRONTAB_FILE') || null,
 		resolv_auto_path: getenv('NIMBUS_RESOLV_AUTO_PATH') || null,
+		group_file: getenv('NIMBUS_GROUP_FILE') || null,
 		init_script: getenv('NIMBUS_INIT_SCRIPT') || '/etc/init.d/nimbus',
 		nft_bin: getenv('NFT_BIN') || null,
 		nft_dry_run: (getenv('NIMBUS_NFT_DRY_RUN') == '1'),
@@ -164,6 +165,10 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 		},
 		effective: {
 			outbound_mark: out_mark,
+			proxy_local: exists(bctx, 'proxy_local')
+				? (bctx.proxy_local === true)
+				: ((g.proxy_local ?? g.router_proxy ?? '0') == '1'),
+			skgid: exists(bctx, 'effective_skgid') ? bctx.effective_skgid : (prev?.effective?.skgid ?? null),
 			redirect_port: bctx.effective_redirect_port ?? null,
 			tproxy_port: bctx.effective_tproxy_port ?? null,
 			tun_iface: null,
@@ -412,7 +417,15 @@ function cmd_prepare_start(paths, is_reload) {
 	let core_stamp = compute_core_stamp(core_bin, ver_str, new_bin_sha);
 
 	let new_hash = common.sha256_file(paths.config_file);
+	let raw_proxy_local = uci_cfg?.global?.proxy_local ?? uci_cfg?.global?.router_proxy ?? '0';
+	let proxy_local = (raw_proxy_local == '1' || raw_proxy_local === 1 || raw_proxy_local === true);
+	let expected_skgid = common.resolve_group_gid(common.NIMBUS_GROUP, paths.group_file);
 	let warnings = [ ...(bres.context?.warnings || []) ];
+	if (proxy_local && expected_skgid == null) {
+		let gid_warn = 'system group "nimbus" not found; router outbound proxy relies solely on SO_MARK anti-loop protection';
+		if (index(warnings, gid_warn) < 0)
+			push(warnings, gid_warn);
+	}
 	for (let fw_w in nft.check_fw4_lan_input(uci_cfg, { uci_confdir: paths.uci_confdir, uci_savedir: paths.uci_savedir })) {
 		if (index(warnings, fw_w) < 0)
 			push(warnings, fw_w);
@@ -433,6 +446,7 @@ function cmd_prepare_start(paths, is_reload) {
 		bypass_v4: wl.v4,
 		bypass_v6: wl.v6,
 		mode: 'tproxy_redirect',
+		group_file: paths.group_file,
 		output_path: paths.rules_file,
 		nft_bin: paths.nft_bin,
 		dry_run: paths.nft_dry_run,
@@ -480,6 +494,8 @@ function cmd_prepare_start(paths, is_reload) {
 
 	let state_ctx = {
 		...(bres.context || {}),
+		proxy_local: proxy_local,
+		effective_skgid: expected_skgid,
 		core_bin: core_bin,
 		core_version: ver_str,
 		bin_sha256: new_bin_sha
@@ -500,11 +516,14 @@ function cmd_prepare_start(paths, is_reload) {
 		(old_bin_sha != null && new_bin_sha != old_bin_sha) ||
 		(old_bin_sha == null && old_core_ver != null && ver_str != null && old_core_ver != ver_str)
 	);
+	let live_gid = common.read_pid_gid(paths.pid_file);
+	let gid_changed = (expected_skgid != null && live_gid != null && live_gid != expected_skgid);
 	let skip_restart = (is_reload &&
 		old_state.state == 'running' &&
 		old_hash != null &&
 		new_hash == old_hash &&
 		!core_changed &&
+		!gid_changed &&
 		is_pid_alive(paths.pid_file));
 
 	common.release_lock(lock_fh);

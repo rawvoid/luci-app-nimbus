@@ -905,4 +905,75 @@ check(live_emg.ok === true && nft.table_exists({ nft_bin: nft_bin }),
 check(nft.delete_table({ nft_bin: nft_bin }).ok === true && !nft.table_exists({ nft_bin: nft_bin }),
 	'table_exists returns false after delete_table');
 
+// 8. Plan C hardened proxy_local (meta skgid, NTP 123, output_udp ct mark cache, missing-group fallback, live load)
+let mock_group_file = work_dir + '/etc_group';
+check(common.atomic_write(mock_group_file, 'root:x:0:\nnimbus:x:450:\n', 0644), 'seed mock /etc/group with nimbus gid 450');
+
+let pl_on = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/proxy_local_on.nft',
+	mode: 'tproxy_redirect',
+	proxy_local: '1',
+	group_file: mock_group_file,
+	fakeip_v4: [ '198.18.0.0/15' ],
+	fakeip_v6: [ 'fc00::/18' ],
+	bypass_v4: [ '1.0.1.0/24' ],
+	bypass_v6: [ '2400:3200::/32' ]
+});
+check(pl_on.ok === true, 'Plan C proxy_local=1 with meta skgid + NTP 123 + ct mark passes nft -c -f');
+let out_tcp_pos = index(pl_on.rules, 'chain output_tcp {');
+let out_udp_pos = index(pl_on.rules, 'chain output_udp {');
+let out_tcp_blk = substr(pl_on.rules, out_tcp_pos, out_udp_pos - out_tcp_pos);
+let out_udp_blk = substr(pl_on.rules, out_udp_pos);
+check(index(out_tcp_blk, 'type nat hook output priority -98; policy accept;') >= 0 &&
+	index(out_tcp_blk, 'meta l4proto != tcp return') < index(out_tcp_blk, 'meta mark 0xff return') &&
+	index(out_tcp_blk, 'meta mark 0xff return') < index(out_tcp_blk, 'meta skgid 450 return') &&
+	index(out_tcp_blk, 'meta skgid 450 return') < index(out_tcp_blk, 'oifname "lo" return') &&
+	index(out_tcp_blk, 'ct status dnat return') >= 0 &&
+	index(out_tcp_blk, 'ip daddr @fakeip_v4') >= 0 &&
+	index(out_tcp_blk, 'ip daddr @bypass_v4 return') >= 0 &&
+	index(out_tcp_blk, 'meta nfproto ipv4 meta l4proto tcp counter name "tcp_proxied" redirect to :7891') >= 0,
+	'output_tcp enforces fast head ordering, meta skgid 450, dnat protection, Fake-IP, bypass sets, and catch-all redirect');
+check(index(out_udp_blk, 'meta l4proto != udp return') < index(out_udp_blk, 'meta mark 0xff return') &&
+	index(out_udp_blk, 'meta mark 0xff return') < index(out_udp_blk, 'meta skgid 450 return') &&
+	index(out_udp_blk, 'meta skgid 450 return') < index(out_udp_blk, 'oifname "lo" return') &&
+	index(out_udp_blk, 'udp dport 123 return') >= 0 &&
+	index(out_udp_blk, 'ct mark & 0x30 == 0x10 return') >= 0 &&
+	index(out_udp_blk, 'ct mark & 0x30 == 0x20 meta mark set 0x1 accept') >= 0 &&
+	index(out_udp_blk, 'ip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set 0x1 accept') >= 0 &&
+	index(out_udp_blk, 'ip daddr @bypass_v4 ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0 &&
+	index(out_udp_blk, 'meta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set 0x1 accept') >= 0,
+	'output_udp enforces fast head ordering, meta skgid 450, NTP 123 exemption, and ct mark fast path');
+
+let pl_no_skgid = nft.apply_rules({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/proxy_local_no_skgid.nft',
+	mode: 'tproxy_redirect',
+	proxy_local: '1',
+	ipv4_enable: '1',
+	ipv6_enable: '0',
+	skgid: false
+});
+check(pl_no_skgid.ok === true &&
+	index(pl_no_skgid.rules, 'meta skgid') < 0 &&
+	index(pl_no_skgid.rules, 'meta mark 0xff return') >= 0 &&
+	index(pl_no_skgid.rules, 'udp dport 123 return') >= 0 &&
+	index(pl_no_skgid.rules, 'meta nfproto != ipv4 return') >= 0,
+	'proxy_local=1 single-stack without skgid passes nft -c -f and degrades gracefully to SO_MARK');
+
+// Live kernel load test for meta skgid + NTP 123 + ct mark in output_tcp/output_udp
+let live_pl = nft.apply_rules({
+	nft_bin: nft_bin,
+	output_path: work_dir + '/live_plan_c.nft',
+	mode: 'tproxy_redirect',
+	proxy_local: '1',
+	skgid: 450,
+	fakeip_v4: [ '198.18.0.0/15' ],
+	bypass_v4: [ '1.0.1.0/24' ]
+});
+check(live_pl.ok === true, 'live nft -f loads Plan C output_tcp/output_udp with meta skgid + NTP 123 + ct mark in real kernel');
+check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'clean up live Plan C table');
+
 printf('test_nft_manager.uc: %d assertions passed\n', passed);

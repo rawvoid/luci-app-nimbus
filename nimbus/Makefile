@@ -14,6 +14,7 @@ define Package/nimbus
   CATEGORY:=Network
   TITLE:=Transparent proxy management core for sing-box
   PKGARCH:=all
+  USERID:=nimbus:nimbus
   DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +rpcd-mod-ucode +nftables-json +ip-full +ca-bundle +curl +kmod-nft-core +kmod-nft-fib +kmod-nft-nat +kmod-nft-tproxy
 endef
 
@@ -72,6 +73,11 @@ endef
 define Package/nimbus/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+if [ -r /lib/functions.sh ]; then
+	. /lib/functions.sh
+	group_exists nimbus || group_add_next nimbus >/dev/null 2>&1 || true
+fi
 
 if [ -x /etc/init.d/rpcd ]; then
 	/etc/init.d/rpcd reload >/dev/null 2>&1 || true

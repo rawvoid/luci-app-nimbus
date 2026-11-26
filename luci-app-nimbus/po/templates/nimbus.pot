@@ -1592,7 +1592,16 @@ msgstr ""
 msgid "Proxy Router Outbound Traffic"
 msgstr ""
 
-msgid "Intercept TCP/UDP connections initiated by the router itself."
+msgid "Intercept non-whitelist TCP/UDP connections initiated by the router itself (with SO_MARK + skgid dual anti-loop protection and DHCP/NTP exemptions)."
+msgstr ""
+
+msgid "Router Outbound Proxy"
+msgstr ""
+
+msgid "%s (skgid %d)"
+msgstr ""
+
+msgid "%s (SO_MARK only)"
 msgstr ""
 
 msgid "Log Level"

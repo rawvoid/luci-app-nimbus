@@ -24,6 +24,7 @@ const VALID_LOG_LEVELS = [
 ];
 
 const CHECK_TIMEOUT_MS = 15000;
+const NON_REMOTE_OUTBOUND_TYPES = [ 'direct', 'block', 'dns', 'selector', 'urltest' ];
 
 let _cb_seq = 0;
 
@@ -704,6 +705,123 @@ function has_quic_reject_rule(rules) {
 	return false;
 }
 
+function is_unset_mark_val(raw) {
+	if (raw == null || raw === 0 || raw === '')
+		return true;
+	if (type(raw) == 'string') {
+		let s = lc(trim(raw));
+		return (s == '' || s == '0' || s == '0x0');
+	}
+	return false;
+}
+
+function parse_singbox_mark(val) {
+	if (type(val) == 'int')
+		return (val >= 1 && val <= 0xffffffff) ? val : null;
+	if (type(val) != 'string')
+		return null;
+	let s = trim(val);
+	let n = null;
+	if (match(s, /^0[xX][0-9a-fA-F]+$/))
+		n = int(s, 16);
+	else if (match(s, /^[0-9]+$/))
+		n = int(s, 10);
+	else
+		return null;
+	return (!common.isnan(n) && n >= 1 && n <= 0xffffffff) ? n : null;
+}
+
+function audit_item_routing_mark(item, label, proxy_mark, effective_outbound_mark, proxy_local, warnings) {
+	if (type(item) != 'object' || !exists(item, 'routing_mark') || is_unset_mark_val(item.routing_mark))
+		return null;
+
+	let parsed = parse_singbox_mark(item.routing_mark);
+	if (parsed == null)
+		return sprintf('%s has invalid routing_mark: %s', label, '' + item.routing_mark);
+
+	if (parsed == proxy_mark) {
+		return sprintf(
+			'%s routing_mark (%s) collides with proxy.proxy_mark (%s), which would cause a policy-routing self-loop',
+			label, common.format_hex_u32(parsed), common.format_hex_u32(proxy_mark)
+		);
+	}
+
+	if (proxy_local && parsed != effective_outbound_mark) {
+		push(warnings, sprintf(
+			'%s overrides routing_mark (%s != %s) while global.proxy_local="1"; ensure nimbus group skgid isolation is active to avoid outbound loops',
+			label, common.format_hex_u32(parsed), common.format_hex_u32(effective_outbound_mark)
+		));
+	}
+
+	return null;
+}
+
+function audit_config_routing_marks(cfg, proxy_mark, effective_outbound_mark, proxy_local, warnings) {
+	let array_groups = [
+		[ cfg?.outbounds, 'outbound' ],
+		[ cfg?.endpoints, 'endpoint' ],
+		[ cfg?.dns?.servers, 'dns server' ],
+		[ cfg?.http_clients, 'http_client' ],
+		[ cfg?.certificate_providers, 'certificate_provider' ]
+	];
+	for (let grp in array_groups) {
+		let arr = grp[0];
+		let kind = grp[1];
+		if (type(arr) != 'array')
+			continue;
+		for (let i = 0; i < length(arr); i++) {
+			let item = arr[i];
+			if (type(item) != 'object')
+				continue;
+			let tag = (type(item.tag) == 'string' && length(trim(item.tag)) > 0)
+				? trim(item.tag)
+				: sprintf('#%d', i);
+			let err = audit_item_routing_mark(
+				item, sprintf('%s "%s"', kind, tag),
+				proxy_mark, effective_outbound_mark, proxy_local, warnings
+			);
+			if (err)
+				return err;
+		}
+	}
+
+	if (type(cfg?.ntp) == 'object') {
+		let err = audit_item_routing_mark(
+			cfg.ntp, 'ntp', proxy_mark, effective_outbound_mark, proxy_local, warnings
+		);
+		if (err)
+			return err;
+	}
+
+	return null;
+}
+
+function has_domain_server_target(cfg) {
+	if (type(cfg?.outbounds) == 'array') {
+		for (let ob in cfg.outbounds) {
+			if (type(ob) != 'object' || index(NON_REMOTE_OUTBOUND_TYPES, ob.type) >= 0)
+				continue;
+			if (type(ob.server) == 'string' && length(trim(ob.server)) > 0 && !iptoarr(trim(ob.server)))
+				return true;
+		}
+	}
+	if (type(cfg?.endpoints) == 'array') {
+		for (let ep in cfg.endpoints) {
+			if (type(ep) != 'object')
+				continue;
+			if (type(ep.server) == 'string' && length(trim(ep.server)) > 0 && !iptoarr(trim(ep.server)))
+				return true;
+			if (type(ep.peers) == 'array') {
+				for (let peer in ep.peers) {
+					if (type(peer?.address) == 'string' && length(trim(peer.address)) > 0 && !iptoarr(trim(peer.address)))
+						return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 function transform_config(raw_cfg, uci_cfg, opts) {
 	if (type(raw_cfg) != 'object')
 		return fail(common.ERR_VALIDATE_FAILED, 'source configuration top-level must be a JSON object');
@@ -763,13 +881,14 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	if (type(cfg.route.rules) != 'array')
 		cfg.route.rules = [];
 
+	let raw_proxy_local = g.proxy_local ?? g.router_proxy ?? '0';
+	let proxy_local = (raw_proxy_local == '1' || raw_proxy_local === 1 || raw_proxy_local === true);
+
 	let effective_outbound_mark = outbound_mark;
 	let raw_default_mark = cfg.route.default_mark;
-	let is_unset_mark = (raw_default_mark == null || raw_default_mark === 0 ||
-		raw_default_mark === '0' || raw_default_mark === '0x0' || raw_default_mark === '0X0');
 
-	if (!is_unset_mark) {
-		let parsed_dm = common.hex_u32_parse(raw_default_mark);
+	if (!is_unset_mark_val(raw_default_mark)) {
+		let parsed_dm = parse_singbox_mark(raw_default_mark);
 		if (parsed_dm == null)
 			return fail(common.ERR_VALIDATE_FAILED, sprintf('invalid route.default_mark: %s', '' + raw_default_mark));
 		if (parsed_dm == proxy_mark)
@@ -780,6 +899,10 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	} else {
 		cfg.route.default_mark = outbound_mark;
 	}
+
+	let rm_err = audit_config_routing_marks(cfg, proxy_mark, effective_outbound_mark, proxy_local, warnings);
+	if (rm_err)
+		return fail(common.ERR_VALIDATE_FAILED, rm_err, warnings);
 
 	if (type(cfg.route.final) != 'string' || length(trim(cfg.route.final)) == 0) {
 		if (type(cfg.outbounds) == 'array' && length(cfg.outbounds) > 0 &&
@@ -947,12 +1070,15 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			'dns.hijack_lan_dns="1" is enabled while dns.mode="none": intercepted LAN DNS queries go to system dnsmasq using unproxied upstream resolvers unless dnsmasq is externally configured'
 		);
 	}
-	let proxy_local = (g.proxy_local == '1' || g.proxy_local === 1 || g.proxy_local === true ||
-		g.router_proxy == '1' || g.router_proxy === 1 || g.router_proxy === true);
-
 	let dns_servers = cfg?.dns?.servers;
 	if (dns_mode == 'singbox' && (type(dns_servers) != 'array' || length(dns_servers) == 0))
 		return fail(common.ERR_VALIDATE_FAILED, 'dns.servers must be non-empty when dns.mode is "singbox"', warnings);
+
+	if (proxy_local && (type(dns_servers) != 'array' || length(dns_servers) == 0) && has_domain_server_target(cfg)) {
+		push(warnings,
+			'global.proxy_local="1" is enabled with domain-based outbounds/endpoints but no dns.servers configured; Go fallback to /etc/resolv.conf (dnsmasq) may cause a bootstrap DNS loop'
+		);
+	}
 
 	if ((dns_mode == 'singbox' || proxy_local) && type(dns_servers) == 'array' && length(dns_servers) > 0) {
 		let local_servers = [];
@@ -1143,6 +1269,11 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	let has_active_fakeip = (ipv4_enable && length(fakeip_res.ipv4) > 0) ||
 		(ipv6_enable && length(fakeip_res.ipv6) > 0);
 	if (has_active_fakeip) {
+		if (dns_mode == 'singbox' && !proxy_local) {
+			push(warnings,
+				'Fake-IP is active with dns.mode="singbox" while global.proxy_local="0": direct router connections to Fake-IP domains will blackhole unless routed through a local mixed/http/socks inbound or enabling proxy_local'
+			);
+		}
 		let port_mode = trim('' + (p.port_filter_mode || 'all'));
 		if (port_mode == 'include' || port_mode == 'exclude') {
 			push(warnings, sprintf(
@@ -1183,6 +1314,7 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 		config: cfg,
 		context: {
 			core_version: options.core_version || null,
+			proxy_local: proxy_local,
 			effective_outbound_mark: effective_outbound_mark,
 			effective_redirect_port: effective_redirect_port,
 			effective_tproxy_port: effective_tproxy_port,

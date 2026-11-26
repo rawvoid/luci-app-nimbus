@@ -11,6 +11,7 @@
 | 常量名 | 来源 / 固定值 | 用途 |
 | :--- | :--- | :--- |
 | `TABLE_NAME` | `inet nimbus` | 独立 `nftables` 表名（固定） |
+| `NIMBUS_GROUP` | `nimbus`（动态解析 `/etc/group` 数值 GID `> 0`） | 本机代理第二道进程身份防环路（`procd_set_param group nimbus` 保持 `UID=0`，`output` 链匹配 `meta skgid <gid> return`） |
 | `OUTBOUND_MARK` | UCI `proxy.outbound_mark`（默认 `0xff`） | 防环路标记，对应 `sing-box` 的 `route.default_mark` |
 | `PROXY_MARK` | UCI `proxy.proxy_mark`（默认 `0x1`） | UDP TPROXY 策略路由 `fwmark` |
 | `CT_BYPASS_BIT` | `0x10`（掩码 `0x30`） | Conntrack 首包直连决策缓存位（写入前先清掩码 `ct mark & 0xffffffcf | 0x10`，不覆盖其他工具的高低位标记） |
@@ -57,7 +58,7 @@
 5. **本机目的地、入站回包与续约保护**：
    - 所有 `prerouting` 代理链均需包含 `fib daddr type local return`，确保访问路由器任意本地地址（含动态 IPv6 GUA/ULA/Link-Local）的流量绝不被劫持。
    - 逐包遍历的 `prerouting_udp`、`output_udp` 与阻断链 `forward_lockdown` 必须包含 `ct status dnat return` 与 `ct direction reply return`，防止 WAN 端口转发、IPv6 GUA 无 NAT 入站服务及本机 UDP VPN 服务端回包被误劫持或阻断。
-   - `output_udp` 必须显式放行单播 DHCPv4（`meta nfproto ipv4 udp sport 68 udp dport 67 return`）与 DHCPv6（`meta nfproto ipv6 udp sport 546 udp dport 547 return`）续约报文。
+   - `output_udp` 必须将最高频过滤项（`meta l4proto != udp return`、`meta mark $OUTBOUND_MARK return`、可用时的 `meta skgid <gid> return`、`oifname "lo" return`）置于链首，显式放行单播 DHCPv4（`meta nfproto ipv4 udp sport 68 udp dport 67 return`）、DHCPv6（`meta nfproto ipv6 udp sport 546 udp dport 547 return`）与 NTP（`udp dport 123 return`，防无 RTC 路由器冷启动 TLS 死锁），并使用与 `prerouting_udp` 一致的 `ct mark`（`0x10`/`0x20`，掩码 `0x30`）首包决策快速路径。
 6. **单栈裁剪与链首协议族守卫**：当 `ipv6_enable='0'` 时在全部主链顶部注入 `meta nfproto != ipv4 return` 并省略 IPv6 匹配与导流规则；当 `ipv4_enable='0'` 时注入 `meta nfproto != ipv6 return` 并省略 IPv4 匹配与导流规则。
 7. **接口集合与 CIDR 安全边界**：
    - 写入 `set lan_ifaces`（`type ifname`）的设备名必须校验长度 `1..15`（`IFNAMSIZ - 1`）、排除 `.` 与 `..`，且匹配 `^[A-Za-z0-9_.+-]+$`（严禁混入引号、空白、`@` 别名或 `:` 地址标签）；`ubus` 已解析接口时不叠加静态 UCI 旧值，回退读 UCI 时对 `@alias` 执行有限深度解引用。
@@ -208,11 +209,14 @@ table inet nimbus {
 
     # 可选链：仅当 global.proxy_local == '1' 时生成（不应用 port_filter_mode，见注3）
     chain output_tcp {
-        type nat hook output priority -100; policy accept;
-        oifname "lo" return
-        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
+        type nat hook output priority -98; policy accept;
         meta l4proto != tcp return
         meta mark $OUTBOUND_MARK return
+        # 若 /etc/group 存在有效 nimbus 组（gid > 0），输出进程身份防环路规则：
+        meta skgid $NIMBUS_GID return
+        oifname "lo" return
+        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
+        ct status dnat return
         fib daddr type local return
         ip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
         ip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
@@ -230,27 +234,32 @@ table inet nimbus {
 
     chain output_udp {
         type route hook output priority mangle; policy accept;
-        oifname "lo" return
-        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
         meta l4proto != udp return
         meta mark $OUTBOUND_MARK return
+        # 若 /etc/group 存在有效 nimbus 组（gid > 0），输出进程身份防环路规则：
+        meta skgid $NIMBUS_GID return
+        oifname "lo" return
+        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
         fib daddr type local return
         ct status dnat return
         ct direction reply return
         meta nfproto ipv4 udp sport 68 udp dport 67 return
         meta nfproto ipv6 udp sport 546 udp dport 547 return
-        ip daddr @fakeip_v4 meta mark set $PROXY_MARK accept
-        ip6 daddr @fakeip_v6 meta mark set $PROXY_MARK accept
-        ip daddr @reserved_v4 return
-        ip6 daddr @reserved_v6 return
-        ip daddr @lan_v4 return
-        ip6 daddr @lan_v6 return
-        ip daddr @wan_v4 return
-        ip6 daddr @wan_v6 return
-        ip daddr @bypass_v4 return
-        ip6 daddr @bypass_v6 return
-        meta nfproto ipv4 meta mark set $PROXY_MARK accept
-        meta nfproto ipv6 meta mark set $PROXY_MARK accept
+        udp dport 123 return
+        ct mark & 0x30 == 0x10 return
+        ct mark & 0x30 == 0x20 meta mark set $PROXY_MARK accept
+        ip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
+        ip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
+        ip daddr @reserved_v4 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip6 daddr @reserved_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip daddr @lan_v4 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip6 daddr @lan_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip daddr @wan_v4 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip6 daddr @wan_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip daddr @bypass_v4 ct mark set ct mark & 0xffffffcf | 0x10 return
+        ip6 daddr @bypass_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
+        meta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
+        meta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
     }
 }
 ```
@@ -423,9 +432,14 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 #### Step 2：日志与防环路标记
 - **日志覆写**：设置 `cfg.log = { ...(cfg.log || {}), disabled: false, level: uci.global.log_level, output: "/var/log/nimbus.log", timestamp: true }`（显式确保 `disabled: false`）。
-- **防环路标记**：
+- **防环路标记与全配置 `routing_mark` 静态安全审查**：
   - 使用 `ucode` 内置函数 `int(uci.proxy.outbound_mark, 16)` 解析 UCI `outbound_mark` 与 `proxy_mark`（严禁使用不存在的 `parseInt()`，并校验 `!isnan(...)`）。
-  - 若 `cfg.route.default_mark` 已有非零整数值，校验其不得等于 `proxy_mark`（碰撞时立即中止并报校验错）；否则尊重原值作为 `effective_outbound_mark` 同步给 `nft_manager.uc`；若未设则写入 `cfg.route.default_mark = int(uci.proxy.outbound_mark, 16)`。（注意：若启用 `proxy_local='1'`，不建议在单个出站上覆盖与 `default_mark` 不同的 `routing_mark`。）
+  - 若 `cfg.route.default_mark` 已有非零整数值，校验其不得等于 `proxy_mark`（碰撞时立即中止并报校验错）；否则尊重原值作为 `effective_outbound_mark` 同步给 `nft_manager.uc`；若未设则写入 `cfg.route.default_mark = int(uci.proxy.outbound_mark, 16)`。
+  - 遍历 `cfg.outbounds`、`cfg.endpoints`、`cfg.dns.servers`、`cfg.http_clients`、`cfg.ntp` 与 `cfg.certificate_providers` 中显式设置的 `routing_mark`：
+    - 若任意对象设置 `routing_mark == proxy_mark`（即使开启 `meta skgid` 仍会命中内核 `ip rule fwmark $PROXY_MARK lookup $ROUTE_TABLE` 触发策略路由硬自环），立即中止合成并返回 `E_VALIDATE_FAILED`；
+    - 当 `global.proxy_local == '1'` 且任意对象设置非零且不等于 `effective_outbound_mark` 的 `routing_mark` 时，写入诊断 `warning`。
+  - 当 `global.proxy_local == '1'` 且 `cfg.dns.servers` 为空，同时存在以域名作为 `server` 的非直连出站或 `endpoint` 时，写入诊断 `warning`（提示 Go 退回系统解析器查 `dnsmasq` 存在冷启动互锁风险）。
+  - 当检测到 Fake-IP 与 `dns.mode == 'singbox'` 共存且 `global.proxy_local == '0'` 时，写入诊断 `warning`（提示路由器本机直接访问 Fake-IP 域名会进入不可路由黑洞，如需本机访问请使用本地代理入站或开启 `proxy_local`）。
 
 #### Step 3：透明代理入站复用、补齐与冲突隔离（`tproxy_redirect`）
 确保 `cfg.inbounds` 为数组。定义当前协议族通配监听地址 `default_listen = (uci.global.ipv6_enable == '1') ? "::" : "0.0.0.0"`（防止关闭 IPv6 或无 IPv6 内核模块时绑定 `::` 失败）。

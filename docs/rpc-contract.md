@@ -39,7 +39,7 @@
 ## 2. 服务状态与控制接口
 
 ### 2.1 `status`（只读）
-聚合 `/var/run/nimbus/state.json`（`0600`，不含明文密钥）、`/var/run/nimbus/sing-box.pid`、`ubus service list`、`/proc/<pid>/status`、`nft -j list table inet nimbus` 与内核二进制状态。
+聚合 `/var/run/nimbus/state.json`（`0600`，不含明文密钥）、`/var/run/nimbus/sing-box.pid`、`/proc/<pid>/status`、`nft -j list counters table inet nimbus` 与内核二进制状态。
 
 - **请求**：`{}`
 - **响应**：

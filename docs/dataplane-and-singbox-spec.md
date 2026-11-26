@@ -52,17 +52,23 @@
    table inet nimbus { ... }
    ```
 3. **Hook 优先级与 Netfilter 执行序**：
-   - `mangle`（`-150`）早于 `dstnat`（`-100`）执行。当启用 `dns.hijack_lan_dns='1'` 时，`prerouting_udp` 必须显式跳过发往外部的 `UDP 53`，让数据包继续流向 `prerouting_dns`（`dstnat + 1`）重定向至本机 `53`。
-   - `prerouting_dns` 位于 `dstnat + 1`（`-99`），`prerouting_tcp` 位于 `dstnat + 2`（`-98`），且均在链首执行 `meta mark $OUTBOUND_MARK return` 与 `ct status dnat return`，确保 `fw4` 中用户自定义的端口转发（`-100`）始终优先。
-4. **`inet` 表中的 `redirect` / `tproxy` 单条规则语法**：`nftables` 要求每条含 `redirect to :<port>` 或 `tproxy ... to :<port>` 的规则**自身必须显式携带传输层协议匹配**（链首的 `meta l4proto != tcp/udp return` 不能替代）；在 `table inet` 内必须写为 `meta l4proto tcp ... redirect to :$REDIRECT_PORT`，以及区分协议族写成 `meta nfproto ipv4 meta l4proto udp ... tproxy ip to :$TPROXY_PORT accept` 与 `meta nfproto ipv6 meta l4proto udp ... tproxy ip6 to :$TPROXY_PORT accept`。所有统计规则统一引用表级具名计数器（`counter name "..."`），不重复叠加匿名 `counter`。
-5. **本机目的地、入站回包与续约保护**：
-   - 所有 `prerouting` 代理链均需包含 `fib daddr type local return`，确保访问路由器任意本地地址（含动态 IPv6 GUA/ULA/Link-Local）的流量绝不被劫持。
-   - 逐包遍历的 `prerouting_udp`、`output_udp` 与阻断链 `forward_lockdown` 必须包含 `ct status dnat return` 与 `ct direction reply return`，防止 WAN 端口转发、IPv6 GUA 无 NAT 入站服务及本机 UDP VPN 服务端回包被误劫持或阻断。
-   - `output_udp` 必须将最高频过滤项（`meta l4proto != udp return`、`meta mark $OUTBOUND_MARK return`、可用时的 `meta skgid <gid> return`、`oifname "lo" return`）置于链首，显式放行单播 DHCPv4（`meta nfproto ipv4 udp sport 68 udp dport 67 return`）、DHCPv6（`meta nfproto ipv6 udp sport 546 udp dport 547 return`）与 NTP（`udp dport 123 return`，防无 RTC 路由器冷启动 TLS 死锁），并使用与 `prerouting_udp` 一致的 `ct mark`（`0x10`/`0x20`，掩码 `0x30`）首包决策快速路径。
-6. **单栈裁剪与链首协议族守卫**：当 `ipv6_enable='0'` 时在全部主链顶部注入 `meta nfproto != ipv4 return` 并省略 IPv6 匹配与导流规则；当 `ipv4_enable='0'` 时注入 `meta nfproto != ipv6 return` 并省略 IPv4 匹配与导流规则。
-7. **接口集合与 CIDR 安全边界**：
+   - `prerouting_dns` 位于 `dstnat + 1`（`-99`），`prerouting_tcp` 与 `prerouting_udp` 均位于 `dstnat + 2`（`-98`，两者分别以 `meta l4proto != tcp/udp return` 互斥分流），且三者均位于 OpenWrt `fw4::dstnat`（`-100`）之后并通过 `ct status dnat return` 放行，确保 `fw4` 端口转发 / NAT 回流及 `prerouting_dns` 劫持在**第 1 包**即完整生效，避免 `prerouting_udp` 位于 `mangle (-150)` 时与 `fw4::dstnat` 发生首包脑裂。
+   - `output_udp` 位于 `type route hook output priority mangle`（`-150`），打标 `PROXY_MARK` 后经 `lo` 回流进入 `prerouting_udp`（`-98`）的 `iifname "lo"` 规则承接。
+4. **`inet` 表中的 `redirect` / `tproxy` 与 `NFT_BREAK` 兜底语法**：
+   - `nftables` 要求每条含 `redirect to :<port>` 或 `tproxy ... to :<port>` 的规则**自身必须显式携带传输层协议匹配**（链首的 `meta l4proto != tcp/udp return` 不能替代）；`prerouting_dns` 的 `:53` 重定向须拆写为两条单协议规则（`meta l4proto tcp redirect to :53` 与 `meta l4proto udp redirect to :53`），避免旧版 `nftables 1.0.x` 拒绝集合形式协议匹配。
+   - Linux 内核 `nft_tproxy_eval()` 在透明套接字未监听（如内核崩溃重试间隙）时返回 `NFT_BREAK`，中断当前规则并继续匹配下一条规则。因此所有 UDP TPROXY 导流必须通过独立子链 `tproxy_udp_v4` / `tproxy_udp_v6` 执行，且**先执行 `tproxy` 再执行 `meta mark set $PROXY_MARK counter name "udp_proxied" accept`，尾随无条件 `drop`**——防止 `NFT_BREAK` 穿透落入 `@reserved_v6` 污染 Fake-IPv6 `ct mark`，或携带 `fwmark` 误送至本机 `dnsmasq :53` / `ntpd :123` / `WireGuard` 监听端口。
+   - 所有统计规则统一引用表级具名计数器（`counter name "..."`），不重复叠加匿名 `counter`。
+5. **本机/广播/多播目的地、入站回包与续约保护**：
+   - 所有 `prerouting` 与 `output` 代理/劫持链均使用 `fib daddr type { local, broadcast, multicast, anycast } return`，一次 FIB 查询即可放行路由器任意本地地址（含动态 IPv6 GUA/ULA/Link-Local）、子网广播、mDNS/SSDP 多播及任播地址；`prerouting_dns` 额外跳过 `@lan_v4`/`@lan_v6`，避免误劫持内网/VLAN 自建 DNS（如 Pi-hole/AdGuardHome/AD）。
+   - 逐包遍历的 `prerouting_udp`、`output_udp` 与阻断链 `forward_lockdown` 必须包含 `ct status dnat return` 与 `ct direction reply return`（可前置在 `fib` 之前以省去回包/DNAT 流的 FIB 查询）；**但 `ct mark` 快速路径必须严格位于 `fib daddr type ... return` 之后**（防止 PPPoE 重连期间 WAN IP 尚未就绪时被持久化 UDP 流缓存 `ct mark 0x20`，导致 WAN IP 恢复后本机端口被永久劫持黑洞）。
+   - `prerouting_udp` 以 `meta l4proto != udp return` 置于第 1 条，使占比最高的 TCP/ICMP 流量跳过 `iifname` 集合查找；`output_udp` 将 `meta l4proto != udp return`、`meta mark $OUTBOUND_MARK return`、可用时的 `meta skgid <gid> return`、`oifname "lo" return` 置于链首，显式放行单播 DHCPv4（`meta nfproto ipv4 udp sport 68 udp dport 67 return`）、DHCPv6（`meta nfproto ipv6 udp sport 546 udp dport 547 return`）与 NTP（`udp dport 123 return`，防无 RTC 路由器冷启动 TLS 死锁），并使用与 `prerouting_udp` 一致的 `ct mark`（`0x10`/`0x20`，掩码 `0x30`）首包决策快速路径。
+6. **单栈裁剪与旁路由 IPv6 防绕行**：
+   - 当 `ipv6_enable='0'` 时在全部主链顶部注入 `meta nfproto != ipv4 return` 并省略 IPv6 匹配与导流规则；当 `ipv4_enable='0'` 时注入 `meta nfproto != ipv6 return` 并省略 IPv4 匹配与导流规则。
+   - 旁路由模式（`topology == 'side'`）且 `ipv6_enable == '1'` 时，在运行态与 `lockdown` 态均注入 `chain output_side_v6 { type filter hook output priority filter; policy accept; icmpv6 type nd-redirect oifname @lan_ifaces drop; }`，阻断内核发出的 ICMPv6 Redirect（Type 137，Linux IPv6 无 `send_redirects` sysctl），防止客户端缓存直达主路由的主机路由绕过旁路由。
+7. **接口集合、CIDR 掩码与反超网投毒边界**：
    - 写入 `set lan_ifaces`（`type ifname`）的设备名必须校验长度 `1..15`（`IFNAMSIZ - 1`）、排除 `.` 与 `..`，且匹配 `^[A-Za-z0-9_.+-]+$`（严禁混入引号、空白、`@` 别名或 `:` 地址标签）；`ubus` 已解析接口时不叠加静态 UCI 旧值，回退读 UCI 时对 `@alias` 执行有限深度解引用。
-   - 所有 IP/CIDR 集合严禁混入 `/0` 默认路由（前缀长度须满足 IPv4 `1–32`、IPv6 `1–128`），并统一规范化消除前导零。
+   - 所有 IP/CIDR 严禁混入 `/0` 默认路由，解析时统一清零主机位并规范化输出；白名单集合（`bypass_v4` / `bypass_v6`）强制实施最小前缀长度限制（IPv4 `>= 8`、IPv6 `>= 16`）与保留段/Fake-IP 双向重叠拦截（`min(prefix, entry.prefix)`），杜绝 `1.0.0.0/1 + 128.0.0.0/1` 等超网投毒经 `auto-merge` 折叠为 `0.0.0.0/0` 穿透代理与 `lockdown`。
+   - 全部集合维持 `O(1)` 哈希去重并在输出 `elements = { ... }` / `add element` 时按行分段（每行 16 条），`apply_rules()` 与 `reload_sets()` 必须先写临时文件并经 `nft -f` 校验执行成功后再原子 `rename()` 覆写持久化自愈脚本（`rules.nft` / `bypass_sets.nft`）。
 
 ### 2.2 公共 Set 定义（双态共享）
 
@@ -112,9 +118,13 @@ table inet nimbus {
         th dport != 53 return
         meta mark $OUTBOUND_MARK return
         ct status dnat return
-        fib daddr type local return
+        fib daddr type { local, broadcast, multicast, anycast } return
+        ip daddr @lan_v4 return
+        ip6 daddr @lan_v6 return
         # [设备分流过滤：policy='bypass' -> return；policy='proxy' -> goto prerouting_dns_hijack]
-        # 均未命中回退：default_bypass -> return；default_proxy -> 进入 prerouting_dns_hijack（或内联 redirect to :53）
+        # 均未命中回退：default_bypass -> return；default_proxy -> 进入 prerouting_dns_hijack（或内联两条单协议规则）
+        meta l4proto tcp redirect to :53
+        meta l4proto udp redirect to :53
     }
 
     # LAN TCP 透明代理（REDIRECT）
@@ -125,7 +135,7 @@ table inet nimbus {
         meta l4proto != tcp return
         meta mark $OUTBOUND_MARK return
         ct status dnat return
-        fib daddr type local return
+        fib daddr type { local, broadcast, multicast, anycast } return
 
         # [设备分流过滤：按 lan_device 规则自上而下顺序匹配（First-Match Wins），先于默认策略生效]
         # 每条启用规则依序匹配 ether saddr / ip saddr / ip6 saddr：
@@ -140,7 +150,7 @@ table inet nimbus {
         ip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
 
         # [端口过滤：按 port_filter_mode 条件生成，见注3]
-        # include: tcp dport != @filter_tcp_ports return（若 filter_tcp_ports 为空则直接 return）
+        # include: tcp dport != @filter_tcp_ports return（若 filter_tcp_ports 为空则直接 return 并省略后续死规则）
         # exclude: tcp dport @filter_tcp_ports return
 
         # 白名单与保留段放行（命中后留在 forward 链吃满 Flow Offloading）
@@ -157,29 +167,36 @@ table inet nimbus {
         meta nfproto ipv6 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
     }
 
-    # LAN（及可选本机回流）UDP 透明代理（TPROXY）
+    # UDP TPROXY 落空即丢弃子链（防 NFT_BREAK 穿透污染 ct mark 或误送本机端口）
+    chain tproxy_udp_v4 {
+        meta nfproto ipv4 meta l4proto udp tproxy ip to :$TPROXY_PORT meta mark set $PROXY_MARK counter name "udp_proxied" accept
+        drop
+    }
+    chain tproxy_udp_v6 {
+        meta nfproto ipv6 meta l4proto udp tproxy ip6 to :$TPROXY_PORT meta mark set $PROXY_MARK counter name "udp_proxied" accept
+        drop
+    }
+
+    # LAN（及可选本机回流）UDP 透明代理（TPROXY，位于 fw4::dstnat 与 prerouting_dns 之后）
     chain prerouting_udp {
-        type filter hook prerouting priority mangle; policy accept;
+        type filter hook prerouting priority dstnat + 2; policy accept;
+        meta l4proto != udp return
+        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
 
         # 仅当 proxy_local == '1' 时按已启用协议族生成：承接 output_udp 经 lo 重路由的本机 UDP
-        iifname "lo" meta mark $PROXY_MARK meta l4proto udp meta nfproto ipv4 counter name "udp_proxied" tproxy ip to :$TPROXY_PORT accept
-        iifname "lo" meta mark $PROXY_MARK meta l4proto udp meta nfproto ipv6 counter name "udp_proxied" tproxy ip6 to :$TPROXY_PORT accept
+        iifname "lo" meta mark $PROXY_MARK meta nfproto ipv4 goto tproxy_udp_v4
+        iifname "lo" meta mark $PROXY_MARK meta nfproto ipv6 goto tproxy_udp_v6
 
         iifname != @lan_ifaces return
-        # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
-        meta l4proto != udp return
         meta mark $OUTBOUND_MARK return
-        fib daddr type local return
         ct status dnat return
         ct direction reply return
+        fib daddr type { local, broadcast, multicast, anycast } return
 
-        # 仅当 dns.hijack_lan_dns == '1' 时生成：放行外部 53 给 dstnat 链劫持至本地 dnsmasq
-        udp dport 53 return
-
-        # Conntrack 首包决策快速路径（避免逐包查大体积白名单 Set；short_circuit_bypass 时省略 0x20 分支防止存量流粘滞）
+        # Conntrack 首包决策快速路径（必须位于 fib 之后；short_circuit_bypass 时省略 0x20 分支防止存量流粘滞）
         ct mark & 0x30 == 0x10 return
-        ct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip to :$TPROXY_PORT accept
-        ct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip6 to :$TPROXY_PORT accept
+        ct mark & 0x30 == 0x20 meta nfproto ipv4 goto tproxy_udp_v4
+        ct mark & 0x30 == 0x20 meta nfproto ipv6 goto tproxy_udp_v6
 
         # [设备分流过滤：按 lan_device 规则自上而下顺序匹配（First-Match Wins）]
         #   policy='bypass' -> ct mark set ct mark & 0xffffffcf | 0x10 return
@@ -187,8 +204,8 @@ table inet nimbus {
         # 均未命中回退默认策略：default_bypass 时 ct mark set ct mark & 0xffffffcf | 0x10 return；default_proxy 时进入 prerouting_udp_proxy，见注1/注2
 
         # Fake-IP 优先通道
-        ip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip to :$TPROXY_PORT accept
-        ip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip6 to :$TPROXY_PORT accept
+        ip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v4
+        ip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v6
 
         # [端口过滤：命中直连时写 ct mark set ct mark & 0xffffffcf | 0x10 return，见注3]
 
@@ -203,8 +220,8 @@ table inet nimbus {
         ip6 daddr @bypass_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
 
         # 首包命中代理并缓存代理标记
-        meta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip to :$TPROXY_PORT accept
-        meta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set $PROXY_MARK counter name "udp_proxied" tproxy ip6 to :$TPROXY_PORT accept
+        meta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v4
+        meta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v6
     }
 
     # 可选链：仅当 global.proxy_local == '1' 时生成（不应用 port_filter_mode，见注3）
@@ -217,7 +234,7 @@ table inet nimbus {
         oifname "lo" return
         # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
         ct status dnat return
-        fib daddr type local return
+        fib daddr type { local, broadcast, multicast, anycast } return
         ip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
         ip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :$REDIRECT_PORT
         ip daddr @reserved_v4 return
@@ -240,9 +257,9 @@ table inet nimbus {
         meta skgid $NIMBUS_GID return
         oifname "lo" return
         # [单栈守卫：!ipv6_enable -> meta nfproto != ipv4 return；!ipv4_enable -> meta nfproto != ipv6 return]
-        fib daddr type local return
         ct status dnat return
         ct direction reply return
+        fib daddr type { local, broadcast, multicast, anycast } return
         meta nfproto ipv4 udp sport 68 udp dport 67 return
         meta nfproto ipv6 udp sport 546 udp dport 547 return
         udp dport 123 return
@@ -260,6 +277,12 @@ table inet nimbus {
         ip6 daddr @bypass_v6 ct mark set ct mark & 0xffffffcf | 0x10 return
         meta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
         meta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set $PROXY_MARK accept
+    }
+
+    # 可选链：仅当 topology == 'side' && ipv6_enable == '1' 时生成（防止内核发送 ICMPv6 Redirect 绕过旁路由）
+    chain output_side_v6 {
+        type filter hook output priority filter; policy accept;
+        icmpv6 type nd-redirect oifname @lan_ifaces drop
     }
 }
 ```
@@ -294,6 +317,10 @@ table inet nimbus {
         # policy='bypass' -> return；policy='proxy' -> goto forward_lockdown_enforce
         # 未命中回退：default_bypass -> return；default_proxy -> 进入 forward_lockdown_enforce（或内联下方阻断规则）
 
+        # Fake-IP 优先拒绝（防止 IPv6 Fake-IP fc00::/18 落入 @reserved_v6 的 fc00::/7 而逃逸出 WAN）
+        ip daddr @fakeip_v4 counter name "lockdown_dropped" reject with icmpx type admin-prohibited
+        ip6 daddr @fakeip_v6 counter name "lockdown_dropped" reject with icmpx type admin-prohibited
+
         ip daddr @reserved_v4 return
         ip6 daddr @reserved_v6 return
         ip daddr @lan_v4 return
@@ -304,6 +331,12 @@ table inet nimbus {
         ip6 daddr @bypass_v6 return
 
         counter name "lockdown_dropped" reject with icmpx type admin-prohibited
+    }
+
+    # 可选链：旁路由且 ipv6_enable == '1' 时保留，防止 Lockdown 期间发送 ICMPv6 Redirect
+    chain output_side_v6 {
+        type filter hook output priority filter; policy accept;
+        icmpv6 type nd-redirect oifname @lan_ifaces drop
     }
 }
 ```
@@ -317,16 +350,20 @@ add element inet nimbus bypass_v4 { 1.0.1.0/24, 1.0.2.0/23 }
 flush set inet nimbus bypass_v6
 add element inet nimbus bypass_v6 { 2400:3200::/32 }
 ```
-> 若某族合并结果为空，仅输出 `flush set`，不输出 `add element`。
+> 若某族合并结果为空，仅输出 `flush set`，不输出 `add element`；保留 `flags interval; auto-merge;`（若旧版 Linux 5.15 内核在单事务 `flush set + add element` 报 `File exists` / `interval` 错误，自动回退为两步 `flush` 后 `add element`）。
 
 #### 接口与设备集合热更新 (`/var/run/nimbus/wan_sets.nft`)
-由 `hotplug.d/iface/90-nimbus` 触发，格式与白名单事务一致，原子刷新 `lan_ifaces`（经 `is_valid_ifname()` 校验并加引号）、`lan_v4`、`lan_v6`（全部模式）与 `wan_v4`、`wan_v6`（`topology == 'main'`，UCI `ip6addr` 回退时剥离前缀仅保留接口本机 `/128`）。若因外部清空规则集导致刷新失败，`hotplug` 自动重放 `/var/run/nimbus/rules.nft`（及更新的 `/var/run/nimbus/bypass_sets.nft`）完成表自愈。
+由 `hotplug.d/iface/90-nimbus` 触发（跳过 `INTERFACE == "loopback"`），格式与白名单事务一致，原子刷新 `lan_ifaces`（经 `is_valid_ifname()` 校验并加引号）、`lan_v4`、`lan_v6`（全部模式）与 `wan_v4`、`wan_v6`（`topology == 'main'`，UCI `ip6addr` 回退时剥离前缀仅保留接口本机 `/128`）。刷新失败时先以 `table_exists()` 判定表是否被外部清空，仅缺失时重放 `/var/run/nimbus/rules.nft`（及最新 `/var/run/nimbus/bypass_sets.nft`）自愈；若重放仍失败，按 `fail_open` 切入应急 Lockdown / Fail Handler，严禁静默返回成功。
 
 ### 2.6 计数器读取规范（供 `rpcd` 状态页）
-优先执行轻量级 `nft -j list counters table inet nimbus` 直接读取表级具名计数器（`tcp_proxied` / `udp_proxied` / `lockdown_dropped`），避免状态轮询序列化大体积白名单元素；若表不存在则直接返回零值不二次调用，仅在旧表无具名计数器时以 `nft -j -t list table inet nimbus`（`--terse` 省略 Set 元素）回退解析。
+优先执行轻量级 `nft -j list counters table inet nimbus` 直接读取表级具名计数器（`tcp_proxied` / `udp_proxied` / `lockdown_dropped`），避免状态轮询序列化大体积白名单元素；若表不存在则直接返回零值不二次调用，仅在返回 JSON 不含任何 `counter` 条目（旧表无具名计数器）时以 `nft -j -t list table inet nimbus`（`--terse` 省略 Set 元素）回退解析。
 
-### 2.7 `fw4` `input` 放行边界检测
-`nimbus` 严禁向 `table inet fw4` 注入代理链或白名单 Set，也严禁修改 `/etc/config/firewall`。在 `tproxy_redirect` 模式下，被 TCP `REDIRECT`、UDP `TPROXY` 或 `:53` DNS 劫持投递至本机的流量均会经过 `fw4` 的 `input` 链（若某 Zone 未在 `/etc/config/firewall` 定义 `fw4` 自身 DNAT 规则，`fw4` 甚至不会在该 Zone 生成 `ct status dnat accept`）；若检测到 LAN 接口所属 Zone 的 `input` 策略非 `ACCEPT`，或某 LAN 接口未归属任何 `fw4` Zone 且全局 `defaults.input` 非 `ACCEPT`，在 `state.json` 的 `warnings` 中写入明确诊断提示。
+### 2.7 `fw4` / `dnsmasq` 边界只读诊断
+`nimbus` 严禁向 `table inet fw4` 注入代理链或白名单 Set，也严禁修改 `/etc/config/firewall`。以下场景在启动/重载时执行只读检测并写入 `state.json` 的 `warnings`：
+- **LAN Zone `input` 策略**：跳过 `enabled='0'` 的 Zone，按 `sec.network` 与已解析物理 `sec.device` 双维度匹配，Zone 未声明 `option input` 时正确继承 `defaults.input`；若策略非 `ACCEPT` 或未归属任何 Zone 且 `defaults.input != 'ACCEPT'`，输出拦截提示。
+- **`fw4::syn_flood` 限速提示**：若 `defaults.syn_flood == '1'`，提示高并发 LAN TCP REDIRECT 流量经 `INPUT` 链可能触发 25/s burst 50 限速丢包。
+- **旁路由 `drop_invalid` 冲突提示**：`topology == 'side'` 下若 `defaults.drop_invalid == '1'` 且 `lan` Zone 未开 `masq='1'`，提示非对称直连 TCP 首包之后会被判 `ct state invalid` 丢弃。
+- **IPv6 DNS 劫持与 `dnsmasq --local-service` 冲突提示**：`hijack_lan_dns == '1'` + `ipv6_enable == '1'` 且 `lan_v6` 为空、`dhcp.@dnsmasq[0].localservice != '0'` 时，提示非本机前缀的 IPv6 GUA DNS 劫持包将被 `dnsmasq` 静默丢弃。
 
 ---
 
@@ -334,15 +371,17 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 ### 3.1 `tproxy_redirect` 模式路由
 
+启动顺序铁律：**先配策略路由（`route.setup_routes()`），再加载 `table inet nimbus`（`nft.apply_rules()`）**；单族配置内部**先 `ip route replace local ... table $ROUTE_TABLE`，再维护 `ip rule add fwmark $PROXY_MARK lookup $ROUTE_TABLE pref 1000`**（重载时已有同参数规则不先删再加，消除无路由间隙导致的 UDP 漏包窗口）：
+
 - **IPv4**（`ipv4_enable == '1'`）：
   ```sh
-  ip -4 rule add fwmark $PROXY_MARK lookup $ROUTE_TABLE pref 1000
   ip -4 route replace local 0.0.0.0/0 dev lo table $ROUTE_TABLE
+  ip -4 rule add fwmark $PROXY_MARK lookup $ROUTE_TABLE pref 1000
   ```
 - **IPv6**（`ipv6_enable == '1'`）：
   ```sh
-  ip -6 rule add fwmark $PROXY_MARK lookup $ROUTE_TABLE pref 1000
   ip -6 route replace local ::/0 dev lo table $ROUTE_TABLE
+  ip -6 rule add fwmark $PROXY_MARK lookup $ROUTE_TABLE pref 1000
   ```
 
 ### 3.2 内核 `sysctl` 调优
@@ -350,12 +389,15 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 执行均为尽力而为（写入失败记录警告但不阻塞启动）：
 
 - **UDP 缓冲区优化**（通用）：仅在当前值小于 `4194304` 时提升 `net.core.rmem_max=4194304` 与 `net.core.wmem_max=4194304`。
-- **旁路由模式**（`topology == 'side'`）：设置 `net.ipv4.conf.all.send_redirects=0` 与各 LAN 物理设备 `net.ipv4.conf.<dev>.send_redirects=0`。
+- **旁路由模式**（`topology == 'side'`）：
+  - 设置 `net.ipv4.conf.all.send_redirects=0` 与各 LAN 物理设备 `net.ipv4.conf.<dev>.send_redirects=0`；
+  - **绝不修改 `net.ipv4.conf.all.rp_filter`**（防止削弱 WAN/VPN 严格 RPF）；仅当检测到 `all.rp_filter == '1'` 或 `<dev>.rp_filter == '1'` 时，利用 Linux `max(all, dev) = max(1, 2) = 2` 机制为对应 LAN 设备设置 `net.ipv4.conf.<dev>.rp_filter=2`（宽松模式兼容多 VLAN 旁路由），OpenWrt 默认 `0` 时保持不动；
+  - 备份快照 `/var/run/nimbus/sysctl_backup.json` 支持重载/热插拔新增 LAN 接口时增量追加落盘，停用、切回 `main` 及包卸载 `prerm` 时完整还原。
 
-### 3.3 清理与自愈
+### 3.3 清理、换表防孤儿与自愈
 
-- **幂等清理**：循环执行 `ip -4/-6 rule del lookup $ROUTE_TABLE` 直至无匹配记录，并执行 `ip -4/-6 route flush table $ROUTE_TABLE`。
-- **热插拔自愈**：`hotplug.d/iface/90-nimbus` 触发时，若 `state.json` 处于 `running` 态，校验 `ip -4/-6 rule show` 中是否存在 `lookup $ROUTE_TABLE` 及对应路由，缺失则自动补回。
+- **换表防孤儿与幂等清理**：将最近一次应用的 `route_table` 持久化于 `/var/run/nimbus/route_state.json`。修改 `proxy.route_table` 重载、手动停止或卸载时，连同旧表与当前表一并循环执行 `ip -4/-6 rule del lookup <T>` 与 `ip -4/-6 route flush table <T>`。
+- **热插拔自愈**：`hotplug.d/iface/90-nimbus` 触发时，若 `state.json` 处于 `running` 态，校验 `ip -4/-6 rule show` 中是否存在 `fwmark $PROXY_MARK` + `lookup $ROUTE_TABLE` 以及对应 `local` 路由（IPv6 在 `ip -6 route show table <T>` 为空时自动回退检 `ip -6 route show table all` 匹配 `local ... table <T>`，同时兼容 `ip-full` 与 BusyBox `ip`），缺失则自动补回。
 
 ---
 
@@ -510,11 +552,12 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 2. 剥离注释：截断首个 `#`、`//` 或 `;` 及其之后的全部内容，再次裁剪首尾空白。
 3. 空行跳过。
 4. 校验格式：
-   - **IPv4**：合法 IPv4 地址（`a.b.c.d`，每段 `0–255`）或 CIDR（前缀长度 `1–32`，严禁 `/0` 默认路由）。
-   - **IPv6**：合法 IPv6 地址（含 `::` 压缩格式）或 CIDR（前缀长度 `1–128`，严禁 `/0` 默认路由）。
+   - **IPv4**：合法 IPv4 地址（`a.b.c.d`，每段 `0–255`）或 CIDR（前缀长度 `8–32`，严禁 `/0` 及 `< /8` 超网），解析时清零主机位。
+   - **IPv6**：合法 IPv6 地址（含 `::` 压缩格式）或 CIDR（前缀长度 `16–128`，严禁 `/0` 及 `< /16` 超网），解析时清零主机位。
+   - **保留段/Fake-IP 双向重叠拦截**：与系统保留段或 `198.18.0.0/15` 存在任意方向重叠（`min(prefix, entry.prefix)` 匹配）的条目一律拒收，防止 `1.0.0.0/1 + 128.0.0.0/1` 等超网投毒经 `auto-merge` 折叠为 `0.0.0.0/0`。
    - **异常内容拒收**：若文本包含 HTML 特征（如 `<html`、`<!doctype`）或存在非法行：
      - `local` 保存接口：直接拒绝保存，返回首个/前 10 个错误行号与内容，不覆盖原文件。
-     - `url` 拉取任务：丢弃临时文件，保留原缓存与当前 `nftables` Set，记录错误日志。
+     - `url` 拉取任务：强制 `allow_domains: false` 且要求有效 IPv4/IPv6 条目数 `>= 1`；失败时丢弃临时文件，保留原缓存与当前 `nftables` Set，记录错误日志。
 5. 按 `list_source.family`（`auto` / `ipv4` / `ipv6`）分别归入 `v4_entries` 与 `v6_entries`。
 
 ### 5.2 远程白名单拉取、热更新与 `crond` 同步
@@ -532,15 +575,15 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 
 ## 6. `dnsmasq` 托管规范 (`dns_manager.uc`)
 
-快照文件固定位于 `/etc/nimbus/dns_backup.json`，记录 `dhcp.@dnsmasq[0]` 的原始字段：`noresolv`、`resolvfile`、`server`、`cachesize`、`dnssec`。
+快照文件固定位于 `/etc/nimbus/dns_backup.json`，记录 `dhcp.@dnsmasq[0]` 的原始字段：`noresolv`、`resolvfile`、`server`、`cachesize`、`dnssec`、`rebind_protection`（若升级前已有旧快照缺失新增字段，修改该字段前先按当前 UCI 值增量补录，绝不覆写已有原始字段）。
 
 1. **首次接管（`mode` 为 `'singbox'` 或 `'custom'`）**：
    - 若 `/etc/nimbus/dns_backup.json` 不存在，先读取当前 `dhcp.@dnsmasq[0]` 并原子写入备份快照（已有快照时绝不覆写，防止多次重载冲掉最初备份）。
-   - **`mode == 'singbox'`**：设置 `noresolv='1'`、`server=['127.0.0.1#' + effective_dns_port]`（如 `'127.0.0.1#5353'`）、`cachesize='0'`、`dnssec='0'`。
-   - **`mode == 'custom'`**：设置 `noresolv='1'`、`server=uci.dns.custom_servers`（保留原有 `cachesize`/`dnssec`）。
-   - 执行 `uci commit dhcp` 并调用 `/etc/init.d/dnsmasq reload`。
+   - **`mode == 'singbox'`**：设置 `noresolv='1'`、`server=['127.0.0.1#' + effective_dns_port]`（如 `'127.0.0.1#5353'`）、`cachesize='0'`、`dnssec='0'`；**仅当生效 Fake-IP 网段与 `dnsmasq` 私有/重绑定阻断空间（如默认 IPv6 `fc00::/18` 属于 `fc00::/7`，或 RFC1918/CGNAT/链路本地网段）重叠时**，额外设置 `rebind_protection='0'`（不满足该条件时从快照还原 `rebind_protection`，不削弱非私有 Fake-IP 用户的安全保护）。
+   - **`mode == 'custom'`**：设置 `noresolv='1'`、`server=uci.dns.custom_servers`（从快照恢复原有 `cachesize`/`dnssec`/`rebind_protection`）。
+   - 执行 `uci commit dhcp` 并调用 `/etc/init.d/dnsmasq reload`；若 `reload` 返回非零退出码须向上传播错误（`supervisor.uc` 启动/重载路径按 Fail-Closed 触发 Fail Handler，严禁静默进入 `running`）。
 2. **无损还原（`mode == 'none'`、服务停止、`fail_open='1'` 回落直连或包卸载 `prerm`）**：
-   - 若 `/etc/nimbus/dns_backup.json` 存在，按快照逐项恢复 `dhcp.@dnsmasq[0]`（原值为 `null` 的字段执行 `uci delete`），提交 `dhcp` 并重载 `dnsmasq`，随后删除备份文件。
+   - 若 `/etc/nimbus/dns_backup.json` 存在，按快照中实际记录的字段逐项恢复 `dhcp.@dnsmasq[0]`（原值为 `null` 的字段执行 `uci delete`），提交 `dhcp` 并重载 `dnsmasq`，随后删除备份文件（还原失败记录错误日志与 `warnings`，不阻断停机清理）。
 
 ---
 
@@ -609,10 +652,31 @@ add element inet nimbus bypass_v6 { 2400:3200::/32 }
 由 `/etc/init.d/nimbus` 通过 `procd` 直接启动（**不开启 `procd_set_param respawn`**），采用纯 `ucode` + `uloop` 实现：
 
 1. **进程托管与 PID**：注入 `GOMEMLIMIT` 与 `GOGC=50`，拉起 `sing-box run -c /var/run/nimbus/config.json -D /var/run/nimbus`，将真实子进程 PID 写入 `/var/run/nimbus/sing-box.pid`。
-2. **主动停机 vs 异常崩溃区分**：
-   - 捕获 `SIGTERM` / `SIGINT`（OpenWrt 24.10+ 优先使用 `uloop.signal`，在 OpenWrt 23.05 等未导出 `uloop.signal` 的 `ucode` 版本上回退至内建 `signal()` 配合 `uc_vm_signal_notifyfd` 唤醒 `uloop`）：置 `stopping = true`，向 `sing-box` 发送 `SIGTERM`（最多等待 5 秒后发送 `SIGKILL`），清理 `sing-box.pid` 后干净退出，**不触发** Fail Handler。
-3. **崩溃重试窗口与 Fail Handler**：
-   - 若非 `stopping` 下 `sing-box` 异常退出，内部维护重试窗口（默认阈值 `3600s`、退避 `3s`、最多重试 `5` 次）：窗口内瞬时崩溃直接拉起并更新 `sing-box.pid`，期间防火墙表与路由保持在线零泄漏。
+2. **主动停机、等待退出与异常崩溃区分**：
+   - 捕获 `SIGTERM` / `SIGINT`（OpenWrt 24.10+ 优先使用 `uloop.signal`，在 OpenWrt 23.05 等未导出 `uloop.signal` 的 `ucode` 版本上回退至内建 `signal()` 配合 `uc_vm_signal_notifyfd` 唤醒 `uloop`）：置 `stopping = true`，向 `sing-box` 发送 `SIGTERM`（最多等待 5 秒后发送 `SIGKILL`），按自身 PID 校验清理 `sing-box.pid`（严禁误删新启动实例的 PID）后干净退出，**不触发** Fail Handler；`init.d/nimbus` 声明 `procd_set_param term_timeout 10` 确保 `procd` 不提前 `SIGKILL` 监督器。
+   - `init.d/nimbus` 在 `service_stopped()`（`rc.common` 保证在 `procd_kill` 之后无条件执行）中先调用 `supervisor.uc --wait-exit`（`ucode` 内部 `sleep(50)` 轮询最多 6s，避免 BusyBox `sleep` 不支持小数及 `restart` 并发抢端口），随后在非包升级（`PKG_UPGRADE != 1`）时执行 `--stop`。
+3. **崩溃重试窗口、锁竞争退出码与 Fail Handler**：
+   - 若非 `stopping` 下 `sing-box` 异常退出，内部维护重试窗口（默认阈值 `60s`、退避 `1s`、最多重试 `3` 次）：窗口内瞬时崩溃直接拉起并更新 `sing-box.pid`，期间防火墙表与路由保持在线零泄漏。
    - 连续崩溃耗尽重试上限时，清理 `sing-box.pid`，获取锁并调用统一 Fail Handler（`fail_open='0'` 切换为 `LOCKDOWN`；`fail_open='1'` 删表清路由并还原 `dnsmasq`）后主动退出，由 `procd` 保持停止态不再拉起。
+   - `--prepare-reload` 在互斥锁超时时返回独立退出码 `11`（不调用 Fail Handler）：`init.d/nimbus` 跳过 `procd_kill` 保护健康运行中的 `sing-box`，`luci.nimbus.uc` 将 `rc=11` 映射为 `E_LOCKED` 交由前端自动重试。
 4. **日志滞回截断轮转**：
    - 注册 `30s` 周期 `uloop.timer` 检查 `/var/log/nimbus.log` 大小：当体积超过 `524288` 字节（`512KB`）时，就地截取末尾 `262144` 字节（`256KB`，并对齐至首个 `\n` 完整行首），通过原地回写 + `f.truncate()` 完成截断；利用 `sing-box` 原生 `O_APPEND` 打开日志文件的特性，杜绝管道转发开销、空洞文件及删除 inode 导致的内存泄漏。
+
+---
+
+## 10. 内核与 OpenWrt 工程防坑铁律（经真核对抗审查沉淀）
+
+本节沉淀在 OpenWrt 23.05（`nftables 1.0.8`）与 OpenWrt 24.10（`nftables 1.1.1` + `dnsmasq 2.93` + 真核 VRF/veth 抓包）两轮对抗审查中实证定位的关键底层陷阱，后续任何重构均严禁违背：
+
+1. **`tproxy` 的 `NFT_BREAK` 穿透效应**：Linux 内核 `nft_tproxy_eval()` 在透明套接字缺失时不会执行同规则后续动作，而是直接跳向链中下一条规则。严禁把 `tproxy` 与其他状态写入/兜底规则混写在同一主链；必须通过独立 `tproxy_udp_v4/v6` 子链（先 `tproxy` 再打标计数并 `accept`，尾随 `drop`）彻底隔断穿透，杜绝 `@fakeip_v6` 落入 `@reserved_v6` 覆写 `ct mark=0x10` 或携带 `fwmark` 误入本机 `dnsmasq :53` / `WireGuard`。
+2. **`prerouting_udp` 必须在 `fw4::dstnat`（`-100`）之后**：放在 `mangle`（`-150`）会导致 `fw4` UDP DNAT/回流的第 1 包在 `ct status dnat` 尚未置位时即被 TPROXY 抢走（首包脑裂）；放在 `dstnat + 2`（`-98`）仍早于路由表判决，同时自动兼容 `fw4::dstnat` 与 `prerouting_dns`（`-99`）。
+3. **`fib daddr type ... return` 必须严格位于 `ct mark` 快速路径之前**：若将 `ct mark & 0x30 == 0x20` 提前至 `fib` 之前，当 PPPoE 重连期间 WAN IP 暂未就绪而 LAN 侧持久化 UDP 流（如 WireGuard 保活）率先缓存 `ct mark 0x20` 后，WAN IP 恢复后该 5 元组仍会被永久劫持黑洞；仅 `ct status dnat` 与 `ct direction reply` 可安全前置在 `fib` 之前。
+4. **启动/重载永远“先路由、后规则”**：若先装 `table inet nimbus` 再建 `ip rule`/`table 100`，或重载时先删正在生效的 `ip rule`，未命中 TPROXY 或 `output_udp` 打标包将沿 `main` 表直接漏出 WAN。
+5. **OpenWrt `dnsmasq` 默认 `rebind_protection='1'` 会 100% 吞掉 `fc00::/18`**：`dnsmasq` 将 RFC 4193 `fc00::/7` 视作私有重绑定空间且无 IP 前缀白名单选项；`dns.mode='singbox'` 仅当生效 Fake-IP 与私有/ULA 网段重叠时按需关闭 `rebind_protection` 并支持旧备份补录无损还原。
+6. **旁路由 IPv6 无 `send_redirects` sysctl 且 `all.rp_filter=0` 有副作用**：IPv6 必须靠 `nft` 丢弃发往 `@lan_ifaces` 的 `icmpv6 type nd-redirect` 防止客户端绕过旁路由；IPv4 严禁修改 `all.rp_filter`（会削弱 WAN 侧严格 RPF），利用 Linux `max(all, dev) = max(1, 2) = 2` 仅在开启严格 RPF 时为 LAN 设备设宽松值 `2`。
+7. **白名单必须防超网折叠且严禁 `O(N²)` 去重**：`1.0.0.0/1 + 128.0.0.0/1` 经 `nftables auto-merge` 会折叠为 `0.0.0.0/0` 击穿代理与 Lockdown，必须执行双向重叠拦截 + 最小前缀限制（v4 `>= 8`、v6 `>= 16`）；`nft_manager.uc` 必须用 `O(1)` 哈希去重（8500 条列表 `O(N²)` 在嵌入式路由器可卡死 20–45s 并打爆 5s 锁超时）；保留 `auto-merge`（不在 `ucode` 手写易溢出的 128 位 IPv6 区间合并），仅对旧 5.15 内核 `reload_sets()` 失败做两步 `flush` 回退。
+8. **OpenWrt `rc.common` / BusyBox / `opkg` 生命周期铁律**：
+   - `/etc/rc.common` 的 `stop()` 先跑 `stop_service` 再异步 `procd_kill`，最后无条件跑 `service_stopped`——因此清理必须在 `service_stopped()` 执行并先等旧进程退出；
+   - OpenWrt BusyBox `sleep` 不支持小数（`sleep 0.1` 直接报错）且无 `usleep`，等待逻辑必须放在 `ucode`（`supervisor.uc --wait-exit`）；
+   - `opkg upgrade` 时 `default_prerm` 会携带 `PKG_UPGRADE=1` 调用 `/etc/init.d/nimbus stop`（`apk upgrade` 则在 `postinst` 携带 `PKG_UPGRADE=1` 调用 `restart`），`service_stopped()` 在 `PKG_UPGRADE=1` 时跳过拆表还原，消除升级期间 Fail-Open 泄漏窗口；
+   - BusyBox `ip -6 route show table <N>` 对 `local` 路由输出为空而 `ip -6 route show table all` 正常输出，`ensure_routes()` 必须支持空输出回退检查 `table all`。

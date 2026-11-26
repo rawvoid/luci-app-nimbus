@@ -89,21 +89,21 @@
 | **LAN 子网动态绕行** | 提取 `lan_interfaces` 的全部 IPv4/IPv6 前缀写入 `lan_v4` / `lan_v6` Set，防止 LAN 内 IPv6 GUA 互访及 `proxy_local='1'` 场景被劫持或形成环路 | 同左（尤其针对旁路由无 `wan6`、IPv6 GUA 无法经 `wan_v6` 覆盖的场景） |
 | **出口公网 IP 动态绕行** | 监听 `wan` / `wan6` 的 `hotplug.d/iface` 事件，自动提取公网 IPv4、IPv6 及 PD 前缀写入 `wan_v4` / `wan_v6` Set | 无 `wan`/`wan6` 时静默跳过，不报错、不阻塞启动；保留段、`lan_v4`/`lan_v6` 与 `fib daddr type local` 自动覆盖局域网与本机通信 |
 | **Flow Offloading 协同** | 白名单流量在 `prerouting` 直接 `return` 进入 `forward`，完整保留 `fw4` 软/硬件加速；代理 TCP/UDP 流量进入本机处理 | 单臂转发流量走 `lan -> lan`；白名单直接回送上级主路由 |
-| **ICMP Redirect 处理** | 保持系统默认 | 启动时自动设置 `net.ipv4.conf.all.send_redirects=0` 与各 LAN 物理设备 `send_redirects=0`，防止旁路由发送 ICMP Redirect 导致客户端绕过代理 |
-| **防火墙边界检测** | 不改写 `/etc/config/firewall`：检测 LAN Zone `input` 策略，若非 `ACCEPT` 在 `state.json` 的 `warnings` 中给出诊断提示 | 同左 |
+| **ICMP Redirect 与 RPF 处理** | 保持系统默认 | IPv4 设 `all` 与各 LAN 物理设备 `send_redirects=0`（绝不修改 `all.rp_filter`；仅在开启严格 RPF 时为 LAN 设备设 `rp_filter=2` 宽松模式）；IPv6 启用时在 `table inet nimbus` 丢弃发往 `@lan_ifaces` 的 `icmpv6 type nd-redirect` |
+| **防火墙与 DNS 边界检测** | 不改写 `/etc/config/firewall`：只读检测 LAN Zone `input`（含 `defaults.input` 继承与物理 `device`）、`syn_flood` 限速及 IPv6 `localservice` 风险并写入 `warnings` | 同左，额外检测 `defaults.drop_invalid='1'` 与未开 `masq` 的非对称直连冲突 |
 
 ### 3.2 `tproxy_redirect` 数据面处理流水线（v1.1 预留 `tun` 扩展位）
 
 在 `table inet nimbus` 中按以下统一顺序筛选流量：
-1. 入站接口、单栈协议族守卫（`meta nfproto`）、防环路标记 `meta mark $OUTBOUND_MARK return`、本机地址 `fib daddr type local return` 及入站连接回包保护（`ct status dnat return` / `ct direction reply return`）
-2. `ct mark`（`0x10`/`0x20`，掩码 `0x30`，写入前清掩码 `ct mark & 0xffffffcf`）首包决策快速路径（UDP TPROXY 链）
+1. 协议/单栈协议族守卫、入站接口、防环路标记 `meta mark $OUTBOUND_MARK return`、入站回包/DNAT 保护（`ct status dnat return` / `ct direction reply return`）及本机/广播/多播地址 `fib daddr type { local, broadcast, multicast, anycast } return`
+2. `ct mark`（`0x10`/`0x20`，掩码 `0x30`，写入前清掩码 `ct mark & 0xffffffcf`）首包决策快速路径（UDP TPROXY 链，**严格位于 `fib` 之后**）
 3. 有序局域网设备分流（`lan_device` 按 `.index` 自上而下优先匹配，`lan_device_mode` 默认策略兜底）
 4. Fake-IP 自动识别优先通道（跳过端口过滤、保留段与白名单，直进代理还原真实域名）
 5. 端口过滤（`port_filter_mode`: `all` / `include` / `exclude`）
 6. 保留段 / 局域网子网（`lan_v4`/`lan_v6`） / WAN 公网 IP / 远程与手动白名单（`bypass_v4`/`bypass_v6`）命中 `return`
 
 末尾导流动作：
-- **`tproxy_redirect`**：优先复用配置中已有的 `redirect`/`tproxy` 入站（缺失自动补齐，运行期剥离冲突 `tun` 并递归重映射 tag）；TCP 走 `dstnat` 链 `redirect`，UDP 走 `mangle` 链 `tproxy` + 策略路由指向 `local default dev lo`。
+- **`tproxy_redirect`**：优先复用配置中已有的 `redirect`/`tproxy` 入站（缺失自动补齐，运行期剥离冲突 `tun` 并递归重映射 tag）；TCP 走 `dstnat + 2` 链 `redirect`，UDP 走 `dstnat + 2` 链经 `tproxy_udp_v4/v6` 子链（`tproxy` 落空即 `drop`）+ 策略路由指向 `local default dev lo`。
 - **v1.1+ 扩展预留**：保留 `proxy_mode` 枚举及 `status.effective.tun_iface` / `counters.tun_*` 字段位，后续按需扩展 `tun` 导流分支。
 
 ---
@@ -196,12 +196,12 @@
   1. `procd` 会在进程任何退出（包括 `exit 0`）后强制拉起，且崩溃耗尽 `respawn` 后**不提供脚本回调**，既无法触发 `LOCKDOWN` 也无法在进入 `LOCKDOWN` 后阻止 `procd` 把服务再次拉起。
   2. 因此 `procd` 仅直接托管 `/usr/share/nimbus/supervisor.uc`（**不配置 `procd_set_param respawn`**）。`supervisor.uc`（纯 `ucode` + `uloop`）负责：
      - 拉起 `sing-box` 并将其真实 PID 写入 `/var/run/nimbus/sing-box.pid`；
-     - 捕获 `SIGTERM`/`SIGINT` 标记主动停机，转发 `SIGTERM` 给 `sing-box`（5s 宽限后 `SIGKILL`），清理 PID 文件后干净退出（**不触发** Fail Handler）；
-     - 内部维护崩溃重试窗口（如 3600s 窗口 / 3s 退避 / 最多 5 次）；瞬时崩溃期间保留防火墙表与路由；耗尽重试次数后删除 PID 文件、执行统一 Fail Handler（按 `fail_open` 切入 `LOCKDOWN` 或回落直连）并自身退出；
+     - 捕获 `SIGTERM`/`SIGINT` 标记主动停机，转发 `SIGTERM` 给 `sing-box`（5s 宽限后 `SIGKILL`；`procd` 声明 `term_timeout 10` 防止提前强杀监督器），按自身 PID 校验清理 PID 文件后干净退出（**不触发** Fail Handler）；`init.d/nimbus` 在 `service_stopped()` 中先执行 `supervisor.uc --wait-exit`，再于非升级场景执行 `--stop`（`PKG_UPGRADE=1` 时跳过拆表以防 `opkg`/`apk` 升级窗口泄漏）；
+     - 内部维护崩溃重试窗口（默认 60s 窗口 / 1s 退避 / 最多 3 次）；瞬时崩溃期间保留防火墙表与路由；耗尽重试次数后删除 PID 文件、执行统一 Fail Handler（按 `fail_open` 切入 `LOCKDOWN` 或回落直连）并自身退出；
      - 每 30s 通过 `uloop.timer` 检查 `/var/log/nimbus.log`：超过 512KB 时就地截断保留尾部 256KB（对齐换行边界），配合 `sing-box` 原生 `O_APPEND` 打开模式避免管道转发开销与空洞文件。
 - **异常回调**：启动校验失败或 `supervisor.uc` 重试耗尽时，统一调用 Fail Handler 按 `fail_open` 执行切入 `LOCKDOWN` 或回落直连。
 - **进程身份与双防环路（`UID=0` + `GID=nimbus`）**：`nimbus` 包通过 `USERID:=nimbus:nimbus`（并在 `uci-defaults` / `postinst` 经 `/lib/functions.sh` 的 `group_add_next nimbus` 兜底兼容 `apk` 升级）创建专用 `nimbus` 组；`init.d/nimbus` 在该组存在时仅声明 `procd_set_param group "nimbus"`（不降 `user`，保留 `UID=0` 与 `CAP_NET_ADMIN`，零 `procd-ujail`/`libcap` 依赖），由 `nft_manager.uc` 在 `output` 链注入 `meta skgid <gid> return` 叠加 `meta mark $OUTBOUND_MARK return`。
-- **智能差异化重载（`reload_service`）**：`init.d` 通过 `procd_add_reload_trigger "nimbus"` 响应 UCI 变更；`reload_service` 先合成临时配置 `/var/run/nimbus/config.json.tmp` 并将其 `SHA256` 与在线 `/var/run/nimbus/config.json` 比对，同时刷新规则表、路由及 `dnsmasq` 与 `crond`；若 `config.json` 哈希、内核二进制以及运行进程 `/proc/<pid>/status` 中的有效 `Gid` 均未变化（例如仅修改 `core.mirror_prefix`、`whitelist.*` 或在无 `local` DNS 改写时切换 `proxy_local`），则**跳过重启 `sing-box` 进程**（仍确保双态规则/Set 与定时任务同步）。
+- **智能差异化重载（`reload_service`）**：`init.d` 通过 `procd_add_reload_trigger "nimbus"` 响应 UCI 变更；`reload_service` 先合成临时配置 `/var/run/nimbus/config.json.tmp` 并将其 `SHA256` 与在线 `/var/run/nimbus/config.json` 比对，按**先策略路由、后防火墙规则**顺序原子刷新，并同步 `dnsmasq` 与 `crond`；若互斥锁超时返回退出码 `11`，`reload_service` 跳过 `procd_kill` 保护健康运行中的进程并由 RPC 映射为 `E_LOCKED`；若 `config.json` 哈希、内核二进制、`GOMEMLIMIT` 以及运行进程 `/proc/<pid>/status` 中的有效 `Gid` 均未变化，则**跳过重启 `sing-box` 进程**（仍确保双态规则/Set 与定时任务同步）。
 
 ### 6.3 `hotplug.d/iface/90-nimbus` 事件自愈
 监听网络接口的 `ifup` / `ifupdate` / `ifdown` 事件：

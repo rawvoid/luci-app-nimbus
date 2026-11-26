@@ -34,7 +34,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `'0'` | `'0'`, `'1'` | 全局启用开关 |
 | `active_profile` | `string` | `''` | 已存在的 `config composer` Section 名，或已启用 `as_config='1'` 的 `config profile` Section 名 | 当前激活的 `sing-box` 配置 ID（不再区分全局配置模式，按目标 Section 类型自动执行编排合成或整份直连合成） |
-| `topology` | `enum` | `'main'` | `'main'`, `'side'` | `main`=主路由；`side`=旁路由（自动关闭 LAN 口 `send_redirects`，不依赖 `wan` 接口） |
+| `topology` | `enum` | `'main'` | `'main'`, `'side'` | `main`=主路由；`side`=旁路由（自动关闭 LAN 口 IPv4 `send_redirects`、丢弃发往 LAN 口的 IPv6 `nd-redirect`、仅在严格 RPF 时为 LAN 口设宽松 `rp_filter=2`，不依赖 `wan` 接口） |
 | `proxy_mode` | `enum` | `'tproxy_redirect'` | `'tproxy_redirect'`（v1.1+ 预留 `'tun'`） | 透明代理模式（v1.0 仅实现 `tproxy_redirect`） |
 | `fail_open` | `bool` | `'0'` | `'0'`, `'1'` | `'0'`=内核异常/崩溃时切入 Lockdown 阻断非白名单 LAN 转发（始终放行路由器管理流量）；`'1'`=异常时清表回落直连 |
 | `lan_interfaces` | `list(string)` | `['lan']` | OpenWrt `network` 逻辑接口名列表 | 代理覆盖的 LAN 接口 |
@@ -69,7 +69,7 @@
 
 ### 2.3 `config dns 'dns'`（命名单例：`dnsmasq` 托管）
 
-接管前备份原始 `dhcp.@dnsmasq[0]` 配置至 `/etc/nimbus/dns_backup.json`，停用或切回 `'none'` 时按快照还原。`mode='singbox'` 时同时设置 `noresolv='1'`、`cachesize='0'`、`dnssec='0'`。
+接管前备份原始 `dhcp.@dnsmasq[0]` 配置至 `/etc/nimbus/dns_backup.json`，停用或切回 `'none'` 时按快照还原。`mode='singbox'` 时同时设置 `noresolv='1'`、`cachesize='0'`、`dnssec='0'`（若生效 Fake-IP 命中私有/ULA 网段如 `fc00::/18`，按需同步设置 `rebind_protection='0'` 并于停用或切走时还原）。
 
 | Option | 类型 | 默认值 | 合法值 / 校验规则 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |

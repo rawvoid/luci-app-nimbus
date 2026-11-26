@@ -92,7 +92,9 @@ function parse_route_params(uci_cfg, opts) {
 		ipv4_enable = true;
 
 	let topology = ((options.topology ?? g.topology ?? 'main') == 'side') ? 'side' : 'main';
-	let net_ctx = nft.resolve_network_context(uci_data, options);
+	let lan_ifaces = [];
+	if (topology == 'side' && options.need_lan_ifaces !== false)
+		lan_ifaces = nft.resolve_network_context(uci_data, options).lan_ifaces;
 
 	return {
 		proxy_mark: proxy_mark,
@@ -101,7 +103,7 @@ function parse_route_params(uci_cfg, opts) {
 		ipv4_enable: ipv4_enable,
 		ipv6_enable: ipv6_enable,
 		topology: topology,
-		lan_ifaces: net_ctx.lan_ifaces
+		lan_ifaces: lan_ifaces
 	};
 }
 
@@ -146,38 +148,56 @@ function apply_side_sysctls(lan_ifaces, opts) {
 	let proc_root = options.proc_sys_root || '/proc/sys';
 	let backup_path = options.sysctl_backup_path || SYSCTL_BACKUP_FILE;
 
-	let targets = [ 'all' ];
+	let lan_devs = [];
 	if (type(lan_ifaces) == 'array') {
 		for (let iface in lan_ifaces) {
-			if (type(iface) == 'string' && match(iface, /^[A-Za-z0-9_.-]+$/))
-				push_unique(targets, iface);
+			if (nft.is_valid_ifname(iface))
+				push_unique(lan_devs, trim(iface));
 		}
 	}
 
 	let existing_backup = common.read_json(backup_path);
-	let backup = (type(existing_backup) == 'object') ? existing_backup : {};
+	let backup = (type(existing_backup) == 'object') ? { ...existing_backup } : {};
 	let had_backup = (type(existing_backup) == 'object');
+	let backup_dirty = false;
 	let applied = {};
 
-	for (let iface in targets) {
-		for (let key in [ 'rp_filter', 'send_redirects' ]) {
-			let proc_path = sprintf('%s/net/ipv4/conf/%s/%s', proc_root, iface, key);
-			let sys_key = sprintf('net.ipv4.conf.%s.%s', iface, key);
-			let cur = read_proc_value(proc_path);
-			if (cur != null && !exists(backup, sys_key))
-				backup[sys_key] = cur;
+	let send_targets = [ 'all', ...lan_devs ];
+	for (let iface in send_targets) {
+		let proc_path = sprintf('%s/net/ipv4/conf/%s/send_redirects', proc_root, iface);
+		let sys_key = sprintf('net.ipv4.conf.%s.send_redirects', iface);
+		let cur = read_proc_value(proc_path);
+		if (cur != null && !exists(backup, sys_key)) {
+			backup[sys_key] = cur;
+			backup_dirty = true;
+		}
+		if (write_proc_value(proc_path, '0'))
+			applied[sys_key] = '0';
+	}
 
-			if (write_proc_value(proc_path, '0'))
-				applied[sys_key] = '0';
+	// Never modify all.rp_filter (preserves WAN strict RPF); only relax LAN dev to loose mode (2)
+	// when strict RPF (1) is active on all or on the LAN device (Linux uses max(all, dev) = max(1, 2) = 2).
+	let all_rpf = read_proc_value(sprintf('%s/net/ipv4/conf/all/rp_filter', proc_root));
+	for (let iface in lan_devs) {
+		let proc_path = sprintf('%s/net/ipv4/conf/%s/rp_filter', proc_root, iface);
+		let sys_key = sprintf('net.ipv4.conf.%s.rp_filter', iface);
+		let cur = read_proc_value(proc_path);
+		if (all_rpf == '1' || cur == '1') {
+			if (cur != null && !exists(backup, sys_key)) {
+				backup[sys_key] = cur;
+				backup_dirty = true;
+			}
+			if (write_proc_value(proc_path, '2'))
+				applied[sys_key] = '2';
 		}
 	}
 
-	if (!had_backup && length(keys(backup)) > 0)
+	if ((!had_backup || backup_dirty) && length(keys(backup)) > 0)
 		common.write_json_atomic(backup_path, backup, 0600);
 
 	return {
 		ok: true,
-		targets: targets,
+		targets: send_targets,
 		applied: applied,
 		backup_path: backup_path
 	};
@@ -194,8 +214,8 @@ function restore_side_sysctls(opts) {
 
 	let restored = {};
 	for (let sys_key, orig_val in backup) {
-		let m = match(sys_key, /^net\.ipv4\.conf\.([A-Za-z0-9_.-]+)\.(rp_filter|send_redirects)$/);
-		if (!m)
+		let m = match(sys_key, /^net\.ipv4\.conf\.([^\/]+)\.(rp_filter|send_redirects)$/);
+		if (!m || (m[1] != 'all' && !nft.is_valid_ifname(m[1])))
 			continue;
 		let proc_path = sprintf('%s/net/ipv4/conf/%s/%s', proc_root, m[1], m[2]);
 		if (write_proc_value(proc_path, orig_val))
@@ -221,41 +241,57 @@ function delete_table_rules_loop(ip_bin, family_flag, route_table, opts) {
 	return count;
 }
 
+function build_rule_match_re(proxy_mark_hex, route_table) {
+	let hex_body = replace(lc('' + proxy_mark_hex), /^0x0*/, '');
+	if (length(hex_body) == 0)
+		hex_body = '0';
+	return regexp(sprintf('fwmark[ \t]+0x0*%s([ \t\/]|$).*lookup[ \t]+%s([ \t\r\n]|$)', hex_body, route_table));
+}
+
+function count_matching_rules(rule_output, proxy_mark_hex, route_table) {
+	let lookup_re = regexp(sprintf('lookup[ \t]+%s([ \t\r\n]|$)', route_table));
+	let exact_re = build_rule_match_re(proxy_mark_hex, route_table);
+	let total = 0;
+	let exact = 0;
+	for (let line in split('' + (rule_output || ''), '\n')) {
+		if (match(line, lookup_re)) {
+			total++;
+			if (match(line, exact_re))
+				exact++;
+		}
+	}
+	return { total: total, exact: exact };
+}
+
+function read_saved_route_table(state_path) {
+	let st = common.read_json(state_path);
+	if (type(st) == 'object' && st.route_table != null) {
+		let n = parse_route_table(st.route_table);
+		if ('' + n == trim('' + st.route_table))
+			return '' + n;
+	}
+	return null;
+}
+
 function setup_routes(opts) {
 	let options = opts || {};
 	let params = parse_route_params(options.uci, options);
 	let ip_bin = get_ip_bin(options);
+	let state_path = options.route_state_path || common.ROUTE_STATE_FILE;
+	let prev_table = read_saved_route_table(state_path);
 	let commands = [];
 
-	// Always clear disabled or pre-existing rules first for idempotency
+	// Configure active table first (route BEFORE rule, avoiding deleting already-matching rules on reload)
 	for (let fam in [ '-4', '-6' ]) {
 		let enabled = (fam == '-4') ? params.ipv4_enable : params.ipv6_enable;
 		let default_cidr = (fam == '-4') ? '0.0.0.0/0' : '::/0';
 
-		delete_table_rules_loop(ip_bin, fam, params.route_table, options);
-		push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', params.route_table ]);
-
 		if (!enabled) {
+			delete_table_rules_loop(ip_bin, fam, params.route_table, options);
+			push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', params.route_table ]);
 			run_ip_cmd([ ip_bin, fam, 'route', 'flush', 'table', params.route_table ], options);
 			push(commands, [ ip_bin, fam, 'route', 'flush', 'table', params.route_table ]);
 			continue;
-		}
-
-		let rule_cmd = [
-			ip_bin, fam, 'rule', 'add',
-			'fwmark', params.proxy_mark,
-			'lookup', params.route_table,
-			'pref', params.rule_prio
-		];
-		let r1 = run_ip_cmd(rule_cmd, options);
-		push(commands, rule_cmd);
-		if (r1.rc != 0) {
-			return {
-				ok: false,
-				code: common.ERR_INTERNAL,
-				error: sprintf('failed to add %s policy rule: %s', fam, r1.output),
-				commands: commands
-			};
 		}
 
 		let route_cmd = [
@@ -273,6 +309,55 @@ function setup_routes(opts) {
 				commands: commands
 			};
 		}
+
+		let already_healthy = false;
+		if (type(options.runner) != 'function') {
+			let r_show = run_ip_cmd([ ip_bin, fam, 'rule', 'show' ], options);
+			if (r_show.rc == 0) {
+				let c = count_matching_rules(r_show.output, params.proxy_mark, params.route_table);
+				already_healthy = (c.exact == 1 && c.total == 1);
+			}
+		}
+
+		if (!already_healthy) {
+			delete_table_rules_loop(ip_bin, fam, params.route_table, options);
+			push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', params.route_table ]);
+
+			let rule_cmd = [
+				ip_bin, fam, 'rule', 'add',
+				'fwmark', params.proxy_mark,
+				'lookup', params.route_table,
+				'pref', params.rule_prio
+			];
+			let r1 = run_ip_cmd(rule_cmd, options);
+			push(commands, rule_cmd);
+			if (r1.rc != 0) {
+				return {
+					ok: false,
+					code: common.ERR_INTERNAL,
+					error: sprintf('failed to add %s policy rule: %s', fam, r1.output),
+					commands: commands
+				};
+			}
+		}
+	}
+
+	// Clean up previous route_table AFTER new table is active so table switches have zero leak window
+	if (prev_table != null && prev_table != params.route_table) {
+		for (let fam in [ '-4', '-6' ]) {
+			delete_table_rules_loop(ip_bin, fam, prev_table, options);
+			push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', prev_table ]);
+			let fl_cmd = [ ip_bin, fam, 'route', 'flush', 'table', prev_table ];
+			run_ip_cmd(fl_cmd, options);
+			push(commands, fl_cmd);
+		}
+	}
+
+	if (type(options.runner) != 'function' || options.route_state_path != null) {
+		common.write_json_atomic(state_path, {
+			route_table: params.route_table,
+			proxy_mark: params.proxy_mark
+		}, 0600);
 	}
 
 	tune_udp_buffers(options);
@@ -293,18 +378,29 @@ function setup_routes(opts) {
 
 function cleanup_routes(opts) {
 	let options = opts || {};
-	let params = parse_route_params(options.uci, options);
+	let params = parse_route_params(options.uci, { ...options, need_lan_ifaces: false });
 	let ip_bin = get_ip_bin(options);
+	let state_path = options.route_state_path || common.ROUTE_STATE_FILE;
+	let prev_table = read_saved_route_table(state_path);
 	let commands = [];
 
-	for (let fam in [ '-4', '-6' ]) {
-		delete_table_rules_loop(ip_bin, fam, params.route_table, options);
-		push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', params.route_table ]);
+	let tables = [ params.route_table ];
+	if (prev_table != null && prev_table != params.route_table)
+		push(tables, prev_table);
 
-		let flush_cmd = [ ip_bin, fam, 'route', 'flush', 'table', params.route_table ];
-		run_ip_cmd(flush_cmd, options);
-		push(commands, flush_cmd);
+	for (let tbl in tables) {
+		for (let fam in [ '-4', '-6' ]) {
+			delete_table_rules_loop(ip_bin, fam, tbl, options);
+			push(commands, [ ip_bin, fam, 'rule', 'del', 'lookup', tbl ]);
+
+			let flush_cmd = [ ip_bin, fam, 'route', 'flush', 'table', tbl ];
+			run_ip_cmd(flush_cmd, options);
+			push(commands, flush_cmd);
+		}
 	}
+
+	if (type(options.runner) != 'function' || options.route_state_path != null)
+		fs.unlink(state_path);
 
 	let sysctl_res = restore_side_sysctls(options);
 
@@ -321,12 +417,12 @@ function ensure_routes(opts) {
 	let params = parse_route_params(options.uci, options);
 	let ip_bin = get_ip_bin(options);
 	let needs_repair = false;
-	let lookup_re = regexp(sprintf('lookup[ \t]+%s([ \t\r\n]|$)', params.route_table));
+	let exact_re = build_rule_match_re(params.proxy_mark, params.route_table);
 
 	if (params.ipv4_enable) {
 		let r_rule4 = run_ip_cmd([ ip_bin, '-4', 'rule', 'show' ], options);
 		let r_rt4 = run_ip_cmd([ ip_bin, '-4', 'route', 'show', 'table', params.route_table ], options);
-		if (r_rule4.rc != 0 || !match(r_rule4.output, lookup_re) ||
+		if (r_rule4.rc != 0 || !match(r_rule4.output, exact_re) ||
 			r_rt4.rc != 0 || index(r_rt4.output, 'local') < 0) {
 			needs_repair = true;
 		}
@@ -335,8 +431,20 @@ function ensure_routes(opts) {
 	if (!needs_repair && params.ipv6_enable) {
 		let r_rule6 = run_ip_cmd([ ip_bin, '-6', 'rule', 'show' ], options);
 		let r_rt6 = run_ip_cmd([ ip_bin, '-6', 'route', 'show', 'table', params.route_table ], options);
-		if (r_rule6.rc != 0 || !match(r_rule6.output, lookup_re) ||
-			r_rt6.rc != 0 || (length(r_rt6.output) > 0 && index(r_rt6.output, 'local') < 0)) {
+		let rt6_ok = (r_rt6.rc == 0 && index(r_rt6.output, 'local') >= 0);
+		if (!rt6_ok && r_rt6.rc == 0 && length(trim(r_rt6.output)) == 0) {
+			let r_all6 = run_ip_cmd([ ip_bin, '-6', 'route', 'show', 'table', 'all' ], options);
+			if (r_all6.rc == 0) {
+				let rt6_re = regexp(sprintf('local[ \t]+.*table[ \t]+%s([ \t\r\n]|$)', params.route_table));
+				for (let line in split(r_all6.output, '\n')) {
+					if (match(line, rt6_re)) {
+						rt6_ok = true;
+						break;
+					}
+				}
+			}
+		}
+		if (r_rule6.rc != 0 || !match(r_rule6.output, exact_re) || !rt6_ok) {
 			needs_repair = true;
 		}
 	}

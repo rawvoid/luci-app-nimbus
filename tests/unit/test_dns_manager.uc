@@ -262,4 +262,69 @@ check(fs.stat(backup_path) == null && get_dnsmasq_uci().server[0] == '223.5.5.5'
 	get_dnsmasq_uci().cachesize == '1000',
 	'supervisor --stop restores dnsmasq and deletes dns_backup.json');
 
+// 8. Conditional rebind_protection handling (IPv6 fc00::/18 vs 198.18-only), legacy backup backfill, and reload failure propagation
+let dhcp_rebind =
+	"config dnsmasq\n" +
+	"\toption domainneeded '1'\n" +
+	"\toption rebind_protection '1'\n" +
+	"\toption resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'\n" +
+	"\toption cachesize '1000'\n" +
+	"\tlist server '223.5.5.5'\n";
+check(common.atomic_write(conf_dir + '/dhcp', dhcp_rebind, 0644), 'seed dhcp with rebind_protection=1');
+
+// 198.18.0.0/15-only Fake-IP must keep rebind_protection='1' intact
+let res_198 = dns.apply_dns({ dns: { mode: 'singbox', singbox_dns_port: '5353' } }, {
+	uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path,
+	effective_dns_port: 5353, fakeip: { ipv4: [ '198.18.0.0/15' ], ipv6: [] },
+	runner: () => 0
+});
+check(res_198.ok === true && res_198.rebind_disabled === false && get_dnsmasq_uci().rebind_protection == '1',
+	'singbox mode with 198.18.0.0/15-only Fake-IP preserves rebind_protection=1');
+
+// IPv6 fc00::/18 Fake-IP disables rebind_protection='0' and records original '1' in backup
+let res_fc00 = dns.apply_dns({ dns: { mode: 'singbox', singbox_dns_port: '5353' } }, {
+	uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path,
+	effective_dns_port: 5353, fakeip: { ipv4: [ '198.18.0.0/15' ], ipv6: [ 'fc00::/18' ] },
+	runner: () => 0
+});
+check(res_fc00.ok === true && res_fc00.rebind_disabled === true &&
+	get_dnsmasq_uci().rebind_protection == '0' &&
+	common.read_json(backup_path)?.rebind_protection == '1',
+	'singbox mode with IPv6 fc00::/18 Fake-IP sets rebind_protection=0 while preserving original 1 in backup');
+
+// Switching back to non-private Fake-IP restores rebind_protection='1' immediately
+let res_back = dns.apply_dns({ dns: { mode: 'singbox', singbox_dns_port: '5353' } }, {
+	uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path,
+	effective_dns_port: 5353, fakeip: { ipv4: [ '198.18.0.0/15' ], ipv6: [] },
+	runner: () => 0
+});
+check(res_back.ok === true && get_dnsmasq_uci().rebind_protection == '1',
+	'switching away from private/IPv6 Fake-IP restores rebind_protection=1 from snapshot');
+
+// Legacy backup snapshot missing rebind_protection key gets backfilled before modification
+check(common.write_json_atomic(backup_path, {
+	noresolv: null, resolvfile: '/tmp/resolv.conf.d/resolv.conf.auto',
+	server: [ '223.5.5.5' ], cachesize: '1000', dnssec: null
+}, 0600), 'write legacy dns_backup.json without rebind_protection key');
+let res_bf = dns.apply_dns({ dns: { mode: 'singbox', singbox_dns_port: '5353' } }, {
+	uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path,
+	effective_dns_port: 5353, fakeip: { ipv4: [], ipv6: [ 'fc00::/18' ] },
+	runner: () => 0
+});
+check(res_bf.ok === true && get_dnsmasq_uci().rebind_protection == '0' &&
+	common.read_json(backup_path)?.rebind_protection == '1',
+	'apply_dns backfills missing rebind_protection into pre-upgrade dns_backup.json');
+check(dns.restore_dns({ uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path, runner: () => 0 }).ok === true &&
+	get_dnsmasq_uci().rebind_protection == '1',
+	'restore_dns restores backfilled rebind_protection=1');
+
+// dnsmasq reload failure must propagate as ok=false instead of silent success
+let res_reload_fail = dns.apply_dns({ dns: { mode: 'singbox', singbox_dns_port: '5353' } }, {
+	uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path,
+	effective_dns_port: 5353, runner: () => 1
+});
+check(res_reload_fail.ok === false && res_reload_fail.code == common.ERR_INTERNAL && res_reload_fail.reloaded === false,
+	'apply_dns propagates non-zero dnsmasq reload exit code as error');
+dns.restore_dns({ uci_confdir: conf_dir, uci_savedir: save_dir, backup_path: backup_path, runner: () => 0 });
+
 printf('test_dns_manager.uc: %d assertions passed\n', passed);

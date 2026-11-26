@@ -770,6 +770,68 @@ let pl_override_res = cb.transform_config({
 check(pl_override_res.ok === true && pl_override_res.context.proxy_local === false,
 	'explicit global.proxy_local=0 overrides legacy global.router_proxy=1');
 
+// 13c. Round-2 hardening regressions: dual-inbound port mismatch, specific tproxy listen, block_quic after sniff, ipv4_enable=0 DNS validation
+let dual_mismatch = cb.transform_config({
+	inbounds: [
+		{ type: 'tproxy', tag: 'tp4', listen: '0.0.0.0', listen_port: 7892, network: 'udp' },
+		{ type: 'tproxy', tag: 'tp6', listen: '::', listen_port: 7894, network: 'udp' }
+	],
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ ipv4_enable: '1', ipv6_enable: '1', dns_mode: 'none' }));
+check(dual_mismatch.ok === true &&
+	length(filter(dual_mismatch.context.warnings, (w) => index(w, 'IPv6 UDP tproxy is not covered') >= 0)) == 1,
+	'emits IPv6 UDP warning when secondary IPv6 tproxy inbound uses a different listen_port');
+
+let spec_tproxy = cb.transform_config({
+	inbounds: [
+		{ type: 'tproxy', tag: 'tp-lan', listen: '192.168.1.1', listen_port: 7892, network: 'udp' }
+	],
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ dns_mode: 'none' }));
+check(spec_tproxy.ok === true &&
+	length(filter(spec_tproxy.context.warnings, (w) => index(w, 'requires wildcard "::" or "0.0.0.0"') >= 0)) == 1,
+	'warns when reused tproxy inbound binds a specific non-wildcard address');
+
+let quic_after_sniff = cb.transform_config({
+	route: {
+		rules: [
+			{ ip_is_private: true, outbound: 'direct' },
+			{ action: 'sniff' }
+		]
+	},
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({ dns_mode: 'none', block_quic: '1' }));
+let sniff_pos = -1, quic_pos = -1;
+for (let i = 0; i < length(quic_after_sniff.config?.route?.rules || []); i++) {
+	let r = quic_after_sniff.config.route.rules[i];
+	if (r?.action == 'sniff')
+		sniff_pos = i;
+	if (r?.protocol == 'quic' && r?.action == 'reject')
+		quic_pos = i;
+}
+check(quic_after_sniff.ok === true && sniff_pos >= 0 && quic_pos > sniff_pos,
+	'block_quic=1 inserts protocol:quic reject rule AFTER existing sniff rule');
+
+let v6_only_dns = cb.transform_config({
+	dns: { servers: [ { type: 'local', tag: 'loc' } ] },
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({
+	ipv4_enable: '0', ipv6_enable: '1', dns_mode: 'singbox',
+	local_dns_policy: 'auto', local_fallback_server: '2400:3200::1'
+}), { wan_dns_servers: [ '223.5.5.5', '2400:3200:baba::1' ] });
+check(v6_only_dns.ok === true && v6_only_dns.context.local_dns_server == '2400:3200:baba::1',
+	'ipv4_enable=0 rejects IPv4 WAN DNS candidates and selects IPv6 upstream DNS');
+
+let v6_only_bad_fb = cb.transform_config({
+	dns: { servers: [ { type: 'local', tag: 'loc' } ] },
+	outbounds: [ { type: 'direct', tag: 'direct' } ]
+}, make_uci({
+	ipv4_enable: '0', ipv6_enable: '1', dns_mode: 'singbox',
+	local_dns_policy: 'fallback', local_fallback_server: '223.5.5.5'
+}));
+check(v6_only_bad_fb.ok === false && v6_only_bad_fb.code == common.ERR_VALIDATE_FAILED,
+	'ipv4_enable=0 rejects IPv4 local_fallback_server');
+
 // 14. Confirm fixtures are untouched byte-for-byte
 for (let name in fixture_names) {
 	let p = fixtures_dir + '/' + name;

@@ -121,7 +121,29 @@ function supports_udp(inb) {
 }
 
 function is_loopback_addr(addr) {
-	return (addr == '127.0.0.1' || addr == '::1');
+	if (type(addr) != 'string')
+		return false;
+	let s = trim(addr);
+	let b = iptoarr(s);
+	if (!b)
+		return false;
+	if (length(b) == 4)
+		return (b[0] == 127);
+	if (length(b) == 16) {
+		for (let i = 0; i < 15; i++) {
+			if (b[i] != 0)
+				return false;
+		}
+		return (b[15] == 1);
+	}
+	return false;
+}
+
+function is_wildcard_listen(addr) {
+	if (addr == null || addr === '')
+		return true;
+	let s = trim('' + addr);
+	return (s == '' || s == '0.0.0.0' || s == '::');
 }
 
 function is_ipv6_listen(addr) {
@@ -132,7 +154,7 @@ function is_ipv4_loopback_reachable(addr) {
 	return (addr == '127.0.0.1' || addr == '0.0.0.0' || addr == '::');
 }
 
-function validate_upstream_ip(raw_ip, own_ips, ipv6_enable) {
+function validate_upstream_ip(raw_ip, own_ips, ipv6_enable, ipv4_enable) {
 	if (type(raw_ip) != 'string')
 		return null;
 	let s = trim(raw_ip);
@@ -144,6 +166,8 @@ function validate_upstream_ip(raw_ip, own_ips, ipv6_enable) {
 		return null;
 
 	if (length(bytes) == 4) {
+		if (ipv4_enable === false)
+			return null;
 		if (bytes[0] == 0 || bytes[0] == 127 || bytes[0] >= 224)
 			return null;
 		if (bytes[0] == 169 && bytes[1] == 254)
@@ -350,10 +374,11 @@ function resolve_wan_upstream_dns(uci_cfg, opts) {
 		}
 	}
 
+	let ipv4_enable = (g.ipv4_enable != '0');
 	let safe_v4 = [];
 	let safe_v6 = [];
 	for (let cand in candidates) {
-		let v = validate_upstream_ip(cand, own_ips, ipv6_enable);
+		let v = validate_upstream_ip(cand, own_ips, ipv6_enable, ipv4_enable);
 		if (!v)
 			continue;
 		if (v.family == 4)
@@ -678,7 +703,7 @@ function remap_rules_recursive(rules, stripped_tags, replacement) {
 	return out;
 }
 
-function has_other_ipv6_inbound(inbounds, kind, skip_idx) {
+function has_other_ipv6_inbound(inbounds, kind, skip_idx, expected_port) {
 	for (let i = 0; i < length(inbounds); i++) {
 		if (i == skip_idx)
 			continue;
@@ -686,6 +711,8 @@ function has_other_ipv6_inbound(inbounds, kind, skip_idx) {
 		if (type(inb) != 'object' || inb.type != kind)
 			continue;
 		if (kind == 'tproxy' && !supports_udp(inb))
+			continue;
+		if (expected_port != null && parse_port(inb.listen_port, null) != expected_port)
 			continue;
 		if (is_ipv6_listen(inb.listen))
 			return true;
@@ -881,8 +908,7 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	if (type(cfg.route.rules) != 'array')
 		cfg.route.rules = [];
 
-	let raw_proxy_local = g.proxy_local ?? g.router_proxy ?? '0';
-	let proxy_local = (raw_proxy_local == '1' || raw_proxy_local === 1 || raw_proxy_local === true);
+	let proxy_local = common.is_proxy_local(uci_cfg);
 
 	let effective_outbound_mark = outbound_mark;
 	let raw_default_mark = cfg.route.default_mark;
@@ -979,9 +1005,18 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			push(warnings, sprintf('redirect inbound "%s" loopback listen "%s" rewritten to "%s"',
 				redirect_tag, r_inb.listen, default_listen));
 			r_inb.listen = default_listen;
-		} else if (ipv6_enable && r_inb.listen == '0.0.0.0' && !has_other_ipv6_inbound(cfg.inbounds, 'redirect', redir_idx)) {
+		} else if (!ipv6_enable && is_ipv6_listen(r_inb.listen)) {
+			push(warnings, sprintf('redirect inbound "%s" listens on IPv6 "%s" while ipv6_enable=0; binding may fail on IPv6-disabled kernels',
+				redirect_tag, r_inb.listen));
+		} else if (!ipv4_enable && r_inb.listen == '0.0.0.0') {
+			push(warnings, sprintf('redirect inbound "%s" listens on "0.0.0.0" while ipv4_enable=0; IPv6 TCP redirect is not covered',
+				redirect_tag));
+		} else if (ipv6_enable && r_inb.listen == '0.0.0.0' && !has_other_ipv6_inbound(cfg.inbounds, 'redirect', redir_idx, r_port)) {
 			push(warnings, sprintf('redirect inbound "%s" listens on "0.0.0.0" while ipv6_enable=1; IPv6 TCP redirect is not covered',
 				redirect_tag));
+		} else if (proxy_local && !is_wildcard_listen(r_inb.listen)) {
+			push(warnings, sprintf('redirect inbound "%s" binds specific address "%s" while global.proxy_local="1"; router-local TCP redirect to loopback may fail',
+				redirect_tag, r_inb.listen));
 		}
 	} else {
 		if (exists(used_ports, '' + cfg_redirect_port))
@@ -1028,9 +1063,18 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			push(warnings, sprintf('tproxy inbound "%s" loopback listen "%s" rewritten to "%s"',
 				tproxy_tag, t_inb.listen, default_listen));
 			t_inb.listen = default_listen;
-		} else if (ipv6_enable && t_inb.listen == '0.0.0.0' && !has_other_ipv6_inbound(cfg.inbounds, 'tproxy', tp_idx)) {
+		} else if (!ipv6_enable && is_ipv6_listen(t_inb.listen)) {
+			push(warnings, sprintf('tproxy inbound "%s" listens on IPv6 "%s" while ipv6_enable=0; binding may fail on IPv6-disabled kernels',
+				tproxy_tag, t_inb.listen));
+		} else if (!ipv4_enable && t_inb.listen == '0.0.0.0') {
+			push(warnings, sprintf('tproxy inbound "%s" listens on "0.0.0.0" while ipv4_enable=0; IPv6 UDP tproxy is not covered',
+				tproxy_tag));
+		} else if (ipv6_enable && t_inb.listen == '0.0.0.0' && !has_other_ipv6_inbound(cfg.inbounds, 'tproxy', tp_idx, t_port)) {
 			push(warnings, sprintf('tproxy inbound "%s" listens on "0.0.0.0" while ipv6_enable=1; IPv6 UDP tproxy is not covered',
 				tproxy_tag));
+		} else if (!is_wildcard_listen(t_inb.listen)) {
+			push(warnings, sprintf('tproxy inbound "%s" binds specific address "%s"; nftables tproxy requires wildcard "::" or "0.0.0.0" listen',
+				tproxy_tag, t_inb.listen));
 		}
 	} else {
 		if (exists(used_ports, '' + cfg_tproxy_port))
@@ -1103,7 +1147,7 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 			let raw_fb = exists(d, 'local_fallback_server') ? trim('' + (d.local_fallback_server ?? '')) : '223.5.5.5';
 			let fb_res = null;
 			if (length(raw_fb) > 0) {
-				fb_res = validate_upstream_ip(raw_fb, null, ipv6_enable);
+				fb_res = validate_upstream_ip(raw_fb, null, ipv6_enable, ipv4_enable);
 				if (!fb_res) {
 					return fail(common.ERR_VALIDATE_FAILED,
 						sprintf('dns.local_fallback_server "%s" is not a valid non-loopback unicast IP for current IPv4/IPv6 settings', raw_fb),
@@ -1255,7 +1299,15 @@ function transform_config(raw_cfg, uci_cfg, opts) {
 	}
 
 	if (p.block_quic == '1' && !has_quic_reject_rule(cfg.route.rules)) {
-		splice(cfg.route.rules, ins_idx, 0, {
+		let quic_idx = ins_idx;
+		for (let i = 0; i < length(cfg.route.rules); i++) {
+			let r = cfg.route.rules[i];
+			if (type(r) == 'object' && r.action == 'sniff') {
+				if (i + 1 > quic_idx)
+					quic_idx = i + 1;
+			}
+		}
+		splice(cfg.route.rules, quic_idx, 0, {
 			protocol: 'quic',
 			action: 'reject'
 		});

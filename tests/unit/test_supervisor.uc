@@ -565,4 +565,65 @@ check(common.atomic_write(pid_file, self_pid + '\n', 0644), 'seed alive PID for 
 check(run_sup_cmd('--prepare-reload', { NIMBUS_GROUP_FILE: grp_without_nimbus }) == 10,
 	'--prepare-reload returns 10 when no nimbus group is configured and config/core unchanged');
 
+// 10. Round-2 lifecycle regressions: lock contention rc=11, gomemlimit reload trigger, Fake-IP + proxy_local lockdown, --wait-exit, init.d/90-nimbus/Makefile guards, hotplug missing-rules fail-closed
+let held_lock = common.acquire_lock(0, lock_file);
+check(held_lock != null, 'acquire lock for reload contention test');
+check(run_sup_cmd('--prepare-reload', { NIMBUS_LOCK_TIMEOUT_MS: '40', NIMBUS_GROUP_FILE: grp_without_nimbus }) == 11,
+	'--prepare-reload returns exit code 11 (E_LOCKED) on lock contention without triggering fail handler');
+check(common.read_state(state_file)?.state == 'running',
+	'lock contention preserves healthy running state');
+common.release_lock(held_lock);
+
+// Changing global.gomemlimit forces restart (rc=0) instead of skip_restart (rc=10)
+let uci_mem_changed = replace(fs.readfile(conf_dir + '/nimbus') || '', "option gomemlimit 'auto'", "option gomemlimit '96MiB'");
+check(common.atomic_write(conf_dir + '/nimbus', uci_mem_changed, 0644), 'change gomemlimit to 96MiB');
+check(run_sup_cmd('--prepare-reload', { NIMBUS_GROUP_FILE: grp_without_nimbus }) == 0,
+	'--prepare-reload detects gomemlimit change and forces restart (rc=0)');
+check(common.read_state(state_file)?.effective?.gomemlimit == '96MiB',
+	'state.json records updated effective.gomemlimit=96MiB');
+
+// Fail Handler propagates old_state.effective.fakeip to lockdown and emits proxy_local lockdown warning
+check(run_sup_cmd('--fail-handler', { NIMBUS_GROUP_FILE: grp_without_nimbus }) == 0,
+	'--fail-handler transitions proxy_local=1 + Fake-IP service into lockdown');
+let st_pl_lock = common.read_state(state_file);
+let lock_rules_txt = fs.readfile(rules_file) || '';
+check(st_pl_lock.state == 'lockdown' &&
+	index(lock_rules_txt, 'fc00::/18') >= 0 &&
+	index(lock_rules_txt, 'ip6 daddr @fakeip_v6 counter name "lockdown_dropped" reject') >= 0 &&
+	length(filter(st_pl_lock.warnings || [], (w) => index(w, 'LOCKDOWN active while global.proxy_local="1"') >= 0)) == 1,
+	'Fail Handler passes Fake-IP ranges into forward_lockdown and warns about proxy_local during lockdown');
+
+// --wait-exit exits immediately when PID file missing or dead
+fs.unlink(pid_file);
+check(run_sup_cmd('--wait-exit', { NIMBUS_WAIT_EXIT_MS: '500' }) == 0,
+	'--wait-exit returns 0 immediately when PID file does not exist');
+
+// Hotplug fail-closed when table is missing AND rules.nft is absent
+check(write_uci_nimbus('0', 'none', '0'), 'reset uci fail_open=0 for hotplug fail-closed test');
+check(run_sup_cmd('--prepare-start', live_hotplug_env) == 0, 'start live table for missing-rules hotplug test');
+check(system([ '/usr/sbin/nft', 'delete', 'table', 'inet', 'nimbus' ]) == 0, 'delete live table');
+fs.unlink(rules_file);
+check(run_sup_cmd('--hotplug', live_hotplug_env) == 0, 'hotplug runs when table and rules.nft are both missing');
+check(common.read_state(state_file)?.state == 'lockdown' &&
+	system([ '/bin/sh', '-c', '/usr/sbin/nft list table inet nimbus >/dev/null 2>&1' ]) == 0,
+	'hotplug enters fail-closed lockdown instead of silent fail-open when table and rules.nft are missing');
+check(run_sup_cmd('--stop', live_hotplug_env) == 0, 'clean up live table after hotplug fail-closed test');
+
+// Verify init.d/nimbus, 90-nimbus, and Makefile lifecycle hardening contracts
+let init_v2 = fs.readfile(repo_root + '/nimbus/files/etc/init.d/nimbus') || '';
+check(index(init_v2, 'procd_set_param term_timeout 10') >= 0 &&
+	index(init_v2, 'elif [ "$rc" -eq 11 ]; then') >= 0 &&
+	index(init_v2, 'service_stopped()') >= 0 &&
+	index(init_v2, '--wait-exit') >= 0 &&
+	index(init_v2, 'if [ "${PKG_UPGRADE:-0}" = "1" ]; then') >= 0,
+	'init.d/nimbus enforces term_timeout 10, rc=11 lock guard, service_stopped --wait-exit, and PKG_UPGRADE guard');
+let hp_v2 = fs.readfile(repo_root + '/nimbus/files/etc/hotplug.d/iface/90-nimbus') || '';
+check(index(hp_v2, '[ "${INTERFACE:-}" = "loopback" ] && exit 0') >= 0,
+	'90-nimbus ignores loopback hotplug events');
+let mk_v2 = fs.readfile(repo_root + '/nimbus/Makefile') || '';
+check(index(mk_v2, '/etc/init.d/nimbus stop') >= 0 &&
+	index(mk_v2, 'rt.cleanup_routes()') >= 0 &&
+	index(mk_v2, 'rm -rf /var/run/nimbus') >= 0,
+	'nimbus/Makefile prerm stops daemon first, restores side sysctls, and cleans /var/run/nimbus');
+
 printf('test_supervisor.uc: %d assertions passed\n', passed);

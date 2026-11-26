@@ -641,8 +641,7 @@ function check_update(uci_cfg, opts) {
 
 		let tmp_dir = options.tmp_dir || getenv('TMPDIR') || '/tmp';
 		common.ensure_dir(tmp_dir, 0755);
-		_cm_seq++;
-		let tmp_api = sprintf('%s/nimbus-gh-release.%d.json', tmp_dir, _cm_seq);
+		let tmp_api = common.next_tmp_path(tmp_dir + '/nimbus-gh-release');
 		let dl = curl_download(api_url, tmp_api, via_proxy, options);
 		release_raw = fs.readfile(tmp_api);
 		fs.unlink(tmp_api);
@@ -1013,10 +1012,11 @@ function install_core(opts) {
 
 	if (was_running && options.skip_reload !== true) {
 		write_task_state('reloading', 95, 'Reloading nimbus service', ver.version, null, options);
+		let init_bin = options.init_script || '/etc/init.d/nimbus';
 		if (type(options.on_reload) == 'function') {
 			reloaded = (options.on_reload() !== false);
-		} else if (fs.access('/etc/init.d/nimbus', 'x')) {
-			reloaded = (system([ '/etc/init.d/nimbus', 'reload' ], 15000) == 0);
+		} else if (fs.access(init_bin, 'x')) {
+			reloaded = (system([ init_bin, 'reload' ], 15000) == 0);
 		}
 	}
 

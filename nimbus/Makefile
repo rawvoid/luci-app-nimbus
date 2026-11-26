@@ -35,9 +35,12 @@ if [ "$${PKG_UPGRADE:-0}" = "1" ] || [ "$$1" = "upgrade" ]; then
 	exit 0
 fi
 
+[ -x /etc/init.d/nimbus ] && /etc/init.d/nimbus stop >/dev/null 2>&1 || true
+
 nft delete table inet nimbus >/dev/null 2>&1 || true
 
 rtable=$$(uci -q get nimbus.proxy.route_table 2>/dev/null || echo 100)
+rtable=$$(printf '%s' "$$rtable" | sed 's/^0*\([0-9]\)/\1/')
 case "$$rtable" in
 	*[!0-9]*|'') rtable=100 ;;
 esac
@@ -48,6 +51,10 @@ while ip -4 rule del lookup "$$rtable" >/dev/null 2>&1; do :; done
 while ip -6 rule del lookup "$$rtable" >/dev/null 2>&1; do :; done
 ip -4 route flush table "$$rtable" >/dev/null 2>&1 || true
 ip -6 route flush table "$$rtable" >/dev/null 2>&1 || true
+
+if [ -f /var/run/nimbus/sysctl_backup.json ] && [ -f /usr/share/nimbus/route_manager.uc ]; then
+	ucode -S -L /usr/share/nimbus -e "import * as rt from 'route_manager'; rt.cleanup_routes();" >/dev/null 2>&1 || true
+fi
 
 if [ -f /etc/nimbus/dns_backup.json ] && [ -f /usr/share/nimbus/dns_manager.uc ]; then
 	ucode -S -L /usr/share/nimbus -e "import * as dns from 'dns_manager'; dns.restore_dns();" >/dev/null 2>&1 || true
@@ -66,6 +73,8 @@ if [ -f /etc/crontabs/root ] && grep -q '# nimbus-' /etc/crontabs/root 2>/dev/nu
 		fi
 	fi
 fi
+
+rm -rf /var/run/nimbus >/dev/null 2>&1 || true
 
 exit 0
 endef

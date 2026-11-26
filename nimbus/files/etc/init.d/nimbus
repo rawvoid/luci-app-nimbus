@@ -56,6 +56,7 @@ start_service() {
 	procd_set_param file /var/run/nimbus/config.json
 	procd_set_param env GOMEMLIMIT="$gomemlimit" GOGC="50" NIMBUS_CORE_STAMP="$core_stamp"
 	procd_set_param limits nofile="65535 65535"
+	procd_set_param term_timeout 10
 	procd_set_param stdout 1
 	procd_set_param stderr 1
 	procd_close_instance
@@ -80,6 +81,8 @@ reload_service() {
 		start
 		NIMBUS_PREPARED=0
 		return 0
+	elif [ "$rc" -eq 11 ]; then
+		return 11
 	fi
 
 	if command -v procd_kill >/dev/null 2>&1; then
@@ -88,7 +91,11 @@ reload_service() {
 	return "$rc"
 }
 
-stop_service() {
+service_stopped() {
+	"$UCODE_BIN" -S -L "$NIMBUS_LIB" "$SUPERVISOR_UC" --wait-exit >/dev/null 2>&1 || true
+	if [ "${PKG_UPGRADE:-0}" = "1" ]; then
+		return 0
+	fi
 	"$UCODE_BIN" -S -L "$NIMBUS_LIB" "$SUPERVISOR_UC" --stop >/dev/null 2>&1 || true
 }
 

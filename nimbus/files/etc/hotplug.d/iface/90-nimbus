@@ -8,6 +8,7 @@ case "${ACTION:-}" in
 		;;
 esac
 
+[ "${INTERFACE:-}" = "loopback" ] && exit 0
 [ -f /var/run/nimbus/state.json ] || exit 0
 [ -x /usr/bin/ucode ] || exit 0
 [ -f /usr/share/nimbus/supervisor.uc ] || exit 0

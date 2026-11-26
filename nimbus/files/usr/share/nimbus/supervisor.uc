@@ -16,7 +16,9 @@ const DEFAULT_RETRY_WINDOW_SEC = 60;
 const DEFAULT_RETRY_BACKOFF_MS = 1000;
 const DEFAULT_LOG_TIMER_MS = 30000;
 const DEFAULT_KILL_GRACE_MS = 5000;
+const DEFAULT_WAIT_EXIT_MS = 6000;
 const LOCK_TIMEOUT_MS = 5000;
+const LOCK_EXIT_CODE = 11;
 
 function env_int(name, fallback) {
 	let raw = getenv(name);
@@ -95,6 +97,26 @@ function is_pid_alive(pid_path) {
 	return (fs.stat('/proc/' + pid) != null);
 }
 
+function unlink_own_pid(pid_path, expected_pid) {
+	if (expected_pid == null) {
+		fs.unlink(pid_path);
+		return;
+	}
+	let raw = fs.readfile(pid_path);
+	if (type(raw) == 'string' && trim(raw) == ('' + expected_pid))
+		fs.unlink(pid_path);
+}
+
+function cmd_wait_exit(paths) {
+	let max_ms = env_int('NIMBUS_WAIT_EXIT_MS', DEFAULT_WAIT_EXIT_MS);
+	let waited = 0;
+	while (waited < max_ms && is_pid_alive(paths.pid_file)) {
+		sleep(50);
+		waited += 50;
+	}
+	return 0;
+}
+
 function resolve_core_bin(paths, uci_cfg) {
 	return paths.bin_path ||
 		uci_cfg?.core?.bin_path ||
@@ -110,9 +132,10 @@ function compute_core_stamp(core_bin, version_str, bin_sha256) {
 	return sprintf('%s:%s:%d:%d', core_bin, ver, st_bin?.size ?? 0, st_bin?.mtime ?? 0);
 }
 
-function maybe_apply_dns(uci_cfg, effective_dns_port, paths) {
-	dns.apply_dns(uci_cfg, {
+function maybe_apply_dns(uci_cfg, effective_dns_port, fakeip, paths) {
+	return dns.apply_dns(uci_cfg, {
 		effective_dns_port: effective_dns_port,
+		fakeip: fakeip,
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
 		backup_path: paths.dns_backup_file,
@@ -121,7 +144,7 @@ function maybe_apply_dns(uci_cfg, effective_dns_port, paths) {
 }
 
 function maybe_restore_dns(paths) {
-	dns.restore_dns({
+	return dns.restore_dns({
 		uci_confdir: paths.uci_confdir,
 		uci_savedir: paths.uci_savedir,
 		backup_path: paths.dns_backup_file,
@@ -167,8 +190,9 @@ function build_state_payload(state_name, uci_cfg, ctx, config_hash, warnings, la
 			outbound_mark: out_mark,
 			proxy_local: exists(bctx, 'proxy_local')
 				? (bctx.proxy_local === true)
-				: ((g.proxy_local ?? g.router_proxy ?? '0') == '1'),
+				: common.is_proxy_local(uci_cfg),
 			skgid: exists(bctx, 'effective_skgid') ? bctx.effective_skgid : (prev?.effective?.skgid ?? null),
+			gomemlimit: exists(bctx, 'effective_gomemlimit') ? bctx.effective_gomemlimit : (prev?.effective?.gomemlimit ?? null),
 			redirect_port: bctx.effective_redirect_port ?? null,
 			tproxy_port: bctx.effective_tproxy_port ?? null,
 			tun_iface: null,
@@ -225,6 +249,8 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			uci: uci_cfg,
 			uci_confdir: paths.uci_confdir,
 			uci_savedir: paths.uci_savedir,
+			fakeip_v4: old_state?.effective?.fakeip?.ipv4,
+			fakeip_v6: old_state?.effective?.fakeip?.ipv6,
 			bypass_v4: wl.v4,
 			bypass_v6: wl.v6,
 			output_path: paths.rules_file,
@@ -283,6 +309,11 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			if (index(warnings, dns_warn) < 0)
 				push(warnings, dns_warn);
 		}
+		if (lockdown_ok && common.is_proxy_local(uci_cfg)) {
+			let pl_warn = 'LOCKDOWN active while global.proxy_local="1": forward_lockdown blocks non-whitelist LAN forwarding only and does not filter router-local outbound traffic';
+			if (index(warnings, pl_warn) < 0)
+				push(warnings, pl_warn);
+		}
 
 		let lock_v4 = used_emergency
 			? 0
@@ -335,7 +366,13 @@ function execute_fail_handler(reason, paths, existing_lock) {
 			});
 		}
 
-		maybe_restore_dns(paths);
+		let dns_res = maybe_restore_dns(paths);
+		if (type(dns_res) == 'object' && dns_res.ok === false) {
+			let dns_err = sprintf('failed to restore dnsmasq during fail-open recovery: %s', dns_res.error || 'dns error');
+			common.log_msg('error', dns_err, paths.log_file);
+			if (index(warnings, dns_err) < 0)
+				push(warnings, dns_err);
+		}
 
 		let active_target = common.resolve_active_target(uci_cfg, {
 			composers_dir: paths.composers_dir,
@@ -368,10 +405,11 @@ function execute_fail_handler(reason, paths, existing_lock) {
 }
 
 function cmd_prepare_start(paths, is_reload) {
-	let lock_fh = common.acquire_lock(LOCK_TIMEOUT_MS, paths.lock_file);
+	let lock_ms = env_int('NIMBUS_LOCK_TIMEOUT_MS', LOCK_TIMEOUT_MS);
+	let lock_fh = common.acquire_lock(lock_ms, paths.lock_file);
 	if (!lock_fh) {
 		common.log_msg('error', 'failed to acquire lock for service preparation', paths.log_file);
-		return 1;
+		return is_reload ? LOCK_EXIT_CODE : 1;
 	}
 
 	let uci_cfg = common.uci_get_all('nimbus', paths.uci_confdir, paths.uci_savedir);
@@ -417,8 +455,8 @@ function cmd_prepare_start(paths, is_reload) {
 	let core_stamp = compute_core_stamp(core_bin, ver_str, new_bin_sha);
 
 	let new_hash = common.sha256_file(paths.config_file);
-	let raw_proxy_local = uci_cfg?.global?.proxy_local ?? uci_cfg?.global?.router_proxy ?? '0';
-	let proxy_local = (raw_proxy_local == '1' || raw_proxy_local === 1 || raw_proxy_local === true);
+	let proxy_local = common.is_proxy_local(uci_cfg);
+	let effective_gomemlimit = compute_gomemlimit(uci_cfg?.global?.gomemlimit);
 	let expected_skgid = common.resolve_group_gid(common.NIMBUS_GROUP, paths.group_file);
 	let warnings = [ ...(bres.context?.warnings || []) ];
 	if (proxy_local && expected_skgid == null) {
@@ -437,6 +475,20 @@ function cmd_prepare_start(paths, is_reload) {
 		local_dir: paths.local_lists_dir,
 		cache_dir: paths.cache_lists_dir
 	});
+
+	// Always set up policy routes BEFORE applying nftables rules so marked UDP has zero leak window
+	if (!paths.skip_routes) {
+		let rt_res = route.setup_routes({
+			uci: uci_cfg,
+			uci_confdir: paths.uci_confdir,
+			uci_savedir: paths.uci_savedir
+		});
+		if (!rt_res.ok) {
+			execute_fail_handler(rt_res.error || 'failed to apply policy routes', paths, lock_fh);
+			common.release_lock(lock_fh);
+			return 1;
+		}
+	}
 
 	let nft_res = nft.apply_rules({
 		uci: uci_cfg,
@@ -460,20 +512,12 @@ function cmd_prepare_start(paths, is_reload) {
 	}
 	fs.unlink(paths.bypass_sets_file);
 
-	if (!paths.skip_routes) {
-		let rt_res = route.setup_routes({
-			uci: uci_cfg,
-			uci_confdir: paths.uci_confdir,
-			uci_savedir: paths.uci_savedir
-		});
-		if (!rt_res.ok) {
-			execute_fail_handler(rt_res.error || 'failed to apply policy routes', paths, lock_fh);
-			common.release_lock(lock_fh);
-			return 1;
-		}
+	let dns_res = maybe_apply_dns(uci_cfg, bres.context?.effective_dns_port, bres.context?.fakeip, paths);
+	if (type(dns_res) == 'object' && dns_res.ok === false) {
+		execute_fail_handler(dns_res.error || 'failed to apply dnsmasq takeover', paths, lock_fh);
+		common.release_lock(lock_fh);
+		return 1;
 	}
-
-	maybe_apply_dns(uci_cfg, bres.context?.effective_dns_port, paths);
 
 	if (!paths.skip_cron_sync) {
 		lu.sync_cron(uci_cfg, {
@@ -496,6 +540,7 @@ function cmd_prepare_start(paths, is_reload) {
 		...(bres.context || {}),
 		proxy_local: proxy_local,
 		effective_skgid: expected_skgid,
+		effective_gomemlimit: effective_gomemlimit,
 		core_bin: core_bin,
 		core_version: ver_str,
 		bin_sha256: new_bin_sha
@@ -516,6 +561,8 @@ function cmd_prepare_start(paths, is_reload) {
 		(old_bin_sha != null && new_bin_sha != old_bin_sha) ||
 		(old_bin_sha == null && old_core_ver != null && ver_str != null && old_core_ver != ver_str)
 	);
+	let old_mem = old_state?.effective?.gomemlimit;
+	let mem_changed = (old_mem != null && old_mem != effective_gomemlimit);
 	let live_gid = common.read_pid_gid(paths.pid_file);
 	let gid_changed = (expected_skgid != null && live_gid != null && live_gid != expected_skgid);
 	let skip_restart = (is_reload &&
@@ -523,6 +570,7 @@ function cmd_prepare_start(paths, is_reload) {
 		old_hash != null &&
 		new_hash == old_hash &&
 		!core_changed &&
+		!mem_changed &&
 		!gid_changed &&
 		is_pid_alive(paths.pid_file));
 
@@ -553,7 +601,13 @@ function cmd_stop(paths) {
 		});
 	}
 
-	maybe_restore_dns(paths);
+	let stop_warnings = [];
+	let dns_res = maybe_restore_dns(paths);
+	if (type(dns_res) == 'object' && dns_res.ok === false) {
+		let dns_err = sprintf('failed to restore dnsmasq on stop: %s', dns_res.error || 'dns error');
+		common.log_msg('error', dns_err, paths.log_file);
+		push(stop_warnings, dns_err);
+	}
 
 	let active_target = common.resolve_active_target(uci_cfg, {
 		composers_dir: paths.composers_dir,
@@ -574,6 +628,7 @@ function cmd_stop(paths) {
 			v4_count: old_state?.whitelist?.v4_count ?? 0,
 			v6_count: old_state?.whitelist?.v6_count ?? 0
 		},
+		warnings: stop_warnings,
 		last_error: null,
 		updated_at: time()
 	}, paths.state_file);
@@ -598,9 +653,14 @@ function cmd_hotplug(paths) {
 	if (st.emergency_lockdown === true) {
 		if (!paths.nft_dry_run && !paths.nft_check_only && !nft.table_exists({ nft_bin: paths.nft_bin })) {
 			let st_rules = fs.stat(paths.rules_file);
+			let healed = false;
 			if (st_rules && st_rules.type == 'file') {
 				common.log_msg('warn', 'hotplug detected missing emergency lockdown table; replaying rules.nft', paths.log_file);
-				nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
+				healed = (nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin }).ok === true);
+			}
+			if (!healed) {
+				common.log_msg('warn', 'hotplug emergency rules.nft missing or replay failed; rebuilding static emergency lockdown', paths.log_file);
+				nft.apply_emergency_lockdown({ output_path: paths.rules_file, nft_bin: paths.nft_bin });
 			}
 		}
 		common.release_lock(lock_fh);
@@ -616,21 +676,38 @@ function cmd_hotplug(paths) {
 		check_only: paths.nft_check_only
 	});
 	if (!iface_res.ok && !paths.nft_dry_run && !paths.nft_check_only) {
-		let st_rules = fs.stat(paths.rules_file);
-		if (st_rules && st_rules.type == 'file') {
-			common.log_msg('warn', 'hotplug set reload failed; replaying rules.nft to self-heal table inet nimbus', paths.log_file);
-			let heal_res = nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
-			if (heal_res.ok) {
-				let st_byp = fs.stat(paths.bypass_sets_file);
-				if (st_byp && st_byp.type == 'file')
-					nft.replay_rules_file(paths.bypass_sets_file, { nft_bin: paths.nft_bin });
-				nft.reload_iface_sets(uci_cfg, {
-					uci_confdir: paths.uci_confdir,
-					uci_savedir: paths.uci_savedir,
-					output_path: paths.wan_sets_file,
-					nft_bin: paths.nft_bin
-				});
+		let tbl_present = nft.table_exists({ nft_bin: paths.nft_bin });
+		if (!tbl_present) {
+			let st_rules = fs.stat(paths.rules_file);
+			let healed = false;
+			if (st_rules && st_rules.type == 'file') {
+				common.log_msg('warn', 'hotplug detected missing table inet nimbus; replaying rules.nft to self-heal', paths.log_file);
+				let heal_res = nft.replay_rules_file(paths.rules_file, { nft_bin: paths.nft_bin });
+				if (heal_res.ok) {
+					healed = true;
+					let st_byp = fs.stat(paths.bypass_sets_file);
+					if (st_byp && st_byp.type == 'file') {
+						let byp_res = nft.replay_rules_file(paths.bypass_sets_file, { nft_bin: paths.nft_bin });
+						if (!byp_res.ok)
+							common.log_msg('warn', sprintf('hotplug bypass_sets.nft replay failed: %s', byp_res.error || 'nft error'), paths.log_file);
+					}
+					let retry_if = nft.reload_iface_sets(uci_cfg, {
+						uci_confdir: paths.uci_confdir,
+						uci_savedir: paths.uci_savedir,
+						output_path: paths.wan_sets_file,
+						nft_bin: paths.nft_bin
+					});
+					if (!retry_if.ok)
+						common.log_msg('warn', sprintf('hotplug post-heal iface set reload failed: %s', retry_if.error || 'nft error'), paths.log_file);
+				}
 			}
+			if (!healed) {
+				execute_fail_handler('hotplug detected missing table inet nimbus and failed to replay rules.nft', paths, lock_fh);
+				common.release_lock(lock_fh);
+				return 0;
+			}
+		} else {
+			common.log_msg('warn', sprintf('hotplug iface set reload failed while table exists: %s', iface_res.error || 'nft error'), paths.log_file);
 		}
 	}
 
@@ -643,7 +720,7 @@ function cmd_hotplug(paths) {
 	}
 
 	let need_dns_reload = false;
-	let proxy_local_on = (uci_cfg?.global?.proxy_local == '1' || uci_cfg?.global?.router_proxy == '1');
+	let proxy_local_on = common.is_proxy_local(uci_cfg);
 	if (st.state == 'running' &&
 		(uci_cfg?.dns?.mode == 'singbox' || proxy_local_on) &&
 		(uci_cfg?.dns?.local_dns_policy || 'auto') == 'auto' &&
@@ -743,7 +820,7 @@ function run_supervisor_daemon(paths) {
 				let exited_pid = child_pid;
 				child_proc = null;
 				child_pid = null;
-				fs.unlink(paths.pid_file);
+				unlink_own_pid(paths.pid_file, exited_pid);
 
 				if (stopping) {
 					cleanup_timers();
@@ -809,18 +886,19 @@ function run_supervisor_daemon(paths) {
 		}
 
 		if (child_proc && child_pid != null) {
-			system([ '/bin/kill', '-TERM', '' + child_pid ]);
+			let stopping_pid = child_pid;
+			system([ '/bin/kill', '-TERM', '' + stopping_pid ]);
 			kill_timer = uloop.timer(kill_grace_ms, () => {
 				if (child_pid != null)
 					system([ '/bin/kill', '-KILL', '' + child_pid ]);
-				fs.unlink(paths.pid_file);
+				unlink_own_pid(paths.pid_file, stopping_pid);
 				cleanup_timers();
 				uloop.end();
 			});
 			return;
 		}
 
-		fs.unlink(paths.pid_file);
+		unlink_own_pid(paths.pid_file, child_pid);
 		cleanup_timers();
 		uloop.end();
 	}
@@ -881,6 +959,8 @@ else if (cmd == '--prepare-reload')
 	exit(cmd_prepare_start(paths, true));
 else if (cmd == '--stop')
 	exit(cmd_stop(paths));
+else if (cmd == '--wait-exit')
+	exit(cmd_wait_exit(paths));
 else if (cmd == '--hotplug')
 	exit(cmd_hotplug(paths));
 else if (cmd == '--fail-handler')

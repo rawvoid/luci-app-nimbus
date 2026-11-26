@@ -1078,14 +1078,6 @@ const methods = {
 			let st = common.read_state(cfg.state_file) || {};
 			let proc_info = read_process_status(cfg.pid_file);
 
-			let conn = get_ubus_conn(cfg);
-			if (conn && !cfg.mock_service_list) {
-				try {
-					conn.call('service', 'list', { name: 'nimbus' });
-				} catch (e) {
-				}
-			}
-
 			let bin_path = cfg.bin_path || uci_cfg?.core?.bin_path || common.DEFAULT_CORE_PATH;
 			let st_bin = fs.stat(bin_path);
 			let core_installed = (st_bin != null && st_bin.type == 'file' && fs.access(bin_path, 'x'));
@@ -1163,6 +1155,13 @@ const methods = {
 					let st = common.read_state(cfg.state_file) || {};
 					let next_state = normalize_state_name(st.state);
 
+					if (rc == 11) {
+						return fail(
+							common.ERR_LOCKED,
+							'another nimbus operation is currently in progress',
+							{ state: next_state }
+						);
+					}
 					if (rc != 0 || (action != 'stop' && (next_state == 'lockdown' || st.state == 'error'))) {
 						return fail(
 							common.ERR_VALIDATE_FAILED,
@@ -2390,6 +2389,26 @@ const methods = {
 						try {
 							let st_after = common.read_state(cfg.state_file) || {};
 							let next_state = normalize_state_name(st_after.state);
+							if (rc2 == 11) {
+								reply_once(fail(
+									common.ERR_LOCKED,
+									'another nimbus operation is currently in progress',
+									{
+										section_id: section_id,
+										name: final_name,
+										checked: res.checked === true,
+										changed: res.changed === true,
+										mtime: res.mtime ?? null,
+										reload_required: true,
+										reloaded: false,
+										state: next_state,
+										composer: res.composer,
+										composer_json: res.composer_json,
+										warnings: res.warnings || []
+									}
+								));
+								return;
+							}
 							if (rc2 != 0 || next_state == 'lockdown' || st_after.state == 'error') {
 								reply_once(fail(
 									common.ERR_VALIDATE_FAILED,

@@ -403,4 +403,33 @@ check(rel_emg.ok === true && rel_emg.hot_reloaded === false &&
 	emg_reload_calls == 0 && rel_emg.nft_loaded.v4_count == 0 && rel_emg.nft_loaded.v6_count == 0,
 	'reload_whitelist_sets skips nft set reload and preserves 0 counts during emergency_lockdown');
 
+// 11. Supernet CIDR poisoning protection, canonical host-bit masking, and domain-only remote rejection
+for (let poison in [ '1.0.0.0/1', '128.0.0.0/1', '198.0.0.0/8', '172.0.0.0/8', '32.0.0.0/3', '1::/1', '8000::/1', '2000::/3', 'f000::/4' ]) {
+	let pr = lu.parse_list_content(poison + '\n', 'auto', { strict: true });
+	check(pr.ok === false && pr.v4_count == 0 && pr.v6_count == 0,
+		sprintf('parse_list_content rejects supernet/reserved-overlap CIDR %s', poison));
+}
+let masked_ok = lu.parse_list_content('1.0.1.99/24\n2400:3200::99/32\n', 'auto', { strict: true });
+check(masked_ok.ok === true && masked_ok.v4[0] == '1.0.1.0/24' && masked_ok.v6[0] == '2400:3200::/32',
+	'parse_list_content masks host bits to canonical network prefixes');
+
+let auto_uci = uci_text +
+	"\nconfig list_source 'auto_src'\n" +
+	"\toption name 'Auto Src'\n" +
+	"\toption type 'url'\n" +
+	"\toption enabled '1'\n" +
+	"\toption family 'auto'\n" +
+	"\toption url 'https://example.com/auto.txt'\n";
+check(common.atomic_write(conf_dir + '/nimbus', auto_uci, 0644), 'add auto url source');
+let upd_dom_only = lu.update_lists('auto_src', {
+	...list_opts,
+	runner: (argv) => {
+		let out_idx = index(argv, '-o');
+		common.atomic_write(argv[out_idx + 1], 'example.com\nfoo.bar.org\n', 0600);
+		return 0;
+	}
+});
+check(upd_dom_only.ok === false && upd_dom_only.results[0].status == 'failed',
+	'update_lists rejects domain-only remote payloads even when family=auto');
+
 printf('test_list_updater.uc: %d assertions passed\n', passed);

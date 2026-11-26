@@ -348,4 +348,15 @@ let self_gid = common.read_pid_gid(mock_pid);
 check(type(self_gid) == 'int' && self_gid >= 0, 'read_pid_gid reads live process effective GID from /proc/<pid>/status');
 check(common.read_pid_gid(work_dir + '/nonexistent.pid') == null, 'read_pid_gid returns null when PID file missing');
 
+// 15. is_proxy_local, mask_cidr_bytes, cidr_bytes_match_prefix
+check(common.is_proxy_local({ global: { proxy_local: '1' } }) === true &&
+	common.is_proxy_local({ global: { proxy_local: '0', router_proxy: '1' } }) === false &&
+	common.is_proxy_local({ global: { router_proxy: '1' } }) === true &&
+	common.is_proxy_local({ global: {} }) === false,
+	'is_proxy_local gives proxy_local precedence over legacy router_proxy');
+check(arrtoip(common.mask_cidr_bytes(iptoarr('192.168.10.254'), 24)) == '192.168.10.0' &&
+	arrtoip(common.mask_cidr_bytes(iptoarr('2409:8a1e:1:2:c2d4::1'), 64)) == '2409:8a1e:1:2::' &&
+	common.cidr_bytes_match_prefix(iptoarr('128.0.0.0'), iptoarr('192.168.0.0'), 1) === true,
+	'mask_cidr_bytes and cidr_bytes_match_prefix mask host bits and match prefixes accurately');
+
 printf('test_common.uc: %d assertions passed\n', passed);

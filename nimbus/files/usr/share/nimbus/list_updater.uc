@@ -17,24 +17,6 @@ function push_unique(arr, seen, val) {
 	}
 }
 
-function bytes_match_prefix(ip_bytes, net_bytes, prefix_len) {
-	let full_bytes = int(prefix_len / 8);
-	let rem_bits = prefix_len % 8;
-
-	for (let i = 0; i < full_bytes; i++) {
-		if (ip_bytes[i] != net_bytes[i])
-			return false;
-	}
-
-	if (rem_bits > 0) {
-		let mask = (0xff << (8 - rem_bits)) & 0xff;
-		if ((ip_bytes[full_bytes] & mask) != (net_bytes[full_bytes] & mask))
-			return false;
-	}
-
-	return true;
-}
-
 function build_reserved_table(cidr_list) {
 	let out = [];
 	for (let item in cidr_list) {
@@ -54,10 +36,12 @@ const RESERVED_V4_TABLE = build_reserved_table([
 
 const RESERVED_V6_TABLE = build_reserved_table(common.RESERVED_V6);
 
-function is_reserved_ip(ip_bytes, family) {
+function is_reserved_ip(ip_bytes, family, prefix) {
 	let tbl = (family == 4) ? RESERVED_V4_TABLE : RESERVED_V6_TABLE;
+	let plen = (prefix != null) ? prefix : ((family == 4) ? 32 : 128);
 	for (let entry in tbl) {
-		if (bytes_match_prefix(ip_bytes, entry.bytes, entry.prefix))
+		let min_p = (plen < entry.prefix) ? plen : entry.prefix;
+		if (common.cidr_bytes_match_prefix(ip_bytes, entry.bytes, min_p))
 			return true;
 	}
 	return false;
@@ -283,7 +267,18 @@ function parse_list_content(content, family, opts) {
 				}
 			}
 
-			if (!allow_reserved && is_reserved_ip(ip_bytes, entry_fam)) {
+			let min_p = (entry_fam == 4) ? common.WHITELIST_MIN_PREFIX_V4 : common.WHITELIST_MIN_PREFIX_V6;
+			if (!allow_reserved && prefix < min_p) {
+				push(invalid_lines, {
+					line: line_no,
+					text: token,
+					reason: sprintf('CIDR prefix /%d is too broad (minimum /%d for IPv%d whitelist)', prefix, min_p, entry_fam)
+				});
+				continue;
+			}
+
+			let masked_bytes = has_prefix ? common.mask_cidr_bytes(ip_bytes, prefix) : ip_bytes;
+			if (!allow_reserved && is_reserved_ip(masked_bytes, entry_fam, prefix)) {
 				push(invalid_lines, {
 					line: line_no,
 					text: token,
@@ -314,9 +309,10 @@ function parse_list_content(content, family, opts) {
 				continue;
 			}
 
+			let canon_ip = arrtoip(masked_bytes) || lc(parts[0]);
 			let norm_entry = has_prefix
-				? sprintf('%s/%d', lc(parts[0]), prefix)
-				: lc(parts[0]);
+				? sprintf('%s/%d', canon_ip, prefix)
+				: canon_ip;
 
 			if (entry_fam == 4)
 				push_unique(v4, seen_v4, norm_entry);
@@ -782,7 +778,7 @@ function update_lists(section_id, opts) {
 		}
 
 		let target_path = resolve_source_path(id, sec, options);
-		let tmp_path = sprintf('%s/nimbus-list-%s.%d.tmp', tmp_dir, id, time());
+		let tmp_path = common.next_tmp_path(sprintf('%s/nimbus-list-%s', tmp_dir, id));
 		fs.unlink(tmp_path);
 
 		let dl = download_url_to_tmp(url, tmp_path, sec, options, target_path);
@@ -842,10 +838,11 @@ function update_lists(section_id, opts) {
 
 		let parsed = parse_list_content(raw, sec.family || 'auto', {
 			strict: (options.strict !== false),
+			allow_domains: false,
 			ignore_other_family: (options.ignore_other_family === true)
 		});
 
-		let total_valid = parsed.v4_count + parsed.v6_count + parsed.domain_count;
+		let total_valid = parsed.v4_count + parsed.v6_count;
 		if (!parsed.ok || total_valid == 0) {
 			fs.unlink(tmp_path);
 			all_ok = false;

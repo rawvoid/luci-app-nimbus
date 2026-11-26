@@ -13,6 +13,7 @@ const CORE_STAMP_FILE = '/var/run/nimbus/core.stamp';
 const RULES_NFT_FILE = '/var/run/nimbus/rules.nft';
 const BYPASS_SETS_NFT_FILE = '/var/run/nimbus/bypass_sets.nft';
 const WAN_SETS_NFT_FILE = '/var/run/nimbus/wan_sets.nft';
+const ROUTE_STATE_FILE = '/var/run/nimbus/route_state.json';
 const CORE_TASK_FILE = '/var/run/nimbus/core_task.json';
 const LOG_FILE = '/var/log/nimbus.log';
 
@@ -39,6 +40,8 @@ const LOG_KEEP_BYTES = 262144;
 const TABLE_NAME = 'inet nimbus';
 const NIMBUS_GROUP = 'nimbus';
 const GROUP_FILE = '/etc/group';
+const WHITELIST_MIN_PREFIX_V4 = 8;
+const WHITELIST_MIN_PREFIX_V6 = 16;
 const CT_BYPASS_BIT = 0x10;
 const CT_PROXY_BIT = 0x20;
 const CT_MARK_MASK = 0x30;
@@ -602,6 +605,48 @@ function format_hex_u32(n) {
 	return sprintf('0x%x', n);
 }
 
+function is_proxy_local(uci_cfg) {
+	let g = uci_cfg?.global || {};
+	let raw = g.proxy_local ?? g.router_proxy ?? '0';
+	return (raw == '1' || raw === 1 || raw === true);
+}
+
+function mask_cidr_bytes(bytes, prefix) {
+	let out = [ ...bytes ];
+	let full_bytes = int(prefix / 8);
+	let rem_bits = prefix % 8;
+	if (full_bytes < length(out)) {
+		if (rem_bits > 0) {
+			let mask = (0xff << (8 - rem_bits)) & 0xff;
+			out[full_bytes] = out[full_bytes] & mask;
+			for (let i = full_bytes + 1; i < length(out); i++)
+				out[i] = 0;
+		} else {
+			for (let i = full_bytes; i < length(out); i++)
+				out[i] = 0;
+		}
+	}
+	return out;
+}
+
+function cidr_bytes_match_prefix(ip_bytes, net_bytes, prefix_len) {
+	let full_bytes = int(prefix_len / 8);
+	let rem_bits = prefix_len % 8;
+
+	for (let i = 0; i < full_bytes; i++) {
+		if (ip_bytes[i] != net_bytes[i])
+			return false;
+	}
+
+	if (rem_bits > 0) {
+		let mask = (0xff << (8 - rem_bits)) & 0xff;
+		if ((ip_bytes[full_bytes] & mask) != (net_bytes[full_bytes] & mask))
+			return false;
+	}
+
+	return true;
+}
+
 function resolve_group_gid(group_name, group_file) {
 	let gname = (type(group_name) == 'string' && length(trim(group_name)) > 0)
 		? trim(group_name)
@@ -682,6 +727,7 @@ export {
 	RULES_NFT_FILE,
 	BYPASS_SETS_NFT_FILE,
 	WAN_SETS_NFT_FILE,
+	ROUTE_STATE_FILE,
 	CORE_TASK_FILE,
 	LOG_FILE,
 	ETC_DIR,
@@ -704,6 +750,8 @@ export {
 	TABLE_NAME,
 	NIMBUS_GROUP,
 	GROUP_FILE,
+	WHITELIST_MIN_PREFIX_V4,
+	WHITELIST_MIN_PREFIX_V6,
 	CT_BYPASS_BIT,
 	CT_PROXY_BIT,
 	CT_MARK_MASK,
@@ -728,6 +776,7 @@ export {
 	RESERVED_V4,
 	RESERVED_V6,
 	isnan,
+	next_tmp_path,
 	ensure_dir,
 	atomic_write,
 	read_json,
@@ -748,6 +797,9 @@ export {
 	resolve_active_target,
 	hex_u32_parse,
 	format_hex_u32,
+	is_proxy_local,
+	mask_cidr_bytes,
+	cidr_bytes_match_prefix,
 	resolve_group_gid,
 	read_pid_gid,
 	log_msg

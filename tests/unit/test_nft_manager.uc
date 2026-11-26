@@ -58,8 +58,11 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 			'lockdown has forward_lockdown chain: ' + combo_desc);
 		check(index(rules, 'type filter hook forward priority filter - 1; policy accept;') >= 0,
 			'lockdown hooks forward only: ' + combo_desc);
-		check(index(rules, 'hook input') < 0 && index(rules, 'hook prerouting') < 0 && index(rules, 'hook output') < 0,
-			'lockdown never hooks input/prerouting/output: ' + combo_desc);
+		let has_bad_output = (index(rules, 'chain output_tcp {') >= 0 ||
+			index(rules, 'chain output_udp {') >= 0 ||
+			index(rules, 'chain output_lockdown {') >= 0);
+		check(index(rules, 'hook input') < 0 && index(rules, 'hook prerouting') < 0 && !has_bad_output,
+			'lockdown never hooks input/prerouting or user output filtering: ' + combo_desc);
 		check(index(rules, 'meta l4proto icmpv6 icmpv6 type { 1, 2, 3, 4, 133, 134, 135, 136, 137 } return') >= 0,
 			'lockdown preserves essential icmpv6 errors and NDP while blocking arbitrary echo leaks: ' + combo_desc);
 		check(index(rules, 'counter name "lockdown_dropped" reject with icmpx type admin-prohibited') >= 0 &&
@@ -68,11 +71,16 @@ function assert_rules_invariants(rules, mode, combo_desc) {
 	} else {
 		check(index(rules, 'chain prerouting_tcp {') >= 0 && index(rules, 'chain prerouting_udp {') >= 0,
 			'tproxy_redirect has prerouting_tcp and prerouting_udp: ' + combo_desc);
+		check(index(rules, 'chain tproxy_udp_v4 {') >= 0 && index(rules, 'chain tproxy_udp_v6 {') >= 0,
+			'tproxy_redirect emits tproxy_udp_v4/v6 drop-on-break subchains: ' + combo_desc);
+		check(index(rules, 'type filter hook prerouting priority dstnat + 2; policy accept;') >= 0,
+			'prerouting_udp runs at priority dstnat + 2 after fw4::dstnat and prerouting_dns: ' + combo_desc);
 		check(index(rules, 'counter name "tcp_proxied" counter') < 0 &&
 			index(rules, 'counter name "udp_proxied" counter') < 0,
 			'proxy rules omit redundant anonymous counter alongside named counter: ' + combo_desc);
-		check(index(rules, 'ct status dnat return') >= 0 && index(rules, 'fib daddr type local return') >= 0,
-			'prerouting chains protect dnat and local destinations: ' + combo_desc);
+		check(index(rules, 'ct status dnat return') >= 0 &&
+			index(rules, 'fib daddr type { local, broadcast, multicast, anycast } return') >= 0,
+			'prerouting chains protect dnat and local/broadcast/multicast/anycast destinations: ' + combo_desc);
 		check(index(rules, 'ct mark & 0x30 == 0x10 return') >= 0 &&
 			index(rules, 'ct mark & 0x30 == 0x20') >= 0 &&
 			index(rules, 'ct mark set ct mark | ') < 0,
@@ -140,11 +148,14 @@ for (let topo in topologies) {
 						'ignores unsupported device policy block: ' + desc);
 
 					if (topo == 'side') {
-						check(index(res.rules, '203.0.113.10') < 0 && index(res.rules, '2001:db8:1::1') < 0,
-							'side topology omits wan_v4/wan_v6 elements: ' + desc);
+						check(index(res.rules, '203.0.113.10') < 0 && index(res.rules, '2001:db8:1::1') < 0 &&
+							index(res.rules, 'chain output_side_v6 {') >= 0 &&
+							index(res.rules, 'icmpv6 type nd-redirect oifname @lan_ifaces drop') >= 0,
+							'side topology omits wan sets and emits output_side_v6 nd-redirect drop: ' + desc);
 					} else {
-						check(index(res.rules, '203.0.113.10') >= 0 && index(res.rules, '2001:db8:1::1') >= 0,
-							'main topology populates wan_v4/wan_v6 elements: ' + desc);
+						check(index(res.rules, '203.0.113.10') >= 0 && index(res.rules, '2001:db8:1::1') >= 0 &&
+							index(res.rules, 'chain output_side_v6 {') < 0,
+							'main topology populates wan sets and omits output_side_v6: ' + desc);
 					}
 
 					let is_default_bypass = (lm == 'default_bypass' || lm == 'proxy_listed');
@@ -180,9 +191,12 @@ for (let topo in topologies) {
 						if (pm == 'empty-include') {
 							check(index(res.rules, 'tcp dport != @filter_tcp_ports') < 0 &&
 								index(res.rules, 'udp dport != @filter_udp_ports') < 0 &&
-								index(res.rules, 'ip daddr @fakeip_v4') < index(res.rules, '\t\treturn\n\t\tip daddr @reserved_v4') &&
-								index(res.rules, 'ip6 daddr @fakeip_v6') < index(res.rules, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t\tip daddr @reserved_v4'),
-								'empty-include places Fake-IP priority before short-circuiting non-Fake-IP TCP and UDP: ' + desc);
+								index(res.rules, 'ip daddr @fakeip_v4') >= 0 &&
+								index(res.rules, 'ip6 daddr @fakeip_v6') >= 0 &&
+								index(res.rules, '\t\treturn\n\t}') >= 0 &&
+								index(res.rules, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t}') >= 0 &&
+								index(res.rules, '\t\treturn\n\t\tip daddr @reserved_v4') < 0,
+								'empty-include places Fake-IP priority before short-circuiting and omits dead unreachable rules: ' + desc);
 						} else if (pm == 'include') {
 							check(index(res.rules, 'ip6 daddr @fakeip_v6') < index(res.rules, 'tcp dport != @filter_tcp_ports return') &&
 								index(res.rules, 'udp dport != @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return') >= 0,
@@ -287,7 +301,7 @@ check(empty_proxy_tproxy.ok === true &&
 	index(empty_proxy_tproxy.rules, 'ct mark & 0x30 == 0x20') < 0 &&
 	index(empty_proxy_tproxy.rules, '78:2e:03:53:00:2f') < 0 &&
 	index(empty_proxy_tproxy.rules, 'ip daddr @fakeip_v4') < 0 &&
-	index(empty_proxy_tproxy.rules, '\t\tfib daddr type local return\n\t\treturn\n\t}') >= 0 &&
+	index(empty_proxy_tproxy.rules, '\t\tfib daddr type { local, broadcast, multicast, anycast } return\n\t\treturn\n\t}') >= 0 &&
 	index(empty_proxy_tproxy.rules, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return\n\t}') >= 0,
 	'default_bypass / proxy_listed without active proxy rules omits 0x20 fast-path, prunes dead tail, and short-circuits');
 
@@ -411,12 +425,13 @@ check(dns_bypass_default_proxy.ok === true, 'hijack_lan_dns=1 default_proxy + by
 let d_proto = index(dns_bypass_default_proxy.rules, 'meta l4proto != { tcp, udp } return');
 let d_port = index(dns_bypass_default_proxy.rules, 'th dport != 53 return');
 let d_mark = index(dns_bypass_default_proxy.rules, 'meta mark 0xff return');
+let d_lan = index(dns_bypass_default_proxy.rules, 'ip daddr @lan_v4 return');
 let d_mac = index(dns_bypass_default_proxy.rules, 'ether saddr 78:2e:03:53:00:2f return');
 let d_ip = index(dns_bypass_default_proxy.rules, 'ip saddr 10.11.1.115 return');
-let d_redir = index(dns_bypass_default_proxy.rules, 'meta l4proto { tcp, udp } th dport 53 counter redirect to :53');
+let d_redir = index(dns_bypass_default_proxy.rules, 'meta l4proto tcp redirect to :53\n\t\tmeta l4proto udp redirect to :53');
 check(index(dns_bypass_default_proxy.rules, 'prerouting_dns_hijack') < 0 &&
-	d_proto >= 0 && d_port > d_proto && d_mark > d_port && d_mac > d_mark && d_ip > d_mac && d_redir > d_ip,
-	'prerouting_dns checks protocol/port/outbound_mark before device bypass rules and omits hijack subchain');
+	d_proto >= 0 && d_port > d_proto && d_mark > d_port && d_lan > d_mark && d_mac > d_lan && d_ip > d_mac && d_redir > d_ip,
+	'prerouting_dns checks protocol/port/outbound_mark/lan sets before device bypass rules and uses portable split redirects');
 
 let dns_mixed_default_proxy = nft.apply_rules({
 	nft_bin: nft_bin,
@@ -468,7 +483,7 @@ let dns_short_circuit = nft.apply_rules({
 check(dns_short_circuit.ok === true &&
 	index(dns_short_circuit.rules, 'prerouting_dns_hijack') < 0 &&
 	index(dns_short_circuit.rules, 'redirect to :53') < 0 &&
-	index(dns_short_circuit.rules, '\t\tfib daddr type local return\n\t\treturn\n\t}\n\n\tchain prerouting_tcp {') >= 0,
+	index(dns_short_circuit.rules, '\t\tip6 daddr @lan_v6 return\n\t\treturn\n\t}\n\n\tchain prerouting_tcp {') >= 0,
 	'prerouting_dns short-circuits safely under default_bypass without active proxy rules');
 
 let v6_only = nft.apply_rules({
@@ -578,13 +593,14 @@ check(inj_apply.ok === true &&
 	index(inj_apply.rules, 'pwn') < 0,
 	'malicious/invalid lan_ifaces safely falls back to br-lan and passes nft -c -f');
 
-// /0 rejection and CIDR canonicalization
+// /0 rejection and CIDR canonicalization (including host-bit masking)
 check(nft.classify_ip_or_cidr('0.0.0.0/0') == null &&
 	nft.classify_ip_or_cidr('::/0') == null &&
 	nft.classify_ip_or_cidr('1.2.3.4/0') == null &&
 	nft.classify_ip_or_cidr('1.0.1.0/024')?.value == '1.0.1.0/24' &&
-	nft.classify_ip_or_cidr('2001:0db8:0000:0000::1/064')?.value == '2001:db8::1/64',
-	'classify_ip_or_cidr rejects /0 prefixes and canonicalizes leading zeros and IPv6 notation');
+	nft.classify_ip_or_cidr('192.168.10.254/24')?.value == '192.168.10.0/24' &&
+	nft.classify_ip_or_cidr('2001:0db8:0000:0000::1/064')?.value == '2001:db8::/64',
+	'classify_ip_or_cidr rejects /0 prefixes, masks host bits, and canonicalizes IPv6 notation');
 
 let emg_res = nft.apply_emergency_lockdown({
 	nft_bin: nft_bin,
@@ -666,11 +682,11 @@ let iface_reload = nft.reload_iface_sets({
 });
 check(iface_reload.ok === true &&
 	index(iface_reload.script, 'flush set inet nimbus lan_ifaces\nadd element inet nimbus lan_ifaces { "br-lan" }\n') >= 0 &&
-	index(iface_reload.script, '192.168.10.1/24') >= 0 &&
+	index(iface_reload.script, '192.168.10.0/24') >= 0 &&
 	index(iface_reload.script, '198.51.100.42') >= 0 &&
 	index(iface_reload.script, '2001:db8:99::2') >= 0 &&
 	index(iface_reload.script, '2001:db8:100::/56') >= 0,
-	'reload_iface_sets refreshes lan_ifaces alongside LAN/WAN IP sets atomically');
+	'reload_iface_sets refreshes lan_ifaces alongside masked LAN/WAN IP sets atomically');
 
 let live_ctrs = nft.get_counters({ nft_bin: nft_bin });
 check(live_ctrs.ok === true &&
@@ -842,8 +858,8 @@ let ctx_ubus_wins = nft.resolve_network_context({
 		]
 	}
 });
-check(index(ctx_ubus_wins.lan_v4, '10.0.0.1/24') >= 0 &&
-	index(ctx_ubus_wins.lan_v4, '192.168.99.1/24') < 0 &&
+check(index(ctx_ubus_wins.lan_v4, '10.0.0.0/24') >= 0 &&
+	index(ctx_ubus_wins.lan_v4, '192.168.99.0/24') < 0 &&
 	index(ctx_ubus_wins.wan_v4, '198.51.100.9') >= 0 &&
 	index(ctx_ubus_wins.wan_v4, '203.0.113.55') < 0 &&
 	index(ctx_ubus_wins.wan_v6, '2001:db8:cafe::2') >= 0 &&
@@ -975,5 +991,117 @@ let live_pl = nft.apply_rules({
 });
 check(live_pl.ok === true, 'live nft -f loads Plan C output_tcp/output_udp with meta skgid + NTP 123 + ct mark in real kernel');
 check(nft.delete_table({ nft_bin: nft_bin }).ok === true, 'clean up live Plan C table');
+
+// 9. Round-2 dataplane hardening regressions:
+// 9a. tproxy_udp_v4/v6 ordering, prerouting_udp hot-path order (fib BEFORE ct mark!), Fake-IPv6 rejection in lockdown
+let pre_udp_pos = index(pl_on.rules, 'chain prerouting_udp {');
+let pre_udp_blk = substr(pl_on.rules, pre_udp_pos, out_tcp_pos - pre_udp_pos);
+check(index(pl_on.rules, 'chain tproxy_udp_v4 {\n\t\tmeta nfproto ipv4 meta l4proto udp tproxy ip to :7892 meta mark set 0x1 counter name "udp_proxied" accept\n\t\tdrop\n\t}') >= 0 &&
+	index(pl_on.rules, 'chain tproxy_udp_v6 {\n\t\tmeta nfproto ipv6 meta l4proto udp tproxy ip6 to :7892 meta mark set 0x1 counter name "udp_proxied" accept\n\t\tdrop\n\t}') >= 0 &&
+	index(pre_udp_blk, 'meta l4proto != udp return') < index(pre_udp_blk, 'iifname "lo"') &&
+	index(pre_udp_blk, 'ct status dnat return') < index(pre_udp_blk, 'fib daddr type { local, broadcast, multicast, anycast } return') &&
+	index(pre_udp_blk, 'ct direction reply return') < index(pre_udp_blk, 'fib daddr type { local, broadcast, multicast, anycast } return') &&
+	index(pre_udp_blk, 'fib daddr type { local, broadcast, multicast, anycast } return') < index(pre_udp_blk, 'ct mark & 0x30 == 0x10 return') &&
+	index(pre_udp_blk, 'udp dport 53 return') < 0,
+	'prerouting_udp enforces tproxy drop-on-break subchains, meta l4proto first, ct dnat/reply -> fib -> ct mark order');
+
+let lock_fakeip = nft.apply_lockdown({
+	nft_bin: nft_bin,
+	check_only: true,
+	output_path: work_dir + '/lockdown_fakeip.nft',
+	fakeip_v4: [ '198.18.0.0/15' ],
+	fakeip_v6: [ 'fc00::/18' ]
+});
+check(lock_fakeip.ok === true &&
+	index(lock_fakeip.rules, 'ip6 daddr @fakeip_v6 counter name "lockdown_dropped" reject with icmpx type admin-prohibited') >= 0 &&
+	index(lock_fakeip.rules, 'ip6 daddr @fakeip_v6 counter name "lockdown_dropped" reject') <
+	index(lock_fakeip.rules, 'ip6 daddr @reserved_v6 return'),
+	'forward_lockdown rejects @fakeip_v6 before @reserved_v6 (fc00::/7)');
+
+// 9b. Supernet poisoning defense inside nft_manager.uc bypass_v4/v6 sanitizer + O(N) large-list performance
+let poison_rules = nft.generate_rules({
+	bypass_v4: [ '1.0.0.0/1', '128.0.0.0/1', '198.0.0.0/8', '32.0.0.0/3', '1.0.1.0/24' ],
+	bypass_v6: [ '1::/1', '8000::/1', '2000::/3', 'f000::/4', '2400:3200::/32' ]
+});
+check(index(poison_rules, '1.0.1.0/24') >= 0 &&
+	index(poison_rules, '2400:3200::/32') >= 0 &&
+	index(poison_rules, '0.0.0.0/1') < 0 &&
+	index(poison_rules, '128.0.0.0/1') < 0 &&
+	index(poison_rules, '198.0.0.0/8') < 0 &&
+	index(poison_rules, '32.0.0.0/3') < 0 &&
+	index(poison_rules, '8000::/1') < 0 &&
+	index(poison_rules, '2000::/3') < 0 &&
+	index(poison_rules, 'f000::/4') < 0,
+	'nft_manager blocks supernet and reserved-overlapping CIDRs in bypass_v4/bypass_v6');
+
+let big_v4 = [];
+for (let i = 1; i <= 2500; i++)
+	push(big_v4, sprintf('11.%d.%d.0/24', int(i / 256), i % 256));
+let t0 = clock(true);
+let big_script = nft.build_set_reload_script({ bypass_v4: big_v4 });
+let t1 = clock(true);
+let big_ms = ((t1[0] - t0[0]) * 1000) + int((t1[1] - t0[1]) / 1000000);
+check(length(big_script) > 10000 && big_ms < 2000 && index(big_script, ',\n\t') >= 0,
+	sprintf('O(N) build_set_reload_script handles 2500 CIDRs quickly (%dms) with chunked lines', big_ms));
+
+// 9c. Atomic rules.nft preservation on nft failure + 2-step reload_sets fallback
+let preserved_rules_path = work_dir + '/preserve.nft';
+check(common.atomic_write(preserved_rules_path, 'GOOD_RULES\n', 0600), 'seed good rules.nft');
+let bad_apply = nft.apply_rules({
+	output_path: preserved_rules_path,
+	runner: () => ({ rc: 1, output: 'simulated syntax error' })
+});
+check(bad_apply.ok === false && fs.readfile(preserved_rules_path) == 'GOOD_RULES\n',
+	'apply_rules preserves existing rules.nft on nft -f failure');
+
+let fb_calls = 0;
+let fb_reload = nft.reload_sets({ bypass_v4: [ '1.0.1.0/24' ] }, {
+	output_path: work_dir + '/fb_sets.nft',
+	runner: () => {
+		fb_calls++;
+		if (fb_calls == 1)
+			return { rc: 1, output: 'Error: Could not process rule: File exists' };
+		return { rc: 0, output: '' };
+	}
+});
+check(fb_reload.ok === true && fb_calls == 3,
+	'reload_sets falls back to 2-step flush + add on File exists error (Linux 5.15 compat)');
+
+// 9d. get_counters empty-counter metainfo-only JSON fallback + check_fw4_lan_input enhancements
+let meta_only_calls = 0;
+let meta_only_res = nft.get_counters({
+	runner: () => {
+		meta_only_calls++;
+		if (meta_only_calls == 1)
+			return { rc: 0, output: '{"nftables":[{"metainfo":{"version":"1.0.8","json_schema_version":1}}]}' };
+		return { rc: 0, output: sample_list_table_json };
+	}
+});
+check(meta_only_res.ok === true && meta_only_res.tcp_packets == 125 && meta_only_calls == 2,
+	'get_counters falls back to -t list table when list counters returns metainfo-only JSON');
+
+let fw_adv = nft.check_fw4_lan_input(
+	{
+		global: { topology: 'side', lan_interfaces: [ 'lan' ], ipv6_enable: '1' },
+		dns: { hijack_lan_dns: '1' }
+	},
+	{
+		lan_ifaces: [ 'br-lan' ],
+		lan_v6: [],
+		firewall_uci: {
+			def: { '.type': 'defaults', input: 'REJECT', syn_flood: '1', drop_invalid: '1' },
+			z_disabled: { '.type': 'zone', name: 'lan_old', enabled: '0', network: [ 'lan' ], input: 'ACCEPT' },
+			z_dev: { '.type': 'zone', name: 'lan_dev', device: [ 'br-*' ] }
+		},
+		dhcp_uci: {
+			dm0: { '.type': 'dnsmasq', localservice: '1' }
+		}
+	}
+);
+check(length(filter(fw_adv, (w) => index(w, 'fw4 zone "lan_dev" has input policy "REJECT"') >= 0)) == 1 &&
+	length(filter(fw_adv, (w) => index(w, 'syn_flood="1"') >= 0)) == 1 &&
+	length(filter(fw_adv, (w) => index(w, 'drop_invalid="1"') >= 0)) == 1 &&
+	length(filter(fw_adv, (w) => index(w, 'localservice="1"') >= 0)) == 1,
+	'check_fw4_lan_input handles disabled zones, device wildcards, defaults.input inheritance, syn_flood, side drop_invalid, and IPv6 localservice');
 
 printf('test_nft_manager.uc: %d assertions passed\n', passed);

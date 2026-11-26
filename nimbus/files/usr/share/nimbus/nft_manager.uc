@@ -23,6 +23,34 @@ const RELOADABLE_SETS = [
 
 let _nft_seq = 0;
 
+function build_reserved_table(cidr_list) {
+	let out = [];
+	for (let item in cidr_list) {
+		let parts = split(item, '/');
+		let b = iptoarr(parts[0]);
+		let p = int(parts[1], 10);
+		if (b && !common.isnan(p))
+			push(out, { bytes: b, prefix: p });
+	}
+	return out;
+}
+
+const BYPASS_RESERVED_V4 = build_reserved_table([
+	...common.RESERVED_V4,
+	'198.18.0.0/15'
+]);
+const BYPASS_RESERVED_V6 = build_reserved_table(common.RESERVED_V6);
+
+function is_bypass_reserved_overlap(masked_bytes, prefix, family) {
+	let tbl = (family == 4) ? BYPASS_RESERVED_V4 : BYPASS_RESERVED_V6;
+	for (let entry in tbl) {
+		let min_p = (prefix < entry.prefix) ? prefix : entry.prefix;
+		if (common.cidr_bytes_match_prefix(masked_bytes, entry.bytes, min_p))
+			return true;
+	}
+	return false;
+}
+
 function push_unique(arr, val) {
 	if (val != null && val !== '' && index(arr, val) < 0)
 		push(arr, val);
@@ -31,18 +59,27 @@ function push_unique(arr, val) {
 function to_list(val, fallback) {
 	if (type(val) == 'array') {
 		let out = [];
+		let seen = {};
 		for (let item in val) {
-			if (item != null && length(trim('' + item)) > 0)
-				push_unique(out, trim('' + item));
+			if (item == null)
+				continue;
+			let s = trim('' + item);
+			if (length(s) > 0 && !exists(seen, s)) {
+				seen[s] = true;
+				push(out, s);
+			}
 		}
 		return length(out) > 0 ? out : (fallback || []);
 	}
 
 	if (type(val) == 'string' && length(trim(val)) > 0) {
 		let out = [];
+		let seen = {};
 		for (let part in split(trim(val), /[ \t\r\n,]+/)) {
-			if (length(part) > 0)
-				push_unique(out, part);
+			if (length(part) > 0 && !exists(seen, part)) {
+				seen[part] = true;
+				push(out, part);
+			}
 		}
 		return length(out) > 0 ? out : (fallback || []);
 	}
@@ -62,6 +99,7 @@ function parse_port_num(s) {
 function parse_port_elements(val) {
 	let items = to_list(val, []);
 	let out = [];
+	let seen = {};
 
 	for (let raw in items) {
 		let s = trim('' + raw);
@@ -69,14 +107,24 @@ function parse_port_elements(val) {
 		if (mr) {
 			let p1 = parse_port_num(mr[1]);
 			let p2 = parse_port_num(mr[2]);
-			if (p1 != null && p2 != null && p1 <= p2)
-				push_unique(out, (p1 == p2) ? ('' + p1) : sprintf('%d-%d', p1, p2));
+			if (p1 != null && p2 != null && p1 <= p2) {
+				let tok = (p1 == p2) ? ('' + p1) : sprintf('%d-%d', p1, p2);
+				if (!exists(seen, tok)) {
+					seen[tok] = true;
+					push(out, tok);
+				}
+			}
 			continue;
 		}
 
 		let p = parse_port_num(s);
-		if (p != null)
-			push_unique(out, '' + p);
+		if (p != null) {
+			let tok = '' + p;
+			if (!exists(seen, tok)) {
+				seen[tok] = true;
+				push(out, tok);
+			}
+		}
 	}
 
 	return out;
@@ -97,9 +145,15 @@ function is_valid_ifname(name) {
 
 function filter_ifname_list(list) {
 	let out = [];
+	let seen = {};
 	for (let item in to_list(list, [])) {
-		if (is_valid_ifname(item))
-			push_unique(out, trim(item));
+		if (is_valid_ifname(item)) {
+			let s = trim(item);
+			if (!exists(seen, s)) {
+				seen[s] = true;
+				push(out, s);
+			}
+		}
 	}
 	return out;
 }
@@ -124,10 +178,6 @@ function classify_ip_or_cidr(text) {
 	if (fam == 0)
 		return null;
 
-	let canon_ip = arrtoip(bytes);
-	if (!canon_ip)
-		return null;
-
 	if (length(parts) == 2) {
 		if (!match(parts[1], /^[0-9]+$/))
 			return null;
@@ -135,27 +185,78 @@ function classify_ip_or_cidr(text) {
 		let max_plen = (fam == 4) ? 32 : 128;
 		if (common.isnan(plen) || plen <= 0 || plen > max_plen)
 			return null;
-		return { family: fam, value: sprintf('%s/%d', canon_ip, plen) };
+		let masked = common.mask_cidr_bytes(bytes, plen);
+		let canon_net = arrtoip(masked);
+		if (!canon_net)
+			return null;
+		return { family: fam, prefix: plen, bytes: masked, value: sprintf('%s/%d', canon_net, plen) };
 	}
 
-	return { family: fam, value: canon_ip };
+	let canon_ip = arrtoip(bytes);
+	if (!canon_ip)
+		return null;
+	return { family: fam, prefix: (fam == 4) ? 32 : 128, bytes: bytes, value: canon_ip };
+}
+
+function iter_raw_tokens(list) {
+	if (type(list) == 'array')
+		return list;
+	if (type(list) == 'string' && length(trim(list)) > 0)
+		return split(trim(list), /[ \t\r\n,]+/);
+	return [];
 }
 
 function filter_ip_list(list, family) {
 	let out = [];
-	for (let item in to_list(list, [])) {
-		let c = classify_ip_or_cidr(item);
-		if (c && c.family == family)
-			push_unique(out, c.value);
+	let seen = {};
+	for (let item in iter_raw_tokens(list)) {
+		if (item == null)
+			continue;
+		let c = classify_ip_or_cidr('' + item);
+		if (c && c.family == family && !exists(seen, c.value)) {
+			seen[c.value] = true;
+			push(out, c.value);
+		}
+	}
+	return out;
+}
+
+function filter_bypass_ip_list(list, family) {
+	let out = [];
+	let seen = {};
+	let min_p = (family == 4) ? common.WHITELIST_MIN_PREFIX_V4 : common.WHITELIST_MIN_PREFIX_V6;
+	for (let item in iter_raw_tokens(list)) {
+		if (item == null)
+			continue;
+		let c = classify_ip_or_cidr('' + item);
+		if (!c || c.family != family)
+			continue;
+		if (c.prefix < min_p)
+			continue;
+		if (is_bypass_reserved_overlap(c.bytes, c.prefix, family))
+			continue;
+		if (!exists(seen, c.value)) {
+			seen[c.value] = true;
+			push(out, c.value);
+		}
 	}
 	return out;
 }
 
 function filter_mac_list(list) {
 	let out = [];
-	for (let item in to_list(list, [])) {
-		if (is_valid_mac(item))
-			push_unique(out, lc(trim(item)));
+	let seen = {};
+	for (let item in iter_raw_tokens(list)) {
+		if (item == null)
+			continue;
+		let s = '' + item;
+		if (is_valid_mac(s)) {
+			let m = lc(trim(s));
+			if (!exists(seen, m)) {
+				seen[m] = true;
+				push(out, m);
+			}
+		}
 	}
 	return out;
 }
@@ -576,6 +677,10 @@ function append_daddr_bypass_lines(out, ipv4_enable, ipv6_enable, verdict) {
 
 function build_lockdown_tail_lines(ipv4_enable, ipv6_enable) {
 	let lines = [];
+	if (ipv4_enable)
+		push(lines, '\t\tip daddr @fakeip_v4 counter name "lockdown_dropped" reject with icmpx type admin-prohibited');
+	if (ipv6_enable)
+		push(lines, '\t\tip6 daddr @fakeip_v6 counter name "lockdown_dropped" reject with icmpx type admin-prohibited');
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'return');
 	push(lines, '\t\tcounter name "lockdown_dropped" reject with icmpx type admin-prohibited');
 	return lines;
@@ -590,10 +695,11 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 
 	if (port_mode == 'include') {
-		if (length(filter_tcp_ports) == 0)
+		if (length(filter_tcp_ports) == 0) {
 			push(lines, '\t\treturn');
-		else
-			push(lines, '\t\ttcp dport != @filter_tcp_ports return');
+			return lines;
+		}
+		push(lines, '\t\ttcp dport != @filter_tcp_ports return');
 	} else if (port_mode == 'exclude' && length(filter_tcp_ports) > 0) {
 		push(lines, '\t\ttcp dport @filter_tcp_ports return');
 	}
@@ -608,19 +714,20 @@ function build_tcp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_tcp_po
 	return lines;
 }
 
-function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port) {
+function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports) {
 	let lines = [];
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, '\t\tip daddr @fakeip_v4 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v4');
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, '\t\tip6 daddr @fakeip_v6 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v6');
 
 	if (port_mode == 'include') {
-		if (length(filter_udp_ports) == 0)
+		if (length(filter_udp_ports) == 0) {
 			push(lines, '\t\tct mark set ct mark & 0xffffffcf | 0x10 return');
-		else
-			push(lines, '\t\tudp dport != @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return');
+			return lines;
+		}
+		push(lines, '\t\tudp dport != @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return');
 	} else if (port_mode == 'exclude' && length(filter_udp_ports) > 0) {
 		push(lines, '\t\tudp dport @filter_udp_ports ct mark set ct mark & 0xffffffcf | 0x10 return');
 	}
@@ -628,9 +735,9 @@ function build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_po
 	append_daddr_bypass_lines(lines, ipv4_enable, ipv6_enable, 'ct mark set ct mark & 0xffffffcf | 0x10 return');
 
 	if (ipv4_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, '\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v4');
 	if (ipv6_enable)
-		push(lines, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+		push(lines, '\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 goto tproxy_udp_v6');
 
 	return lines;
 }
@@ -650,6 +757,19 @@ function append_subchain(out, chain_name, body_lines) {
 	push(out, '\t}');
 }
 
+function format_element_chunks(formatted, indent) {
+	let n = length(formatted);
+	if (n <= 16)
+		return join(', ', formatted);
+
+	let chunks = [];
+	for (let i = 0; i < n; i += 16) {
+		let end = (i + 16 < n) ? (i + 16) : n;
+		push(chunks, join(', ', slice(formatted, i, end)));
+	}
+	return '\n' + indent + join(',\n' + indent, chunks) + '\n' + substr(indent, 0, length(indent) - 1);
+}
+
 function format_set_block(name, set_type, flags_line, elements, quote_elems) {
 	let lines = [];
 	push(lines, sprintf('\tset %s {', name));
@@ -662,7 +782,7 @@ function format_set_block(name, set_type, flags_line, elements, quote_elems) {
 		let formatted = [];
 		for (let el in elements)
 			push(formatted, quote_elems ? sprintf('"%s"', el) : ('' + el));
-		push(lines, sprintf('\t\telements = { %s }', join(', ', formatted)));
+		push(lines, sprintf('\t\telements = { %s }', format_element_chunks(formatted, '\t\t\t')));
 	}
 	push(lines, '\t}');
 	return join('\n', lines);
@@ -701,7 +821,7 @@ function generate_rules(opts) {
 		ipv4_enable = true;
 
 	let router_proxy_raw = options.router_proxy ?? options.proxy_local ??
-		g.proxy_local ?? g.router_proxy ?? p.proxy_local ?? p.router_proxy ?? '0';
+		(exists(g, 'proxy_local') ? g.proxy_local : g.router_proxy) ?? '0';
 	let proxy_local = (router_proxy_raw == '1' || router_proxy_raw === 1 || router_proxy_raw === true);
 	let skgid = proxy_local ? resolve_skgid(options) : null;
 
@@ -740,8 +860,8 @@ function generate_rules(opts) {
 
 	let fakeip_v4 = filter_ip_list(options.fakeip_v4 ?? ctx?.fakeip?.ipv4, 4);
 	let fakeip_v6 = filter_ip_list(options.fakeip_v6 ?? ctx?.fakeip?.ipv6, 6);
-	let bypass_v4 = filter_ip_list(options.bypass_v4, 4);
-	let bypass_v6 = filter_ip_list(options.bypass_v6, 6);
+	let bypass_v4 = filter_bypass_ip_list(options.bypass_v4, 4);
+	let bypass_v6 = filter_bypass_ip_list(options.bypass_v6, 6);
 
 	let filter_tcp_ports = (port_mode != 'all')
 		? parse_port_elements(options.filter_tcp_ports ?? options.proxy_tcp_ports ?? p.proxy_tcp_ports)
@@ -812,13 +932,23 @@ function generate_rules(opts) {
 			}
 		}
 		push(out, '\t}');
+		if (net_ctx.topology == 'side' && ipv6_enable) {
+			push(out, '');
+			push(out, '\tchain output_side_v6 {');
+			push(out, '\t\ttype filter hook output priority filter; policy accept;');
+			push(out, '\t\ticmpv6 type nd-redirect oifname @lan_ifaces drop');
+			push(out, '\t}');
+		}
 		push(out, '}');
 		return join('\n', out) + '\n';
 	}
 
 	// tproxy_redirect mode
 	if (hijack_lan_dns) {
-		let dns_tail = [ '\t\tmeta l4proto { tcp, udp } th dport 53 counter redirect to :53' ];
+		let dns_tail = [
+			'\t\tmeta l4proto tcp redirect to :53',
+			'\t\tmeta l4proto udp redirect to :53'
+		];
 		if (!short_circuit_bypass && use_proxy_subchain)
 			append_subchain(out, 'prerouting_dns_hijack', dns_tail);
 
@@ -831,7 +961,11 @@ function generate_rules(opts) {
 		push(out, '\t\tth dport != 53 return');
 		push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 		push(out, '\t\tct status dnat return');
-		push(out, '\t\tfib daddr type local return');
+		push(out, '\t\tfib daddr type { local, broadcast, multicast, anycast } return');
+		if (ipv4_enable)
+			push(out, '\t\tip daddr @lan_v4 return');
+		if (ipv6_enable)
+			push(out, '\t\tip6 daddr @lan_v6 return');
 
 		if (short_circuit_bypass) {
 			push(out, '\t\treturn');
@@ -864,7 +998,7 @@ function generate_rules(opts) {
 	push(out, '\t\tmeta l4proto != tcp return');
 	push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
 	push(out, '\t\tct status dnat return');
-	push(out, '\t\tfib daddr type local return');
+	push(out, '\t\tfib daddr type { local, broadcast, multicast, anycast } return');
 
 	if (short_circuit_bypass) {
 		push(out, '\t\treturn');
@@ -880,42 +1014,55 @@ function generate_rules(opts) {
 	}
 	push(out, '\t}');
 
+	// tproxy_udp_v4 / tproxy_udp_v6 helper subchains (drop on NFT_BREAK to block fallthrough/local-daemon leaks)
+	if (!short_circuit_bypass || proxy_local) {
+		if (ipv4_enable) {
+			append_subchain(out, 'tproxy_udp_v4', [
+				sprintf('\t\tmeta nfproto ipv4 meta l4proto udp tproxy ip to :%d meta mark set %s counter name "udp_proxied" accept', tproxy_port, proxy_mark_hex),
+				'\t\tdrop'
+			]);
+		}
+		if (ipv6_enable) {
+			append_subchain(out, 'tproxy_udp_v6', [
+				sprintf('\t\tmeta nfproto ipv6 meta l4proto udp tproxy ip6 to :%d meta mark set %s counter name "udp_proxied" accept', tproxy_port, proxy_mark_hex),
+				'\t\tdrop'
+			]);
+		}
+	}
+
 	// prerouting_udp
 	let udp_tail = null;
 	if (!short_circuit_bypass) {
-		udp_tail = build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports, proxy_mark_hex, tproxy_port);
+		udp_tail = build_udp_tail_lines(ipv4_enable, ipv6_enable, port_mode, filter_udp_ports);
 		if (use_proxy_subchain)
 			append_subchain(out, 'prerouting_udp_proxy', udp_tail);
 	}
 
 	push(out, '');
 	push(out, '\tchain prerouting_udp {');
-	push(out, '\t\ttype filter hook prerouting priority mangle; policy accept;');
+	push(out, '\t\ttype filter hook prerouting priority dstnat + 2; policy accept;');
+	push(out, '\t\tmeta l4proto != udp return');
+	append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 
 	if (proxy_local) {
 		if (ipv4_enable)
-			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv4 counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tiifname "lo" meta mark %s meta nfproto ipv4 goto tproxy_udp_v4', proxy_mark_hex));
 		if (ipv6_enable)
-			push(out, sprintf('\t\tiifname "lo" meta mark %s meta l4proto udp meta nfproto ipv6 counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, sprintf('\t\tiifname "lo" meta mark %s meta nfproto ipv6 goto tproxy_udp_v6', proxy_mark_hex));
 	}
 
 	push(out, '\t\tiifname != @lan_ifaces return');
-	append_nfproto_guard(out, ipv4_enable, ipv6_enable);
-	push(out, '\t\tmeta l4proto != udp return');
 	push(out, sprintf('\t\tmeta mark %s return', outbound_mark_hex));
-	push(out, '\t\tfib daddr type local return');
 	push(out, '\t\tct status dnat return');
 	push(out, '\t\tct direction reply return');
-
-	if (hijack_lan_dns)
-		push(out, '\t\tudp dport 53 return');
+	push(out, '\t\tfib daddr type { local, broadcast, multicast, anycast } return');
 
 	push(out, '\t\tct mark & 0x30 == 0x10 return');
 	if (!short_circuit_bypass) {
 		if (ipv4_enable)
-			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, '\t\tct mark & 0x30 == 0x20 meta nfproto ipv4 goto tproxy_udp_v4');
 		if (ipv6_enable)
-			push(out, sprintf('\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 meta l4proto udp meta mark set %s counter name "udp_proxied" tproxy ip6 to :%d accept', proxy_mark_hex, tproxy_port));
+			push(out, '\t\tct mark & 0x30 == 0x20 meta nfproto ipv6 goto tproxy_udp_v6');
 	}
 
 	if (short_circuit_bypass) {
@@ -943,7 +1090,7 @@ function generate_rules(opts) {
 		push(out, '\t\toifname "lo" return');
 		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
 		push(out, '\t\tct status dnat return');
-		push(out, '\t\tfib daddr type local return');
+		push(out, '\t\tfib daddr type { local, broadcast, multicast, anycast } return');
 		if (ipv4_enable)
 			push(out, sprintf('\t\tip daddr @fakeip_v4 meta l4proto tcp counter name "tcp_proxied" redirect to :%d', redirect_port));
 		if (ipv6_enable)
@@ -964,9 +1111,9 @@ function generate_rules(opts) {
 			push(out, sprintf('\t\tmeta skgid %d return', skgid));
 		push(out, '\t\toifname "lo" return');
 		append_nfproto_guard(out, ipv4_enable, ipv6_enable);
-		push(out, '\t\tfib daddr type local return');
 		push(out, '\t\tct status dnat return');
 		push(out, '\t\tct direction reply return');
+		push(out, '\t\tfib daddr type { local, broadcast, multicast, anycast } return');
 		if (ipv4_enable)
 			push(out, '\t\tmeta nfproto ipv4 udp sport 68 udp dport 67 return');
 		if (ipv6_enable)
@@ -983,6 +1130,14 @@ function generate_rules(opts) {
 			push(out, sprintf('\t\tmeta nfproto ipv4 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
 		if (ipv6_enable)
 			push(out, sprintf('\t\tmeta nfproto ipv6 ct mark set ct mark & 0xffffffcf | 0x20 meta mark set %s accept', proxy_mark_hex));
+		push(out, '\t}');
+	}
+
+	if (net_ctx.topology == 'side' && ipv6_enable) {
+		push(out, '');
+		push(out, '\tchain output_side_v6 {');
+		push(out, '\t\ttype filter hook output priority filter; policy accept;');
+		push(out, '\t\ticmpv6 type nd-redirect oifname @lan_ifaces drop');
 		push(out, '\t}');
 	}
 
@@ -1115,23 +1270,33 @@ function apply_rules(opts) {
 	let script = generate_rules(options);
 	let out_path = options.output_path || common.RULES_NFT_FILE;
 
-	if (!common.atomic_write(out_path, script, 0600)) {
+	if (options.dry_run === true) {
+		if (!common.atomic_write(out_path, script, 0600)) {
+			return {
+				ok: false,
+				code: common.ERR_INTERNAL,
+				error: sprintf('failed to write nftables rules to %s', out_path)
+			};
+		}
+		return { ok: true, rules: script, output_path: out_path, loaded_counts: null };
+	}
+
+	let tmp_path = common.next_tmp_path(out_path);
+	if (!common.atomic_write(tmp_path, script, 0600)) {
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
-			error: sprintf('failed to write nftables rules to %s', out_path)
+			error: sprintf('failed to stage nftables rules at %s', tmp_path)
 		};
 	}
 
-	if (options.dry_run === true)
-		return { ok: true, rules: script, output_path: out_path, loaded_counts: null };
-
 	let nft_bin = get_nft_bin(options);
 	let argv = options.check_only
-		? [ nft_bin, '-c', '-f', out_path ]
-		: [ nft_bin, '-f', out_path ];
+		? [ nft_bin, '-c', '-f', tmp_path ]
+		: [ nft_bin, '-f', tmp_path ];
 	let res = run_nft_cmd(argv, options);
 	if (res.rc != 0) {
+		fs.unlink(tmp_path);
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
@@ -1141,11 +1306,30 @@ function apply_rules(opts) {
 		};
 	}
 
+	if (!fs.rename(tmp_path, out_path)) {
+		fs.unlink(tmp_path);
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: sprintf('failed to commit nftables rules to %s', out_path),
+			rules: script,
+			output_path: out_path
+		};
+	}
+
 	let loaded_counts = null;
-	if (!options.check_only && type(options.runner) != 'function') {
-		let cnt = get_bypass_set_counts(options);
-		if (cnt.ok)
-			loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+	let raw_mode = lc(trim('' + (options.mode || options.state || 'tproxy_redirect')));
+	let is_lockdown = (raw_mode == 'lockdown');
+	if (!options.check_only && !is_lockdown && type(options.runner) != 'function') {
+		let has_v4 = (type(options.bypass_v4) == 'array' && length(options.bypass_v4) > 0);
+		let has_v6 = (type(options.bypass_v6) == 'array' && length(options.bypass_v6) > 0);
+		if (!has_v4 && !has_v6) {
+			loaded_counts = { bypass_v4: 0, bypass_v6: 0 };
+		} else {
+			let cnt = get_bypass_set_counts(options);
+			if (cnt.ok)
+				loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+		}
 	}
 
 	return { ok: true, rules: script, output_path: out_path, loaded_counts: loaded_counts };
@@ -1178,27 +1362,48 @@ function apply_emergency_lockdown(opts) {
 	let script = build_emergency_lockdown_rules();
 	let out_path = options.output_path || common.RULES_NFT_FILE;
 
-	if (!common.atomic_write(out_path, script, 0600)) {
+	if (options.dry_run === true) {
+		if (!common.atomic_write(out_path, script, 0600)) {
+			return {
+				ok: false,
+				code: common.ERR_INTERNAL,
+				error: sprintf('failed to write emergency lockdown rules to %s', out_path)
+			};
+		}
+		return { ok: true, rules: script, output_path: out_path, emergency: true };
+	}
+
+	let tmp_path = common.next_tmp_path(out_path);
+	if (!common.atomic_write(tmp_path, script, 0600)) {
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
-			error: sprintf('failed to write emergency lockdown rules to %s', out_path)
+			error: sprintf('failed to stage emergency lockdown rules at %s', tmp_path)
 		};
 	}
 
-	if (options.dry_run === true)
-		return { ok: true, rules: script, output_path: out_path, emergency: true };
-
 	let nft_bin = get_nft_bin(options);
 	let argv = options.check_only
-		? [ nft_bin, '-c', '-f', out_path ]
-		: [ nft_bin, '-f', out_path ];
+		? [ nft_bin, '-c', '-f', tmp_path ]
+		: [ nft_bin, '-f', tmp_path ];
 	let res = run_nft_cmd(argv, options);
 	if (res.rc != 0) {
+		fs.unlink(tmp_path);
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
 			error: length(res.output) > 0 ? res.output : sprintf('nft emergency lockdown exited with code %d', res.rc),
+			rules: script,
+			output_path: out_path
+		};
+	}
+
+	if (!fs.rename(tmp_path, out_path)) {
+		fs.unlink(tmp_path);
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: sprintf('failed to commit emergency lockdown rules to %s', out_path),
 			rules: script,
 			output_path: out_path
 		};
@@ -1257,6 +1462,10 @@ function delete_table(opts) {
 function sanitize_set_elements(set_name, raw_list) {
 	if (set_name == 'lan_ifaces')
 		return filter_ifname_list(raw_list);
+	if (set_name == 'bypass_v4')
+		return filter_bypass_ip_list(raw_list, 4);
+	if (set_name == 'bypass_v6')
+		return filter_bypass_ip_list(raw_list, 6);
 	if (match(set_name, /_v4$/))
 		return filter_ip_list(raw_list, 4);
 	if (match(set_name, /_v6$/))
@@ -1268,7 +1477,7 @@ function sanitize_set_elements(set_name, raw_list) {
 	return to_list(raw_list, []);
 }
 
-function build_set_reload_script(sets_map) {
+function build_set_reload_parts(sets_map) {
 	let input = (type(sets_map) == 'object') ? { ...sets_map } : {};
 	if (exists(input, 'v4') && !exists(input, 'bypass_v4'))
 		input.bypass_v4 = input.v4;
@@ -1280,29 +1489,46 @@ function build_set_reload_script(sets_map) {
 		if (exists(input, sname))
 			push(target_names, sname);
 	}
-	if (length(target_names) == 0) {
+	if (length(target_names) == 0)
 		target_names = [ 'bypass_v4', 'bypass_v6' ];
-	}
 
-	let lines = [];
+	let combined_lines = [];
+	let flush_lines = [];
+	let add_lines = [];
+	let sanitized_counts = {};
 	for (let sname in target_names) {
-		push(lines, sprintf('flush set inet nimbus %s', sname));
+		let fl = sprintf('flush set inet nimbus %s', sname);
+		push(combined_lines, fl);
+		push(flush_lines, fl);
 		let elems = sanitize_set_elements(sname, input[sname]);
+		sanitized_counts[sname] = length(elems);
 		if (length(elems) > 0) {
 			let formatted = [];
 			let quote = (sname == 'lan_ifaces');
 			for (let el in elems)
 				push(formatted, quote ? sprintf('"%s"', el) : ('' + el));
-			push(lines, sprintf('add element inet nimbus %s { %s }', sname, join(', ', formatted)));
+			let al = sprintf('add element inet nimbus %s { %s }', sname, format_element_chunks(formatted, '\t'));
+			push(combined_lines, al);
+			push(add_lines, al);
 		}
 	}
 
-	return join('\n', lines) + '\n';
+	return {
+		script: join('\n', combined_lines) + '\n',
+		flush_script: join('\n', flush_lines) + '\n',
+		add_script: (length(add_lines) > 0) ? (join('\n', add_lines) + '\n') : null,
+		counts: sanitized_counts
+	};
+}
+
+function build_set_reload_script(sets_map) {
+	return build_set_reload_parts(sets_map).script;
 }
 
 function reload_sets(sets_map, opts) {
 	let options = opts || {};
-	let script = build_set_reload_script(sets_map);
+	let parts = build_set_reload_parts(sets_map);
+	let script = parts.script;
 
 	let has_bypass_sets = (type(sets_map) == 'object') &&
 		(exists(sets_map, 'bypass_v4') || exists(sets_map, 'bypass_v6') ||
@@ -1316,23 +1542,51 @@ function reload_sets(sets_map, opts) {
 	let out_path = options.output_path ||
 		(is_wan_only ? common.WAN_SETS_NFT_FILE : common.BYPASS_SETS_NFT_FILE);
 
-	if (!common.atomic_write(out_path, script, 0600)) {
+	if (options.dry_run === true) {
+		if (!common.atomic_write(out_path, script, 0600)) {
+			return {
+				ok: false,
+				code: common.ERR_INTERNAL,
+				error: sprintf('failed to write nftables set script to %s', out_path)
+			};
+		}
+		return { ok: true, script: script, output_path: out_path, loaded_counts: null };
+	}
+
+	let tmp_path = common.next_tmp_path(out_path);
+	if (!common.atomic_write(tmp_path, script, 0600)) {
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
-			error: sprintf('failed to write nftables set script to %s', out_path)
+			error: sprintf('failed to stage nftables set script at %s', tmp_path)
 		};
 	}
 
-	if (options.dry_run === true)
-		return { ok: true, script: script, output_path: out_path, loaded_counts: null };
-
 	let nft_bin = get_nft_bin(options);
 	let argv = options.check_only
-		? [ nft_bin, '-c', '-f', out_path ]
-		: [ nft_bin, '-f', out_path ];
+		? [ nft_bin, '-c', '-f', tmp_path ]
+		: [ nft_bin, '-f', tmp_path ];
 	let res = run_nft_cmd(argv, options);
+
+	// Fallback for Linux 5.15 nft_rbtree single-batch flush+add EEXIST/interval edge case
+	if (res.rc != 0 && !options.check_only && parts.add_script != null) {
+		let err_lc = lc(res.output || '');
+		if (index(err_lc, 'file exists') >= 0 || index(err_lc, 'interval') >= 0) {
+			let flush_tmp = common.next_tmp_path(out_path + '.flush');
+			let add_tmp = common.next_tmp_path(out_path + '.add');
+			if (common.atomic_write(flush_tmp, parts.flush_script, 0600) &&
+				common.atomic_write(add_tmp, parts.add_script, 0600)) {
+				let r_fl = run_nft_cmd([ nft_bin, '-f', flush_tmp ], options);
+				if (r_fl.rc == 0)
+					res = run_nft_cmd([ nft_bin, '-f', add_tmp ], options);
+			}
+			fs.unlink(flush_tmp);
+			fs.unlink(add_tmp);
+		}
+	}
+
 	if (res.rc != 0) {
+		fs.unlink(tmp_path);
 		return {
 			ok: false,
 			code: common.ERR_INTERNAL,
@@ -1342,11 +1596,26 @@ function reload_sets(sets_map, opts) {
 		};
 	}
 
+	if (!fs.rename(tmp_path, out_path)) {
+		fs.unlink(tmp_path);
+		return {
+			ok: false,
+			code: common.ERR_INTERNAL,
+			error: sprintf('failed to commit nftables set script to %s', out_path),
+			script: script,
+			output_path: out_path
+		};
+	}
+
 	let loaded_counts = null;
 	if (has_bypass_sets && !options.check_only && type(options.runner) != 'function') {
-		let cnt = get_bypass_set_counts(options);
-		if (cnt.ok)
-			loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+		if ((parts.counts.bypass_v4 ?? 0) == 0 && (parts.counts.bypass_v6 ?? 0) == 0) {
+			loaded_counts = { bypass_v4: 0, bypass_v6: 0 };
+		} else {
+			let cnt = get_bypass_set_counts(options);
+			if (cnt.ok)
+				loaded_counts = { bypass_v4: cnt.v4_count, bypass_v6: cnt.v6_count };
+		}
 	}
 
 	return { ok: true, script: script, output_path: out_path, loaded_counts: loaded_counts };
@@ -1468,7 +1737,8 @@ function parse_counters(raw_input) {
 				if (chain == 'prerouting_tcp' || chain == 'prerouting_tcp_proxy' || chain == 'output_tcp') {
 					rule_tcp_p += pkts;
 					rule_tcp_b += bytes;
-				} else if (chain == 'prerouting_udp' || chain == 'prerouting_udp_proxy') {
+				} else if (chain == 'prerouting_udp' || chain == 'prerouting_udp_proxy' ||
+					chain == 'tproxy_udp_v4' || chain == 'tproxy_udp_v6') {
 					rule_udp_p += pkts;
 					rule_udp_b += bytes;
 				} else if (chain == 'forward_lockdown' || chain == 'forward_lockdown_enforce') {
@@ -1496,6 +1766,23 @@ function parse_counters(raw_input) {
 	return result;
 }
 
+function has_named_counter_entry(raw_output) {
+	if (type(raw_output) != 'string' || length(trim(raw_output)) == 0)
+		return false;
+	try {
+		let parsed = json(raw_output);
+		if (type(parsed?.nftables) != 'array')
+			return false;
+		for (let entry in parsed.nftables) {
+			if (type(entry?.counter) == 'object')
+				return true;
+		}
+	} catch (e) {
+		return false;
+	}
+	return false;
+}
+
 function get_counters(opts) {
 	if (type(opts) == 'string' || (type(opts) == 'object' && exists(opts, 'nftables')))
 		return parse_counters(opts);
@@ -1513,7 +1800,7 @@ function get_counters(opts) {
 		res = run_nft_cmd([ nft_bin, '-j', '-t', 'list', 'table', 'inet', 'nimbus' ], options);
 		if (res.rc != 0)
 			return parse_counters(null);
-	} else if (length(res.output) == 0) {
+	} else if (!has_named_counter_entry(res.output)) {
 		res = run_nft_cmd([ nft_bin, '-j', '-t', 'list', 'table', 'inet', 'nimbus' ], options);
 		if (res.rc != 0)
 			return parse_counters(null);
@@ -1522,65 +1809,147 @@ function get_counters(opts) {
 	return parse_counters(res.output);
 }
 
+function device_pattern_matches(pat, dev) {
+	if (type(pat) != 'string' || type(dev) != 'string')
+		return false;
+	if (pat == dev)
+		return true;
+	if (length(pat) > 1 && substr(pat, -1) == '*') {
+		let prefix = substr(pat, 0, length(pat) - 1);
+		return (substr(dev, 0, length(prefix)) == prefix);
+	}
+	return false;
+}
+
 function check_fw4_lan_input(uci_cfg, opts) {
 	let options = opts || {};
 	let nimbus_uci = uci_cfg || common.uci_get_all('nimbus', options.uci_confdir, options.uci_savedir);
-	let lan_names = to_list(nimbus_uci?.global?.lan_interfaces, [ 'lan' ]);
+	let g = nimbus_uci?.global || {};
+	let d = nimbus_uci?.dns || {};
+	let topology = (g.topology == 'side') ? 'side' : 'main';
+	let ipv6_enable = (g.ipv6_enable != '0');
+	let lan_names = to_list(g.lan_interfaces, [ 'lan' ]);
+	let net_ctx = resolve_network_context(nimbus_uci, options);
 	let fw_uci = options.firewall_uci || common.uci_get_all('firewall', options.uci_confdir, options.uci_savedir);
 	let warnings = [];
 
-	if (type(fw_uci) != 'object')
-		return warnings;
+	if (type(fw_uci) == 'object') {
+		let default_input = 'ACCEPT';
+		let syn_flood = false;
+		let drop_invalid = false;
+		let has_fw_config = false;
+		let covered_lan = {};
+		let any_lan_zone_matched = false;
+		let any_lan_zone_unmasq = false;
 
-	let default_input = 'ACCEPT';
-	let has_fw_config = false;
-	let covered_lan = {};
-
-	for (let k, sec in fw_uci) {
-		if (type(sec) != 'object')
-			continue;
-		if (sec['.type'] == 'defaults') {
-			has_fw_config = true;
-			if (sec.input != null && length(trim('' + sec.input)) > 0)
-				default_input = uc(trim('' + sec.input));
-		}
-	}
-
-	for (let k, sec in fw_uci) {
-		if (type(sec) != 'object' || sec['.type'] != 'zone')
-			continue;
-
-		has_fw_config = true;
-		let zname = sec.name || k;
-		let has_explicit_binding = (sec.network != null || sec.device != null || sec.subnet != null);
-		let nets = to_list(sec.network, (!has_explicit_binding && type(sec.name) == 'string') ? [ sec.name ] : []);
-		let devs = to_list(sec.device, []);
-		let matched_lan = false;
-		for (let ln in lan_names) {
-			if (index(nets, ln) >= 0 || index(devs, ln) >= 0) {
-				covered_lan[ln] = true;
-				matched_lan = true;
+		for (let k, sec in fw_uci) {
+			if (type(sec) != 'object')
+				continue;
+			if (sec['.type'] == 'defaults') {
+				has_fw_config = true;
+				if (sec.input != null && length(trim('' + sec.input)) > 0)
+					default_input = uc(trim('' + sec.input));
+				if (sec.syn_flood == '1' || sec.synflood_protect == '1')
+					syn_flood = true;
+				if (sec.drop_invalid == '1')
+					drop_invalid = true;
 			}
 		}
-		if (!matched_lan)
-			continue;
 
-		let policy = uc(trim('' + (sec.input || 'ACCEPT')));
-		if (policy != 'ACCEPT') {
-			push(warnings, sprintf(
-				'fw4 zone "%s" has input policy "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
-				zname, policy
-			));
+		for (let k, sec in fw_uci) {
+			if (type(sec) != 'object' || sec['.type'] != 'zone')
+				continue;
+			if (sec.enabled == '0' || sec.enabled === false)
+				continue;
+
+			has_fw_config = true;
+			let zname = sec.name || k;
+			let has_explicit_binding = (sec.network != null || sec.device != null || sec.subnet != null);
+			let nets = to_list(sec.network, (!has_explicit_binding && type(sec.name) == 'string') ? [ sec.name ] : []);
+			let devs = to_list(sec.device, []);
+			let matched_lan = false;
+			for (let ln in lan_names) {
+				if (index(nets, ln) >= 0) {
+					covered_lan[ln] = true;
+					matched_lan = true;
+					continue;
+				}
+				if (length(devs) > 0) {
+					let ln_devs = (length(lan_names) == 1)
+						? net_ctx.lan_ifaces
+						: resolve_network_context({
+							global: { topology: topology, lan_interfaces: [ ln ] }
+						}, options).lan_ifaces;
+					let dev_hit = false;
+					for (let dev in ln_devs) {
+						for (let dpat in devs) {
+							if (device_pattern_matches(dpat, dev) || device_pattern_matches(dpat, ln)) {
+								dev_hit = true;
+								break;
+							}
+						}
+						if (dev_hit)
+							break;
+					}
+					if (dev_hit) {
+						covered_lan[ln] = true;
+						matched_lan = true;
+					}
+				}
+			}
+			if (!matched_lan)
+				continue;
+
+			any_lan_zone_matched = true;
+			if (sec.masq != '1')
+				any_lan_zone_unmasq = true;
+
+			let policy = uc(trim('' + ((sec.input != null && length(trim('' + sec.input)) > 0) ? sec.input : default_input)));
+			if (policy != 'ACCEPT') {
+				push(warnings, sprintf(
+					'fw4 zone "%s" has input policy "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
+					zname, policy
+				));
+			}
+		}
+
+		if (has_fw_config && default_input != 'ACCEPT') {
+			for (let ln in lan_names) {
+				if (!exists(covered_lan, ln)) {
+					push(warnings, sprintf(
+						'LAN interface "%s" is not assigned to any fw4 zone while defaults.input is "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
+						ln, default_input
+					));
+				}
+			}
+		}
+
+		if (syn_flood) {
+			push(warnings,
+				'fw4 defaults.syn_flood="1" (25/s burst 50) applies to LAN TCP REDIRECT connections entering INPUT; consider disabling syn_flood or raising synflood_rate/burst if high-concurrency LAN traffic experiences stalls'
+			);
+		}
+
+		if (topology == 'side' && drop_invalid && (!any_lan_zone_matched || any_lan_zone_unmasq)) {
+			push(warnings,
+				'side-router mode with fw4 defaults.drop_invalid="1" and unmasqueraded LAN zone drops asymmetric bypassed TCP connections as ct state invalid; disable drop_invalid or enable masquerading on the LAN zone'
+			);
 		}
 	}
 
-	if (has_fw_config && default_input != 'ACCEPT') {
-		for (let ln in lan_names) {
-			if (!exists(covered_lan, ln)) {
-				push(warnings, sprintf(
-					'LAN interface "%s" is not assigned to any fw4 zone while defaults.input is "%s" (expected ACCEPT); TCP REDIRECT, UDP TPROXY, and DNS hijack traffic may be blocked',
-					ln, default_input
-				));
+	let hijack_lan_dns = (d.hijack_lan_dns == '1' || d.hijack_lan_dns === 1 || d.hijack_lan_dns === true);
+	if (hijack_lan_dns && ipv6_enable && length(net_ctx.lan_v6) == 0) {
+		let dhcp_uci = options.dhcp_uci || common.uci_get_all('dhcp', options.uci_confdir, options.uci_savedir);
+		if (type(dhcp_uci) == 'object') {
+			for (let k, sec in dhcp_uci) {
+				if (type(sec) == 'object' && sec['.type'] == 'dnsmasq') {
+					if (sec.localservice != '0') {
+						push(warnings,
+							'dns.hijack_lan_dns="1" with ipv6_enable="1" while LAN has no IPv6 prefix and dnsmasq localservice="1": hijacked IPv6 GUA DNS queries may be dropped by dnsmasq unless LAN has an IPv6 prefix or localservice is set to 0'
+						);
+					}
+					break;
+				}
 			}
 		}
 	}

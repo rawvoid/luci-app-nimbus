@@ -84,10 +84,14 @@ return view.extend({
 
 		var oActiveProfile = sGlobal.option(form.ListValue, 'active_profile', _('Active Configuration'),
 			_('Select a Composer configuration or a standalone Subscription / Local file (with "Allow as Active Config" enabled).'));
+		oActiveProfile.optional = true;
+		oActiveProfile.rmempty = true;
 		oActiveProfile.value('', _('-- Select Configuration --'));
+		var addedActiveIds = {};
 		uci.sections('nimbus', 'composer', function(sec) {
 			var label = '%s [%s]'.format(sec.name || sec['.name'], _('Composer'));
 			oActiveProfile.value(sec['.name'], label);
+			addedActiveIds[sec['.name']] = true;
 		});
 		uci.sections('nimbus', 'profile', function(sec) {
 			if (sec.as_config !== '1')
@@ -95,7 +99,14 @@ return view.extend({
 			var kindLabel = (sec.type === 'subscription') ? _('Subscription') : _('Local');
 			var label = '%s [%s]'.format(sec.name || sec['.name'], kindLabel);
 			oActiveProfile.value(sec['.name'], label);
+			addedActiveIds[sec['.name']] = true;
 		});
+		var curActiveId = uci.get('nimbus', 'global', 'active_profile');
+		if (curActiveId && !addedActiveIds[curActiveId]) {
+			var curSec = uci.get('nimbus', curActiveId);
+			var curLabel = '%s [%s]'.format((curSec && curSec.name) ? curSec.name : curActiveId, _('Unavailable'));
+			oActiveProfile.value(curActiveId, curLabel);
+		}
 
 		o = sGlobal.option(form.ListValue, 'topology', _('Network Topology'));
 		o.value('main', _('Main Router'));

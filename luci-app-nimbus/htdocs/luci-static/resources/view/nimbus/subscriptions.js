@@ -250,11 +250,12 @@ return view.extend({
 			});
 			var initialType = p.type || 'subscription';
 			var initialAsConfig = isEdit ? Boolean(p.as_config) : (initialType === 'local');
+			var lockAsConfig = Boolean(isEdit && p.active && initialAsConfig);
 			var asConfigTouched = isEdit;
 			var asConfigCb = E('input', {
 				'type': 'checkbox',
 				'checked': initialAsConfig ? 'checked' : null,
-				'disabled': (isEdit && p.active) ? 'disabled' : null,
+				'disabled': lockAsConfig ? 'disabled' : null,
 				'change': function() {
 					asConfigTouched = true;
 				}
@@ -404,7 +405,7 @@ return view.extend({
 					E('label', { 'class': 'cbi-value-title' }, _('Allow as Active Config')),
 					E('div', { 'class': 'cbi-value-field' }, [
 						asConfigCb,
-						E('div', { 'class': 'cbi-value-description' }, (isEdit && p.active)
+						E('div', { 'class': 'cbi-value-description' }, lockAsConfig
 							? _('Currently selected as the active configuration in Settings. Switch active configuration first to disable.')
 							: _('Allow selecting this file directly as the Active Configuration in Settings (requires a complete sing-box JSON object).'))
 					])

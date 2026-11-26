@@ -102,11 +102,18 @@ return view.extend({
 	},
 
 	addFooter: function() {
-		var el = this.super('addFooter');
-		this._footerEl = el;
+		var frag = this.super('addFooter', []);
+		var actions = null;
+		if (frag) {
+			if (frag.nodeType === 1)
+				actions = frag;
+			else if (typeof frag.querySelector === 'function')
+				actions = frag.querySelector('.cbi-page-actions') || frag.firstElementChild || null;
+		}
+		this._footerEl = actions;
 		if (typeof this._syncFooter === 'function')
 			this._syncFooter();
-		return el;
+		return frag;
 	},
 
 	handleSave: function() {
@@ -153,7 +160,7 @@ return view.extend({
 		var editorWrap = E('div', { 'style': 'display:none;' });
 
 		self._syncFooter = function() {
-			if (self._footerEl)
+			if (self._footerEl && self._footerEl.style)
 				self._footerEl.style.display = editingId ? '' : 'none';
 		};
 
